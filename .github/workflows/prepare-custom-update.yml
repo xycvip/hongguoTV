@@ -42,6 +42,71 @@ jobs:
           set -euo pipefail
           git merge --no-edit origin/main
 
+      - name: Detect playback, search, and recommendation interface changes
+        id: api_changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="$(git merge-base origin/custom origin/main)"
+          git diff --name-only "$base"..origin/main > /tmp/upstream-files.txt
+          {
+            echo "## Interface-change review"
+            echo
+            echo "The workflow specifically checks upstream changes related to playback, search, and recommendations."
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          : > api-change-report.md
+          echo "## Playback / search / recommendation interface scan" >> api-change-report.md
+          echo >> api-change-report.md
+          api_files="$(grep -Ei '(^|/)(ThirdCms|ThirdStore|VideoDataSource|Library|.*Api.*|.*Api.*|.*Repository.*|.*Source.*|.*Player.*|.*Playback.*|.*Search.*|.*Recommend.*|.*Parser.*|.*Network.*|.*Request.*|.*Response.*)\.(kt|java)$|(^|/)(api|network|repository|datasource|player|playback|search|recommend|parser)/' /tmp/upstream-files.txt || true)"
+          if [ -n "$api_files" ]; then
+            echo "API_RELATED=true" >> "$GITHUB_OUTPUT"
+            echo "### Detected interface-related files" >> api-change-report.md
+            printf '%s\n' "$api_files" | sort -u >> api-change-report.md
+            {
+              echo "### Playback/search/recommendation-related files"
+              printf '%s\n' "$api_files" | sort -u
+              echo
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "API_RELATED=false" >> "$GITHUB_OUTPUT"
+            echo "No interface-related paths were detected by filename rules." >> api-change-report.md
+            echo "No interface-related paths detected by filename rules." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Also scan changed Kotlin source for protocol, request-header, JSON, and playback markers.
+          # Print filenames only; never print matching source lines or possible credentials.
+          content_files="$(git diff --name-only --diff-filter=ACMRT "$base"..origin/main -- '*.kt' '*.java' || true)"
+          if [ -n "$content_files" ]; then
+            printf '%s\n' "$content_files" | while IFS= read -r f; do
+              if git diff "$base"..origin/main -- "$f" | grep -Eiq '^[+].*(https?://|Authorization|User-Agent|headers?\b|JSONObject|Gson|Moshi|Json|playUrl|parse.*(play|search|recommend)|recommend|search.*(api|url)|episode.*(url|play))'; then
+                echo "$f"
+              fi
+            done | sort -u > /tmp/api-content-files.txt
+          else
+            : > /tmp/api-content-files.txt
+          fi
+          if [ -s /tmp/api-content-files.txt ]; then
+            echo "### Additional source files with interface/protocol markers" >> api-change-report.md
+            cat /tmp/api-content-files.txt >> api-change-report.md
+            {
+              echo
+              echo "### Additional source files with interface/protocol markers"
+              cat /tmp/api-content-files.txt
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "API_RELATED=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          {
+            echo
+            echo "### Review policy"
+            echo "- Playback interface changes: high priority; verify play URL extraction, headers, redirects, and episode switching."
+            echo "- Search interface changes: verify request parameters and result parsing."
+            echo "- Recommendation interface changes: verify feed/category requests and result parsing."
+            echo "- This scan is heuristic; it may miss interface changes implemented in generic files. It does not make live requests to third-party services."
+          } >> api-change-report.md
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -73,6 +138,14 @@ jobs:
             git diff --name-status origin/custom...HEAD || true
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Upload interface-change report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playback-search-recommendation-interface-report
+          if-no-files-found: warn
+          path: api-change-report.md
+
       - name: Upload verification reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -93,18 +166,23 @@ jobs:
         run: |
           set -euo pipefail
           title="Review upstream updates for custom"
-          body="$(cat <<'EOF'
+          api_report="$(cat api-change-report.md 2>/dev/null || echo 'Interface scan report was not generated; inspect the workflow artifacts.')"
+          body="$(cat <<EOF
           ## Automated update candidate
 
           This pull request proposes merging `main` into `custom`.
 
-          - The merge was prepared on an isolated branch.
-          - Kotlin unit tests, Android lint, and a debug APK build must pass before this PR is updated.
-          - The `custom` branch is **not** changed automatically.
-          - Please review changes to startup/autoplay, playback, versioning, signing, and release workflows carefully.
-          - A successful build does not guarantee playback works on every real device; test the APK before merging.
+          - The merge is prepared on an isolated candidate branch after each successful upstream sync.
+          - Kotlin unit tests, Android lint, and a debug APK build must pass before the candidate PR is updated.
+          - Playback, search, and recommendation interface changes receive a dedicated filename/content-marker scan and a report artifact.
+          - The `custom` branch is not overwritten by the scan; this PR is the review point before any merge.
+          - A successful build does not prove live third-party APIs still work. Validate search results, recommendations, playback URL extraction, headers, redirects, and episode switching on a real device.
 
-          If a merge conflict occurs or verification fails, no new candidate PR is published by that run. Resolve the issue manually before trying again.
+          ### Interface scan report
+
+          ${api_report}
+
+          The scan is heuristic and can miss changes in generic files. If merge conflicts or tests fail, this run does not publish a new candidate. Resolve the issue before retrying.
           EOF
           )"
           if gh pr view automation/upstream-update --json number >/dev/null 2>&1; then
