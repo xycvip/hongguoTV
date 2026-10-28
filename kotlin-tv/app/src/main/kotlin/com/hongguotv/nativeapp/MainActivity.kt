@@ -46,8 +46,12 @@ private const val FOOTER_MORE_HOT=4
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity: Activity() {
-    private val bg by lazy { TvStyle.background }; private val surface by lazy { TvStyle.surface }
-    private val accent by lazy { TvStyle.accent }; private val white by lazy { TvStyle.text }; private val muted by lazy { TvStyle.muted }
+    // Read the active theme dynamically so the settings page can redraw without recreating the Activity.
+    private val bg get() = TvStyle.background
+    private val surface get() = TvStyle.surface
+    private val accent get() = TvStyle.accent
+    private val white get() = TvStyle.text
+    private val muted get() = TvStyle.muted
     private val main=Handler(Looper.getMainLooper())
     private val io=Executors.newFixedThreadPool(3)
     private val repository=ContentRepository()
@@ -1407,7 +1411,10 @@ class MainActivity: Activity() {
 
         lateinit var themeButton: TextView
         themeButton=setting(device,"系统风格  ·  ${TvStyle.theme.label}") {
-            library.theme=TvStyle.toggle().name; recreate()
+            library.theme=TvStyle.toggle().name
+            // Redraw only the current settings screen. Recreating the Activity reruns startup autoplay.
+            settingsFocusKey="系统风格"
+            showCatalog()
         }
         lateinit var clockButton: TextView
         clockButton=setting(device,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
