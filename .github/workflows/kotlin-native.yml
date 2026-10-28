@@ -1,4 +1,4 @@
-name: Verify Kotlin standalone APK
+name: Verify Kotlin standalone APK # unified tests, lint, and debug build
 on:
   push:
     branches: ['main', 'codex/kotlin-standalone']
