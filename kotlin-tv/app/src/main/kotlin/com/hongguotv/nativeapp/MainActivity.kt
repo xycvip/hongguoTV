@@ -1755,7 +1755,12 @@ class MainActivity: Activity() {
     private fun openDetail(series: Series,resume: Boolean=false,autoplay: Boolean=true) {
         pendingDetail=series; detailAutoplay=autoplay
         invalidatePage(); releaseCatalogViews(); screen="detail"; directPlayback=resume; detail=null; synopsisExpanded=false
-        val body=base(series.title); message(body,"正在加载剧集…")
+        val body=base(series.title)
+        if(bootAutoPlaybackPending) {
+            // 开机自动播放时不展示“正在加载剧集”页面，等待详情接口期间保持黑屏。
+            body.removeAllViews()
+            body.setBackgroundColor(Color.BLACK)
+        } else message(body,"正在加载剧集…")
         work({ repository.detail(series.id) }, { result ->
             detail=result; library.observeFavorite(series.id,result.episodes.size,System.currentTimeMillis(),acknowledge=true)
             val progress=library.progress(series.id)
