@@ -124,8 +124,11 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             clipToPadding = false
             addView(statusView, ScrollView.LayoutParams(-1, -2))
         }
-        val maxNotesHeight = (activity.resources.displayMetrics.heightPixels * 0.42f).toInt()
-        body.addView(statusScroll, LinearLayout.LayoutParams(-1, maxNotesHeight.coerceAtLeast((180 * dp).toInt())))
+        // 限定整个弹窗内容高度，并让说明区占用剩余空间；底部操作按钮始终留在可见区域。
+        body.layoutParams = LinearLayout.LayoutParams(
+            -1, (activity.resources.displayMetrics.heightPixels * 0.72f).toInt()
+        )
+        body.addView(statusScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         if (!updatePending) {
             body.addView(CheckBox(activity).apply {
                 text = "自动检查并下载更新"; isChecked = auto; setTextColor(TvStyle.text)
