@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.View
+import android.widget.FrameLayout
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -122,7 +123,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToPadding = false
-            addView(statusView, ScrollView.LayoutParams(-1, -2))
+            addView(statusView, FrameLayout.LayoutParams(-1, -2))
         }
         // 限定整个弹窗内容高度，并让说明区占用剩余空间；底部操作按钮始终留在可见区域。
         body.layoutParams = LinearLayout.LayoutParams(
