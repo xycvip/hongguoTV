@@ -29,15 +29,25 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Set monotonic build version and restore signing key
+      - name: Set monotonic build version and validate signing key
         env:
           KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.HONGGUOTV_KEY_ALIAS }}
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_B64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
           umask 077
-          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
-          echo "HONGGUOTV_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          KEYSTORE_PATH="$RUNNER_TEMP/release.p12"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          if ! keytool -list -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null 2>&1; then
+            echo "签名文件验证失败：请检查 HONGGUOTV_KEYSTORE_B64、HONGGUOTV_STORE_PASSWORD 和 HONGGUOTV_KEY_ALIAS 是否对应同一份 .p12 文件。" >&2
+            exit 1
+          fi
+          echo "HONGGUOTV_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           UPSTREAM_GRADLE_URL="https://raw.githubusercontent.com/jycao2/hongguoTV/main/kotlin-tv/app/build.gradle.kts"
           UPSTREAM_VERSION="$(curl --fail --silent --show-error --location "$UPSTREAM_GRADLE_URL" | sed -nE 's/.*versionName.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1)"
           if [[ ! "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -74,4 +84,4 @@ jobs:
             outputs/update.json
       - name: Remove temporary signing material
         if: always()
-        run: rm -f "$RUNNER_TEMP/release.jks"
+        run: rm -f "$RUNNER_TEMP/release.p12"
