@@ -1,7 +1,7 @@
 name: Verify Kotlin standalone APK # unified tests, lint, and debug build
 on:
   push:
-    branches: ['main', 'custom', 'codex/kotlin-standalone']
+    branches: ['main', 'codex/kotlin-standalone']
     tags: ['kotlin-v*']
   pull_request:
     paths: ['kotlin-tv/**', 'scripts/build-kotlin.sh', '.github/workflows/kotlin-native.yml']
