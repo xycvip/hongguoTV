@@ -377,13 +377,25 @@ class MainActivity: Activity() {
         if(cached!=null) openDetail(cached,resume=true,autoplay=true)
         else replenishRandomPool { playRandomOrFallback() }
     }
+    private fun startupAutoplayEnabled() =
+        getSharedPreferences("startup_playback",MODE_PRIVATE).getBoolean("autoplay_recommendation",true)
+
+    private fun showInitialScreen() {
+        if(!isDestroyed && foreground && library.isLoaded && initialCatalogPending) {
+            if(startupAutoplayEnabled()) launchRandomPlayback()
+            else {
+                initialCatalogPending=false
+                showCatalog(load=true)
+            }
+        }
+    }
     private fun loadLibrary() {
         libraryLoadError=null
         library.loadAsync(onFailure={ problem ->
             if(!isDestroyed) { libraryLoadError=problem; if(foreground) showLibraryError(problem) }
         }) {
             if(!isDestroyed && foreground) handleLocalBackupOnStartup {
-                if(!isDestroyed && foreground) { launchRandomPlayback(); favoriteMonitor.check() }
+                if(!isDestroyed && foreground) { showInitialScreen(); favoriteMonitor.check() }
             }
         }
     }
@@ -1375,6 +1387,12 @@ class MainActivity: Activity() {
         }
         heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
         heading(device,"片单与设备","保管记录，保持应用更新")
+        lateinit var startupAutoplayButton: TextView
+        startupAutoplayButton=setting(playback,"开机全屏播放推荐  ·  ${if(startupAutoplayEnabled()) "开启" else "关闭"}") {
+            val enabled=!startupAutoplayEnabled()
+            getSharedPreferences("startup_playback",MODE_PRIVATE).edit().putBoolean("autoplay_recommendation",enabled).apply()
+            startupAutoplayButton.text="开机全屏播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
+        }
         lateinit var qualityButton: TextView
         qualityButton=setting(playback,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
         lateinit var defaultSpeed: TextView
@@ -2820,7 +2838,7 @@ class MainActivity: Activity() {
         super.onResume(); foreground=true; main.removeCallbacks(tick); main.post(tick)
         updater.resume()
         if(library.isLoaded) {
-            if(initialCatalogPending) launchRandomPlayback()
+            if(initialCatalogPending) showInitialScreen()
             else if(restoreStoppedPage) {
                 restoreStoppedPage=false
                 when(screen) {
