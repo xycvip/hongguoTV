@@ -67,7 +67,12 @@ class LocalBackupStorage(private val context: Context) {
                 activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), REQUEST_READ); true
             }
             else -> {
-                activity.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_WRITE); true
+                // Android 8/9 使用普通运行时存储授权；同时请求读写权限，兼容电视厂商定制的权限弹窗。
+                activity.requestPermissions(
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                    REQUEST_WRITE
+                )
+                true
             }
         }
     }
