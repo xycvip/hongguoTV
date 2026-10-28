@@ -8,9 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.graphics.drawable.GradientDrawable
 import android.view.*
 import android.view.inputmethod.InputMethodManager
@@ -162,8 +162,8 @@ class MainActivity: Activity() {
         }
     }
     private lateinit var root: FrameLayout
-    private var backdropView: ImageView?=null
-    private var backdropBitmap: Bitmap?=null
+    private var bootSplash: View?=null
+    private var bootSplashAnimator: AnimatorSet?=null
     private var generation=0
     private var screen="catalog"
     private var tab=0
@@ -292,8 +292,6 @@ class MainActivity: Activity() {
         super.onCreate(state)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
-        backdropView=ImageView(this).apply { scaleType=ImageView.ScaleType.FIT_XY; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
-        loadBackdrop()
         updater=AppUpdater(this) { foreground && library.isLoaded && screen=="catalog" && !tvTools.showing }
         connectivity=getSystemService(ConnectivityManager::class.java)
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback); networkRegistered=true }
@@ -306,11 +304,39 @@ class MainActivity: Activity() {
         val body=base(); error(body,problem) { message(base(),"正在读取本机记录…"); loadLibrary() }
     }
     private var launchRandomPlaybackStarted=false
-    /** 开机自动播放的首集在完整播放结束前不写入观看记录。 */
+    private var startupHomeRefreshStarted=false
+    /** 启动全屏推荐期间只保留过场；实际视频首帧出现后按正常播放规则记录进度。 */
     private var bootAutoPlaybackPending=false
+    private fun refreshHomeDataInBackground() {
+        if(startupHomeRefreshStarted || isDestroyed || !library.isLoaded) return
+        startupHomeRefreshStarted=true
+        val type=library.contentType
+        io.execute {
+            val loaded=runCatching { repository.home(1,type,null) }
+            main.post {
+                if(isDestroyed) return@post
+                loaded.onSuccess { resultPage ->
+                    library.cacheHome(type,resultPage.items,resultPage.hasMore)
+                    if(library.contentType==type && tab==0 && collection==null && genre==null) {
+                        catalog=resultPage.items; hasMore=resultPage.hasMore; homeFromCache=false
+                        if(screen=="catalog" && page==1) {
+                            homeScreen?.updateShelves(homeShelves(),requestFocus=false)
+                            homeScreen?.refresh?.text="刷新热门"
+                            homeScreen?.refresh?.setOnClickListener { showCatalog(true) }
+                        }
+                    }
+                    android.util.Log.i("HongguoTV","Startup background home refresh completed items=${resultPage.items.size}")
+                }.onFailure { problem ->
+                    // 保留已有缓存与首页模型；下次手动刷新仍可重新请求。
+                    android.util.Log.i("HongguoTV","Startup background home refresh failed; cached content retained: ${problem.message}")
+                }
+            }
+        }
+    }
     private fun launchRandomPlayback() {
         if(launchRandomPlaybackStarted || isDestroyed || !library.isLoaded || !foreground) return
         launchRandomPlaybackStarted=true
+        refreshHomeDataInBackground()
         bootAutoPlaybackPending=true
         initialCatalogPending=false
         fun playRandomOrFallback() {
@@ -395,8 +421,8 @@ class MainActivity: Activity() {
         }
         if(!library.localBackupEnabled) {
             TvDialog.confirm(this,"本地备份与恢复","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时关闭。") {
-                library.localBackupEnabled=true; anchor.text=localBackupLabel()
-                if(storage.needsPermission) requestLocalBackupPermission(anchor) else localBackupAction(anchor)
+                if(storage.needsPermission) requestLocalBackupPermission(anchor,enableAfterGrant=true)
+                else { library.localBackupEnabled=true; anchor.text=localBackupLabel(); localBackupAction(anchor) }
             }.show()
             return
         }
@@ -417,15 +443,24 @@ class MainActivity: Activity() {
             restoreLocalBackup { anchor.text=localBackupLabel() }
         } else backupWithToast(anchor)
     }
-    private fun requestLocalBackupPermission(anchor: TextView) {
+    private fun requestLocalBackupPermission(anchor: TextView,enableAfterGrant: Boolean=false) {
         localPermissionContinuation={
-            anchor.text=localBackupLabel()
-            if(library.localBackup().backupAllowed) localBackupAction(anchor)
+            val storage=library.localBackup()
+            if(storage.backupAllowed && storage.restoreAllowed) {
+                if(enableAfterGrant) library.localBackupEnabled=true
+                anchor.text=localBackupLabel()
+                localBackupAction(anchor)
+            } else {
+                library.localBackupEnabled=false
+                anchor.text=localBackupLabel()
+                Toast.makeText(this,"未获得存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
+            }
         }
         if(!library.localBackup().request(this)) {
             localPermissionContinuation=null
+            if(enableAfterGrant) library.localBackupEnabled=false
             anchor.text=localBackupLabel()
-            Toast.makeText(this,"当前设备无法授予存储权限，请使用手机备份迁移",Toast.LENGTH_LONG).show()
+            Toast.makeText(this,"当前设备无法授予存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
         }
     }
     private fun backupWithToast(anchor: TextView) {
@@ -450,14 +485,8 @@ class MainActivity: Activity() {
     }
     private fun base(title: String?=null): LinearLayout {
         root.removeAllViews(); root.setBackgroundColor(bg)
-        backdropView?.takeIf { backdropBitmap!=null }?.let { root.addView(it,FrameLayout.LayoutParams(-1,-1)) }
         val container=column(); val horizontal=dp(widthDp()*.05f); val vertical=(resources.displayMetrics.heightPixels*.05f).toInt()
         container.setPadding(horizontal,vertical,horizontal,vertical); root.addView(container,FrameLayout.LayoutParams(-1,-1))
-        // 本地测试包（versionName 不含 +构建号）右上角常驻 beta 标记，与正式包区分；播放页不显示
-        if(!BuildConfig.VERSION_NAME.contains('+')) {
-            root.addView(text("beta",12f,accent).apply { importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO; isFocusable=false },
-                FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { topMargin=dp(10); rightMargin=dp(14) })
-        }
         if(title!=null) { val heading=row(); addButton(heading,"‹ 返回") { goBack() }; heading.addView(text(title,22f).apply { setTypeface(null,Typeface.BOLD); gravity=Gravity.CENTER_VERTICAL },lp(0,dp(44)).apply { weight=1f }); container.addView(heading) }
         applyClock()
         return container
@@ -1386,19 +1415,6 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        lateinit var backdropButton: TextView
-        fun backdropLabel()="自定义背景  ·  ${if(backdropFile()!=null) "已启用" else if(backdropStyle()=="forced") "强制欣赏" else "默认风格"}"
-        backdropButton=setting(device,backdropLabel()) {
-            tvTools.choose("自定义背景",listOf("手机上传图片","恢复默认背景"),backdropButton,{ choice ->
-                when(choice) {
-                    0 -> tvTools.backdropTransfer(backdropButton) { bytes,ext -> saveBackdrop(bytes,ext); backdropButton.post { backdropButton.text=backdropLabel() } }
-                    1 -> tvTools.choose("恢复默认背景",listOf("强制欣赏","默认风格"),backdropButton,{ style ->
-                        resetBackdrop(if(style==0) "forced" else "plain")
-                        backdropButton.text=backdropLabel()
-                    })
-                }
-            })
-        }
         lateinit var localBackupButton: TextView
         localBackupButton=setting(device,localBackupLabel()) { showLocalBackupDialog(localBackupButton) }
         lateinit var backup: TextView
@@ -1461,7 +1477,7 @@ class MainActivity: Activity() {
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings,autoSkipButton)
-            val right=listOf(themeButton,clockButton,backdropButton,localBackupButton,backup,hidden,statsButton,clearCache,updates,checkButton,license)
+            val right=listOf(themeButton,clockButton,localBackupButton,backup,hidden,statsButton,clearCache,updates,checkButton,license)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
@@ -1902,6 +1918,38 @@ class MainActivity: Activity() {
         }
         if(focusEpisode) episodes.getOrNull((episodeIndex-group*20).coerceIn(0,episodes.lastIndex))?.requestFocus() else play.requestFocus()
     }
+    private fun showBootSplash() {
+        hideBootSplash()
+        val overlay=FrameLayout(this).apply {
+            background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(4,7,16),Color.rgb(11,20,39),Color.rgb(3,5,12)))
+            isClickable=false; isFocusable=false; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }
+        val content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; gravity=Gravity.CENTER; setPadding(dp(32),dp(24),dp(32),dp(24)) }
+        val title=TextView(this).apply {
+            text="红果TV"; textSize=42f; setTextColor(Color.WHITE); gravity=Gravity.CENTER
+            setTypeface(Typeface.create("sans-serif",Typeface.BOLD)); setShadowLayer(dp(18).toFloat(),0f,0f,accent)
+        }
+        val tagline=TextView(this).apply {
+            text="精彩即将呈现"; textSize=16f; setTextColor(Color.rgb(190,202,225)); gravity=Gravity.CENTER
+            letterSpacing=0.18f; setPadding(0,dp(12),0,dp(18))
+        }
+        val sweep=View(this).apply { background=GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,intArrayOf(Color.TRANSPARENT,accent,Color.TRANSPARENT)) }
+        content.addView(title,LinearLayout.LayoutParams(-2,-2))
+        content.addView(tagline,LinearLayout.LayoutParams(-2,-2))
+        content.addView(sweep,LinearLayout.LayoutParams(dp(240),dp(2)))
+        overlay.addView(content,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
+        root.addView(overlay,FrameLayout.LayoutParams(-1,-1))
+        bootSplash=overlay
+        val glow=ObjectAnimator.ofFloat(title,View.ALPHA,0.76f,1f).apply { duration=1500; repeatCount=ValueAnimator.INFINITE; repeatMode=ValueAnimator.REVERSE }
+        val lift=ObjectAnimator.ofFloat(title,View.TRANSLATION_Y,dp(4).toFloat(),0f).apply { duration=1500; repeatCount=ValueAnimator.INFINITE; repeatMode=ValueAnimator.REVERSE }
+        val sweepAnim=ObjectAnimator.ofFloat(sweep,View.TRANSLATION_X,-dp(250).toFloat(),dp(250).toFloat()).apply { duration=2300; repeatCount=ValueAnimator.INFINITE; repeatMode=ValueAnimator.RESTART }
+        bootSplashAnimator=AnimatorSet().apply { playTogether(glow,lift,sweepAnim); start() }
+    }
+    private fun hideBootSplash() {
+        bootSplashAnimator?.cancel(); bootSplashAnimator=null
+        bootSplash?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        bootSplash=null
+    }
     private fun playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,recovering: Boolean=false) {
         updater.interrupt()
         val data=detail ?: return
@@ -1953,6 +2001,7 @@ class MainActivity: Activity() {
             controls=column().apply { setPadding(0,dp(12),0,0); visibility=View.GONE }; hud.addView(controls)
             root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
         }
+        if(bootAutoPlaybackPending && !reuse) showBootSplash()
         applyClock()
         playbackTitle.text="${data.series.title}  ·  第 ${episodeIndex+1} 集"
         playbackText.text="正在获取播放地址…"; progressBar.progress=0; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
@@ -1996,6 +2045,10 @@ class MainActivity: Activity() {
                 override fun onRenderedFirstFrame() {
                     if(active() && firstFrame) {
                         firstFrame=false
+                        hideBootSplash()
+                        val wasStartupPreview=bootAutoPlaybackPending
+                        bootAutoPlaybackPending=false
+                        if(wasStartupPreview) main.postDelayed({ if(active() && p.currentPosition>=1000L) saveProgress() },1000L)
                         android.util.Log.i("HongguoTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
                     }
                 }
@@ -2059,7 +2112,7 @@ class MainActivity: Activity() {
     }
     private fun playerFailure(problem: Throwable) {
         retryPosition=currentPosition().coerceAtLeast(0); retryAutoplay=requestedAutoplay && !sleepStopped
-        saveProgress(); cancelRecovery(); cancelPrefetch()
+        saveProgress(); hideBootSplash(); bootAutoPlaybackPending=false; cancelRecovery(); cancelPrefetch()
         playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
         val incompatible=problem is UnplayableVideoException
         val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
@@ -2595,84 +2648,12 @@ class MainActivity: Activity() {
     }
     private fun hidePanel() { if(playError) return; panel=false; controls.visibility=View.GONE; controls.clearFocus(); showHud() }
     private fun formatTime(millis: Long): String { val seconds=(millis.coerceAtLeast(0)/1000); return "%02d:%02d".format(seconds/60,seconds%60) }
-    private fun backdropFile()=filesDir.listFiles()?.firstOrNull { it.name.startsWith("backdrop.") }
-    /** Scale [raw] to fill the screen and lay a theme-colored scrim over it so text stays readable. */
-    private fun frameBackdrop(raw: Bitmap): Bitmap? {
-        val width=resources.displayMetrics.widthPixels; val height=resources.displayMetrics.heightPixels
-        if(width<=0 || height<=0) return null
-        val scale=maxOf(width.toFloat()/raw.width,height.toFloat()/raw.height)
-        val drawWidth=(raw.width*scale).toInt(); val drawHeight=(raw.height*scale).toInt()
-        val scaled=if(drawWidth==raw.width && drawHeight==raw.height) raw else Bitmap.createScaledBitmap(raw,drawWidth,drawHeight,true)
-        val output=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
-        Canvas(output).apply {
-            drawBitmap(scaled,(width-drawWidth)/2f,(height-drawHeight)/2f,null)
-            drawColor(Color.argb(205,Color.red(bg),Color.green(bg),Color.blue(bg)))
-        }
-        if(scaled!==raw) raw.recycle()
-        return output
-    }
-    private fun decodeBackdrop(bytes: ByteArray): Bitmap? {
-        val bounds=BitmapFactory.Options().apply { inJustDecodeBounds=true }
-        BitmapFactory.decodeByteArray(bytes,0,bytes.size,bounds)
-        if(bounds.outWidth<=0 || bounds.outHeight<=0) return null
-        var sample=1
-        val width=resources.displayMetrics.widthPixels; val height=resources.displayMetrics.heightPixels
-        while(bounds.outWidth/(sample*2)>=width && bounds.outHeight/(sample*2)>=height) sample*=2
-        val raw=BitmapFactory.decodeByteArray(bytes,0,bytes.size,BitmapFactory.Options().apply { inSampleSize=sample }) ?: return null
-        return frameBackdrop(raw)
-    }
-    /** The bundled "强制欣赏" backdrop: first-launch default, selectable from 恢复默认背景. */
-    private fun decodeForcedBackdrop(): Bitmap? =
-        BitmapFactory.decodeResource(resources,R.drawable.backdrop_forced)?.let { frameBackdrop(it) }
-    /** Built-in backdrop style: "forced" (bundled picture, default) or "plain" (theme color only). */
-    private fun backdropStyle()=getSharedPreferences("native-library-v1", Context.MODE_PRIVATE).getString("backdropStyle","forced") ?: "forced"
-    private fun loadBackdrop() {
-        io.execute {
-            val bitmap=backdropFile()?.let { runCatching { decodeBackdrop(it.readBytes()) }.getOrNull() }
-                ?: if(backdropStyle()=="forced") runCatching { decodeForcedBackdrop() }.getOrNull() else null
-            main.post {
-                if(isDestroyed) return@post
-                backdropBitmap=bitmap
-                backdropView?.let {
-                    if(bitmap==null) { (it.parent as? android.view.ViewGroup)?.removeView(it); it.setImageDrawable(null) }
-                    else { if(it.parent==null && screen!="player") root.addView(it,0,FrameLayout.LayoutParams(-1,-1)); it.setImageBitmap(bitmap) }
-                }
-            }
-        }
-    }
-    private fun saveBackdrop(bytes: ByteArray,extension: String) {
-        io.execute {
-            val bitmap=runCatching {
-                filesDir.listFiles()?.filter { it.name.startsWith("backdrop.") }?.forEach { it.delete() }
-                java.io.File(filesDir,"backdrop.$extension").writeBytes(bytes)
-                decodeBackdrop(bytes)
-            }.getOrNull()
-            main.post {
-                if(isDestroyed) return@post
-                if(bitmap==null) { Toast.makeText(this@MainActivity,"图片无法使用，请换一张试试",Toast.LENGTH_LONG).show(); return@post }
-                backdropBitmap=bitmap
-                backdropView?.let {
-                    if(it.parent==null && screen!="player") root.addView(it,0,FrameLayout.LayoutParams(-1,-1))
-                    it.setImageBitmap(bitmap)
-                }
-                Toast.makeText(this@MainActivity,"背景已更新",Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-    /** Drop any uploaded picture and switch back to one of the built-in styles. */
-    private fun resetBackdrop(style: String) {
-        io.execute { filesDir.listFiles()?.filter { it.name.startsWith("backdrop.") }?.forEach { it.delete() } }
-        getSharedPreferences("native-library-v1", Context.MODE_PRIVATE).edit().putString("backdropStyle",style).apply()
-        loadBackdrop()
-        Toast.makeText(this,if(style=="forced") "已恢复为强制欣赏" else "已恢复默认背景",Toast.LENGTH_SHORT).show()
-    }
     private fun saveProgress(completed: Boolean=false) {
         val p=player ?: return; val data=detail ?: return; if(!playbackReady || episodeIndex !in data.episodes.indices) return
         val episodeCompleted=completed || p.playbackState==Player.STATE_ENDED
-        // 开机随机自动播放的首集，未完整播完前不产生观看历史；手动播放逻辑不受影响。
-        if(bootAutoPlaybackPending && !episodeCompleted) return
+        // 启动推荐过场尚未切换到真实视频首帧时不记录；首帧出现后与其他播放一致。
+        if(bootAutoPlaybackPending && bootSplash!=null) return
         library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),p.duration.coerceAtLeast(0),episodeCompleted,System.currentTimeMillis()))
-        if(bootAutoPlaybackPending && episodeCompleted) bootAutoPlaybackPending=false
     }
     /** Starts the official-comment overlay for the current episode; safe to call repeatedly. */
     private fun startDanmaku() {
@@ -2703,6 +2684,7 @@ class MainActivity: Activity() {
         danmakuView?.unbind()
     }
     private fun releasePlayer() {
+        hideBootSplash()
         cancelRecovery(); cancelPrefetch(); mediaSession.deactivate(); tvTools.close()
         ffActive=false; outroSkipSeconds=0; outroTriggered=false
         val wasForeground=foreground; foreground=false
@@ -2716,7 +2698,7 @@ class MainActivity: Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun returnToDetail(forceDetail: Boolean=false) {
-        sleepTimer.cancel(); sleepStopped=false; saveProgress(); library.flush(); invalidatePage(); releasePlayer()
+        sleepTimer.cancel(); sleepStopped=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
         if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
     }
     private fun goBack() {

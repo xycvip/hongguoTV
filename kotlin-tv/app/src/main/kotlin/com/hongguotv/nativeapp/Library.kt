@@ -263,7 +263,7 @@ class Library(context: Context) {
     }
     // ---- Local rotating backup ----
     var localBackupEnabled: Boolean
-        get() = localPrefs.getBoolean("enabled", true)
+        get() = localPrefs.getBoolean("enabled", false)
         set(value) { localPrefs.edit().putBoolean("enabled", value).apply() }
     var localRestoreChecked: Boolean
         get() = localPrefs.getBoolean("restoreChecked", false)
