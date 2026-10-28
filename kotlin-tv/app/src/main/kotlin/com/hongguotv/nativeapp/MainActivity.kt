@@ -321,6 +321,7 @@ class MainActivity: Activity() {
                 ?: library.cachedHome(library.contentType)?.items?.shuffled()?.firstOrNull()
             if(picked!=null) openDetail(picked,resume=true,autoplay=true)
             else {
+                bootAutoPlaybackPending=false
                 showCatalog(load=true)
                 Toast.makeText(this,"暂时无法获取随机推荐，请检查网络后重试",Toast.LENGTH_LONG).show()
             }
