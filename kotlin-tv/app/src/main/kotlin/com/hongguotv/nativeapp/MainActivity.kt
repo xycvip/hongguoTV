@@ -530,13 +530,14 @@ class MainActivity: Activity() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
         if(!library.isLoaded || !library.showClock) return
-        val view=text("",15f,muted).apply {
+        val view=text("",19f,white).apply {
+            setTypeface(typeface,Typeface.BOLD)
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
             setPadding(dp(8),dp(3),dp(8),dp(3))
         }
-        // Local test builds show the beta badge in the same corner; keep both visible.
-        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(10) else dp(30)
+        // Keep the clock in the top-right corner, slightly higher while leaving room for the beta badge.
+        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(4) else dp(20)
         root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=topMargin; rightMargin=dp(14) })
         clockView=view
         val tick=object: Runnable {
