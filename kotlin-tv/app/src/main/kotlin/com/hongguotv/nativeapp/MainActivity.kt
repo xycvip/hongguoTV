@@ -530,8 +530,7 @@ class MainActivity: Activity() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
         if(!library.isLoaded || !library.showClock) return
-        val view=text("",19f,white).apply {
-            setTypeface(typeface,Typeface.BOLD)
+        val view=text("",18f,white).apply {
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
             setPadding(dp(8),dp(3),dp(8),dp(3))
