@@ -21,9 +21,22 @@ def changelog():
     rng = [f"{base}..HEAD"] if base else ["-n", "20"]
     log = subprocess.run(["git", "log", "--no-merges", "--pretty=format:- %s"] + rng,
                          capture_output=True, text=True).stdout.strip()
+
+    if not base:
+        intro = (
+            "红果TV 首个正式版。\n\n"
+            "## 版本说明\n"
+            "- 发布包由 xycvip/hongguoTV 仓库自动构建并提供。\n"
+            "- 保留当前自定义版本已有功能。\n"
+            "- 已移除安装次数统计、匿名统计上报及相关后端代码。\n"
+            "- 收藏、观看历史等本地数据按应用现有机制保存在设备上。\n\n"
+            "## 本次提交记录"
+        )
+        return intro + ("\n" + log if log else "\n- 首次正式发布。")
+
     if not log:
-        return "本次为重新构建，无新增提交。"
-    return f"更新日志（自 {base} 起）：\n{log}" if base else f"更新日志：\n{log}"
+        return f"红果TV {VERSION_NAME}：重新构建，无新增提交。"
+    return f"红果TV {VERSION_NAME} 更新说明（自 {base} 起）：\n\n{log}"
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
 manifest = {
