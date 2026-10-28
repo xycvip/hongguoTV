@@ -34,7 +34,7 @@ jobs:
           # 从上游仓库自动读取 versionName，生成自己的显示版本号。
           # 例如 0.23.0 -> 26.10.23，0.23.2 -> 26.10.23.2。
           UPSTREAM_GRADLE_URL="https://raw.githubusercontent.com/jycao2/hongguoTV/main/kotlin-tv/app/build.gradle.kts"
-          UPSTREAM_VERSION="$(curl --fail --silent --show-error --location "$UPSTREAM_GRADLE_URL" | sed -nE 's/.*versionName = System\.getenv\("HONGGUOTV_VERSION_NAME"\)\?\: "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1)"
+          UPSTREAM_VERSION="$(curl --fail --silent --show-error --location "$UPSTREAM_GRADLE_URL" | sed -nE 's/.*versionName.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1)"
           if [[ ! "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "无法从上游读取有效版本号：$UPSTREAM_VERSION" >&2
             exit 1
