@@ -2680,6 +2680,7 @@ class MainActivity: Activity() {
         val selected=options.indexOf(library.maxQuality)
         val content=column()
         content.addView(TvDialog.title(this,"全局默认清晰度"))
+        var qualityDialog: AlertDialog? = null
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_SINGLE
             adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" })
@@ -2687,6 +2688,7 @@ class MainActivity: Activity() {
                 val target=options[index]; val changed=library.maxQuality!=target
                 library.maxQuality=target
                 if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
+                qualityDialog?.dismiss()
                 if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
             }
         }
@@ -2696,6 +2698,7 @@ class MainActivity: Activity() {
         buttons.addView(cancel,lp(-2,-2))
         content.addView(buttons)
         val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
+        qualityDialog = dialog
         TvDialog.styleWindow(this,dialog)
         cancel.setOnClickListener { dialog.dismiss() }
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
