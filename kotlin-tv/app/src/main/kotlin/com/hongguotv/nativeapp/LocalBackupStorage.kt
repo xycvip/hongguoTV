@@ -46,10 +46,11 @@ class LocalBackupStorage(private val context: Context) {
     val restoreAllowed: Boolean
         get() = when {
             !supported -> false
-            // API 29+ 的备份写入 MediaStore.Downloads；应用可无权限读取自己创建的备份。
-            // 不应强制要求“所有文件访问”，否则部分 Android TV 设备无法使用本地备份。
+            // Android 10+ 使用 MediaStore；可无权限读取应用自己创建的备份。
             Build.VERSION.SDK_INT >= 29 -> true
-            else -> backupAllowed
+            // Android 8/9 使用公共目录文件，恢复既需要读取权限，也需要写入权限。
+            else -> context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
+                context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     // 设置页打开时也检查权限，不只在用户点击“本地备份与恢复”时检查。
     val needsPermission: Boolean get() = !backupAllowed || !restoreAllowed
