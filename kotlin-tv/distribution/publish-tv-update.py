@@ -15,7 +15,7 @@ assert '35f31788e416d7f6f690b595cba379697803a7e0f7626f7ea69677adac231bf5' in sig
 badging=run(str(buildtools/'aapt'),'dump','badging',str(apk))
 assert f"versionCode='{code}'" in badging and f"versionName='{version}'" in badging and "sdkVersion:'26'" in badging
 commit=run('git','rev-parse','HEAD')
-manifest={'schema':1,'packageName':'com.hongguotv.nativeapp','versionCode':code,'versionName':version,'minSdk':26,'tag':tag,
+manifest={'schema':1,'packageName':'com.x.hongguotv','versionCode':code,'versionName':version,'minSdk':26,'tag':tag,
  'sourceCommit':commit,'apk':{'name':apk.name,'size':apk.stat().st_size,'sha256':hashlib.sha256(apk.read_bytes()).hexdigest()},
  'notes':'应用内自动检查和下载更新；保留安静连播、完整竖版海报和本机记录。'}
 (out/'update.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
