@@ -542,13 +542,16 @@ class MainActivity: Activity() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
         if(!library.isLoaded || !library.showClock) return
-        val view=text("",18f,white).apply {
+        val view=text("",20f,white).apply {
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
-            setPadding(dp(8),dp(3),dp(8),dp(3))
+            setPadding(dp(10),dp(5),dp(10),dp(5))
+            // 半透明底色保证时钟叠在海报、视频或浅色页面上时仍清晰可见。
+            background=TvStyle.shape(this@MainActivity,Color.argb(175,8,12,18),Color.TRANSPARENT)
+            elevation=dp(8).toFloat()
         }
-        // Keep the clock in the top-right corner, slightly higher while leaving room for the beta badge.
-        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(4) else dp(20)
+        // 时钟始终置于根布局最上层，放在右上角并避开测试版标识。
+        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(4) else dp(16)
         root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=topMargin; rightMargin=dp(14) })
         clockView=view
         val tick=object: Runnable {
