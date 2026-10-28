@@ -2681,9 +2681,8 @@ class MainActivity: Activity() {
         val content=column()
         content.addView(TvDialog.title(this,"全局默认清晰度"))
         val list=ListView(this).apply {
-            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" })
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            setItemChecked(selected,true)
+            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" })
             setOnItemClickListener { _,_,index,_ ->
                 val target=options[index]; val changed=library.maxQuality!=target
                 library.maxQuality=target
@@ -2700,7 +2699,13 @@ class MainActivity: Activity() {
         TvDialog.styleWindow(this,dialog)
         cancel.setOnClickListener { dialog.dismiss() }
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
-        dialog.show(); list.setSelection(selected); list.requestFocus()
+        dialog.show()
+        list.post {
+            list.setItemChecked(selected.coerceAtLeast(0),true)
+            list.setSelection(selected.coerceAtLeast(0))
+            list.invalidateViews()
+            list.requestFocus()
+        }
     }
     private fun showEpisodePanel(anchor: View) {
         val data=detail ?: return
