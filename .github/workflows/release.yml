@@ -31,17 +31,15 @@ jobs:
           umask 077
           printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/release.jks"
           echo "HONGGUOTV_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          # 自定义显示版本：YY.MM.上游版本中间数字，例如 26.10.23。
+          # 上游版本为 0.23.0 时，中间数字为 23；上游升级后只需更新此值。
+          UPSTREAM_VERSION="0.23.0"
+          UPSTREAM_MIDDLE="$(printf '%s' "$UPSTREAM_VERSION" | cut -d. -f2)"
+          DATE_PREFIX="$(TZ=Asia/Tokyo date +'%y.%m')"
+          VERSION_NAME="${DATE_PREFIX}.${UPSTREAM_MIDDLE}"
           echo "HONGGUOTV_VERSION_CODE=$((10100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
-          echo "HONGGUOTV_VERSION_NAME=0.23.0+$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          echo "UPDATE_TAG=kotlin-v0.23.0-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
-          {
-            echo "RELEASE_NOTES<<RELEASE_NOTES_END"
-            echo "- 修复所有剧集播放失败"
-            echo "- 修复搜索结果稳定为空"
-            echo "- 新增 AI 剧热播榜，详情页展示评分/热度等数据"
-            echo "- 新增播放空响应自动重试，屏蔽不兼容编码资源"
-            echo "RELEASE_NOTES_END"
-          } >> "$GITHUB_ENV"
+          echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Tests, release lint, and signed APK
         env:
           HONGGUOTV_STORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
