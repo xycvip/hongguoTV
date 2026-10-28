@@ -108,8 +108,24 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val dp = activity.resources.displayMetrics.density
         val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding((24*dp).toInt(), (12*dp).toInt(), (24*dp).toInt(), 0) }
         body.addView(TvDialog.title(activity,"版本与更新 · ${BuildConfig.VERSION_NAME}"))
-        statusView = TextView(activity).apply { text = status; textSize = 17f; setTextColor(TvStyle.text) }
-        body.addView(statusView)
+        statusView = TextView(activity).apply {
+            text = status
+            textSize = 17f
+            setTextColor(TvStyle.text)
+            setTextIsSelectable(false)
+            setLineSpacing(0f, 1.12f)
+        }
+        // 更新说明可能包含较长的提交记录。单独放入有上限的滚动区域，
+        // 不能让说明把“稍后/下载新版/立即安装”按钮挤到屏幕外。
+        val statusScroll = ScrollView(activity).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            clipToPadding = false
+            addView(statusView, ScrollView.LayoutParams(-1, -2))
+        }
+        val maxNotesHeight = (activity.resources.displayMetrics.heightPixels * 0.42f).toInt()
+        body.addView(statusScroll, LinearLayout.LayoutParams(-1, maxNotesHeight.coerceAtLeast((180 * dp).toInt())))
         if (!updatePending) {
             body.addView(CheckBox(activity).apply {
                 text = "自动检查并下载更新"; isChecked = auto; setTextColor(TvStyle.text)
