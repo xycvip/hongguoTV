@@ -2358,16 +2358,17 @@ class MainActivity: Activity() {
         val content=column()
         content.addView(TvDialog.title(this,"弹幕屏蔽词"))
         val list=ListView(this).apply {
-            adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true)
             choiceMode=ListView.CHOICE_MODE_MULTIPLE
-            words.forEachIndexed { index,word -> setItemChecked(index,checked[index]) }
-            setOnItemClickListener { _,_,index,_ -> checked[index]=!checked[index] }
+            adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true)
+            setOnItemClickListener { _,_,index,_ -> checked[index]=isItemChecked(index) }
         }
         content.addView(list,lp(-1,0).apply { weight=1f })
         val buttons=row().apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
         val clear=TvDialog.capsuleButton(this,"清空") {
             extras.blockedWords=emptySet(); applyBlockedWords(); anchor.text="弹幕屏蔽词  ·  0 个"
-            list.clearChoices(); list.requestLayout()
+            checked.fill(false)
+            list.clearChoices()
+            list.post { list.invalidateViews(); list.requestLayout() }
         }
         val save=TvDialog.capsuleButton(this,"保存") {
             extras.blockedWords=words.filterIndexed { index,_ -> list.isItemChecked(index) }.toSet()
@@ -2380,7 +2381,12 @@ class MainActivity: Activity() {
         val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
         TvDialog.styleWindow(this,dialog)
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
-        dialog.show(); list.requestFocus()
+        dialog.show()
+        list.post {
+            words.forEachIndexed { index,word -> list.setItemChecked(index,word in extras.blockedWords) }
+            list.invalidateViews()
+            list.requestFocus()
+        }
     }
     private fun applyBlockedWords() = danmakuView?.setBlockedFilter { text -> extras.blocks(text) }
 
@@ -2639,9 +2645,8 @@ class MainActivity: Activity() {
         val content=column()
         content.addView(TvDialog.title(this,"全局默认倍速"))
         val list=ListView(this).apply {
-            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label))
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            setItemChecked(selected,true)
+            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label))
             setOnItemClickListener { _,_,index,_ ->
                 library.playbackSpeed=speeds[index]
                 if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
@@ -2662,7 +2667,13 @@ class MainActivity: Activity() {
             speedDialog=null
             if(anchor.isAttachedToWindow) { anchor.requestFocus(); if(inPlayer) showHud() }
         }
-        dialog.show(); list.setSelection(selected); list.requestFocus()
+        dialog.show()
+        list.post {
+            list.setItemChecked(selected.coerceAtLeast(0),true)
+            list.setSelection(selected.coerceAtLeast(0))
+            list.invalidateViews()
+            list.requestFocus()
+        }
     }
     private fun showQualityPicker(anchor: TextView,inPlayer: Boolean) {
         val options=PlaybackQuality.options
