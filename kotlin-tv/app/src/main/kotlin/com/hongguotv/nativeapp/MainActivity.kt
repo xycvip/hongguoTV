@@ -60,7 +60,6 @@ class MainActivity: Activity() {
     private var randomDialog: AlertDialog?=null
     private var exitDialog: AlertDialog?=null
     private var killOnDestroy=false
-    private var third: ThirdSourceScreen?=null
     private val danmakuRepo=DanmakuRepository(repository.http)
     private val networkCleanup=Executors.newSingleThreadExecutor()
     private val prefetchWorker=Executors.newSingleThreadExecutor()
@@ -111,7 +110,6 @@ class MainActivity: Activity() {
     private lateinit var library: Library
     private lateinit var tvTools: TvTools
     private lateinit var extras: PlaybackExtras
-    private lateinit var thirdStore: ThirdStore
     private lateinit var updater: AppUpdater
     private lateinit var mediaSession: TvMediaSession
     private val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
@@ -294,14 +292,6 @@ class MainActivity: Activity() {
         super.onCreate(state)
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
-        // 三方片源配置与观看历史随主备份一起保存/恢复：本地已有的保留，不覆盖
-        thirdStore=ThirdStore(this)
-        library.thirdSourcesProvider={ thirdStore.backupSources() }
-        library.thirdSourcesRestore={ thirdStore.mergeRestored(it) }
-        library.thirdHistoryProvider={ thirdStore.backupHistory() }
-        library.thirdHistoryRestore={ thirdStore.mergeHistory(it) }
-        library.thirdFavoritesProvider={ thirdStore.backupFavorites() }
-        library.thirdFavoritesRestore={ thirdStore.mergeFavorites(it) }
         InstallStatsPing.startOnce(applicationContext)
         backdropView=ImageView(this).apply { scaleType=ImageView.ScaleType.FIT_XY; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
         loadBackdrop()
@@ -316,13 +306,33 @@ class MainActivity: Activity() {
     private fun showLibraryError(problem: Throwable) {
         val body=base(); error(body,problem) { message(base(),"正在读取本机记录…"); loadLibrary() }
     }
+    private var launchRandomPlaybackStarted=false
+    private fun launchRandomPlayback() {
+        if(launchRandomPlaybackStarted || isDestroyed || !library.isLoaded || !foreground) return
+        launchRandomPlaybackStarted=true
+        initialCatalogPending=false
+        fun playRandomOrFallback() {
+            if(isDestroyed) return
+            if(!foreground) { launchRandomPlaybackStarted=false; initialCatalogPending=true; return }
+            val picked=randomRecommender.pick(1).firstOrNull()
+                ?: library.cachedHome(library.contentType)?.items?.shuffled()?.firstOrNull()
+            if(picked!=null) openDetail(picked,resume=true,autoplay=true)
+            else {
+                showCatalog(load=true)
+                Toast.makeText(this,"暂时无法获取随机推荐，请检查网络后重试",Toast.LENGTH_LONG).show()
+            }
+        }
+        val cached=randomRecommender.pick(1).firstOrNull()
+        if(cached!=null) openDetail(cached,resume=true,autoplay=true)
+        else replenishRandomPool { playRandomOrFallback() }
+    }
     private fun loadLibrary() {
         libraryLoadError=null
         library.loadAsync(onFailure={ problem ->
             if(!isDestroyed) { libraryLoadError=problem; if(foreground) showLibraryError(problem) }
         }) {
             if(!isDestroyed && foreground) handleLocalBackupOnStartup {
-                if(!isDestroyed && foreground) { showCatalog(load=true); favoriteMonitor.check() }
+                if(!isDestroyed && foreground) { launchRandomPlayback(); favoriteMonitor.check() }
             }
         }
     }
@@ -575,8 +585,6 @@ class MainActivity: Activity() {
     }
     private fun showCatalog(load: Boolean=false,focusNav: Boolean=false,focusType: Boolean=false,focusFilter: Boolean=false) {
         initialCatalogPending=false; restoreStoppedPage=false; pendingDetail=null
-        // 片源入口隐藏时导航栏没有第 7 项，避免 nav[6] 越界
-        if(tab==6 && library.sourceHidden) tab=0
         // Never cache a new page number with the previous page's results while a request is pending.
         if(load) {
             val cached=if(tab==0 && page==1 && genre==null) library.cachedHome(library.contentType) else null
@@ -590,9 +598,7 @@ class MainActivity: Activity() {
         brand.addView(text("红果",22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
         brand.addView(text("v${BuildConfig.VERSION_NAME.substringBefore('+')}",12f,muted).apply { setPadding(dp(5),0,0,dp(9)) },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
         top.addView(brand,lp(dp(172),dp(44)))
-        listOf("首页","搜索","排行榜","收藏","最近观看","设置","片源").forEachIndexed { index,label ->
-            // 片源入口默认隐藏，可在「设置 → 片源隐藏」中开启
-            if(index==6 && library.sourceHidden) return@forEachIndexed
+        listOf("首页","搜索","排行榜","收藏","最近观看","设置").forEachIndexed { index,label ->
             val item=addButton(top,label,index==tab) { switchTab(index) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(index==tab) accent else muted)
@@ -603,14 +609,6 @@ class MainActivity: Activity() {
         }
         container.addView(top)
         container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
-        if(tab==6) {
-            val instance=third ?: ThirdSourceScreen(this, { showCatalog() }, { library.requestBackup() }).also { third=it }
-            instance.show(container)
-            nav[tab].nextFocusDownId=instance.topFocusId
-            val target=if(instance.topFocusId != View.NO_ID) container.findViewById<View>(instance.topFocusId) else null
-            if(target != null) target.requestFocus() else nav[tab].requestFocus()
-            return
-        }
         if(tab==5) {
             // 设置页：内容可滚动，页脚固定在屏幕底部居中，始终可见；去掉容器下内边距让页脚真正贴底
             container.setPadding(container.paddingLeft,container.paddingTop,container.paddingRight,0)
@@ -1417,14 +1415,6 @@ class MainActivity: Activity() {
         }
         lateinit var statsButton: TextView
         statsButton=setting(device,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
-        lateinit var sourceHiddenButton: TextView
-        sourceHiddenButton=setting(device,"片源隐藏  ·  ${if(library.sourceHidden) "开启" else "关闭"}") {
-            // 开关即导航栏「片源」入口的显隐，重建页面后把焦点放回本项
-            library.sourceHidden=!library.sourceHidden
-            if(library.sourceHidden && tab==6) tab=0
-            settingsFocusKey="片源隐藏"
-            showCatalog()
-        }
         fun cacheBytes()=listOfNotNull(cacheDir,externalCacheDir).sumOf { dir -> dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }
         fun cacheLabel(bytes: Long?)="清理缓存  ·  ${when {
             bytes==null -> "计算中…"
@@ -1468,7 +1458,7 @@ class MainActivity: Activity() {
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings,autoSkipButton)
-            val right=listOf(themeButton,clockButton,backdropButton,localBackupButton,backup,hidden,statsButton,sourceHiddenButton,clearCache,updates,checkButton,license)
+            val right=listOf(themeButton,clockButton,backdropButton,localBackupButton,backup,hidden,statsButton,clearCache,updates,checkButton,license)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
@@ -2722,13 +2712,12 @@ class MainActivity: Activity() {
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
             "detail" -> showCatalog()
-            else -> if(tab==6 && third?.onBack()==true) {} else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
+            else -> if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
     }
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBack()
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if(tab==6 && third?.onKey(event)==true) return true
         if(screen=="player") {
             val key=event.keyCode
             if(key==KeyEvent.KEYCODE_BACK) { if(event.action==KeyEvent.ACTION_UP) goBack(); return true }
@@ -2780,7 +2769,7 @@ class MainActivity: Activity() {
         super.onResume(); foreground=true; main.removeCallbacks(tick); main.post(tick)
         updater.resume()
         if(library.isLoaded) {
-            if(initialCatalogPending) showCatalog(load=true)
+            if(initialCatalogPending) launchRandomPlayback()
             else if(restoreStoppedPage) {
                 restoreStoppedPage=false
                 when(screen) {
@@ -2799,11 +2788,10 @@ class MainActivity: Activity() {
         updater.pause()
         foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession.deactivate()
         sleepTimer.cancel(); favoriteMonitor.stop(); detailAutoplay=false; requestedAutoplay=false; pausedForLifecycle=true
-        player?.pause(); third?.pause(); saveProgress(); library.flush(); super.onPause()
+        player?.pause(); saveProgress(); library.flush(); super.onPause()
     }
     override fun onStop() {
         restoreStoppedPage=true; generation++; cancelWork(); tvTools.close()
-        third?.stop()
         if(screen=="player") { startPosition=currentPosition(); saveProgress(); releasePlayer() }
         artwork.cancelPage(clearMemory=true); library.flush(); super.onStop()
     }
@@ -2816,7 +2804,6 @@ class MainActivity: Activity() {
         generation++; cancelWork()
         if(networkRegistered) connectivity.unregisterNetworkCallback(networkCallback)
         favoriteMonitor.destroy(); tvTools.destroy(); updater.destroy(); saveProgress(); releasePlayer(); library.close()
-        third?.release()
         artwork.close(); releaseCatalogViews(); mediaSession.release(); main.removeCallbacksAndMessages(null)
         io.shutdownNow(); prefetchWorker.shutdownNow(); networkCleanup.shutdown()
         Thread({ repository.http.dispatcher.cancelAll(); repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown() },"hongguotv-network-cleanup").start()
