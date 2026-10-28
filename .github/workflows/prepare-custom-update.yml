@@ -1,0 +1,114 @@
+name: Prepare tested custom update
+
+on:
+  workflow_run:
+    workflows: ["Sync upstream main"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-custom-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout custom branch
+        uses: actions/checkout@v4
+        with:
+          ref: custom
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch latest main and custom
+        run: |
+          git fetch origin main custom
+          git checkout -B automation/upstream-update origin/custom
+
+      - name: Merge main into isolated candidate branch
+        run: |
+          set -euo pipefail
+          git merge --no-edit origin/main
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Run tests, lint, and debug APK build
+        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintDebug :app:assembleDebug --console=plain
+
+      - name: Summarize incoming upstream commits
+        run: |
+          {
+            echo "## Upstream changes proposed for custom"
+            echo
+            echo "This is a candidate only. The custom branch has not been changed."
+            echo
+            echo "### Main commits not present in custom"
+            git log --oneline origin/custom..origin/main || true
+            echo
+            echo "### Files changed by the merge"
+            git diff --name-status origin/custom...HEAD || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-update-verification
+          if-no-files-found: ignore
+          path: |
+            kotlin-tv/core/build/reports/tests/test/
+            kotlin-tv/app/build/reports/lint-results-debug.*
+            kotlin-tv/app/build/outputs/apk/debug/*.apk
+
+      - name: Publish tested candidate branch
+        run: git push --force-with-lease origin HEAD:automation/upstream-update
+
+      - name: Open or update review pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          title="Review upstream updates for custom"
+          body="$(cat <<'EOF'
+          ## Automated update candidate
+
+          This pull request proposes merging `main` into `custom`.
+
+          - The merge was prepared on an isolated branch.
+          - Kotlin unit tests, Android lint, and a debug APK build must pass before this PR is updated.
+          - The `custom` branch is **not** changed automatically.
+          - Please review changes to startup/autoplay, playback, versioning, signing, and release workflows carefully.
+          - A successful build does not guarantee playback works on every real device; test the APK before merging.
+
+          If a merge conflict occurs or verification fails, no new candidate PR is published by that run. Resolve the issue manually before trying again.
+          EOF
+          )"
+          if gh pr view automation/upstream-update --json number >/dev/null 2>&1; then
+            gh pr edit automation/upstream-update --title "$title" --body "$body"
+          else
+            gh pr create --base custom --head automation/upstream-update --title "$title" --body "$body"
+          fi
