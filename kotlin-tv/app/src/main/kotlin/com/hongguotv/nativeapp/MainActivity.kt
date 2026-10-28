@@ -410,6 +410,16 @@ class MainActivity: Activity() {
             }
         }
     }
+    /** 设置页每次打开时检查存储权限；缺少时直接请求系统授权，不强制开启本地自动备份。 */
+    private fun checkStoragePermissionOnSettingsOpen() {
+        val storage=library.localBackup()
+        if(!storage.supported || !storage.needsPermission) return
+        if(!storage.request(this)) {
+            Toast.makeText(this,"无法打开系统存储授权页面，请在系统设置中为红果TV授予存储权限",Toast.LENGTH_LONG).show()
+        } else if(Build.VERSION.SDK_INT>=30) {
+            Toast.makeText(this,"请在系统页面允许红果TV访问所有文件，然后返回应用",Toast.LENGTH_LONG).show()
+        }
+    }
     private fun localBackupLabel(): String {
         if(!library.localBackupEnabled) return "本地备份与恢复  ·  已关闭"
         val storage=library.localBackup()
@@ -653,7 +663,10 @@ class MainActivity: Activity() {
             val footerHost=column().apply { gravity=Gravity.CENTER_HORIZONTAL; setPadding(0,dp(12),0,0) }
             page.addView(footerHost,lp(-1,-2))
             container.addView(page,lp(-1,0).apply { weight=1f })
-            settings(body,footerHost); if(focusNav) nav[tab].requestFocus(); return
+            settings(body,footerHost)
+            checkStoragePermissionOnSettingsOpen()
+            if(focusNav) nav[tab].requestFocus()
+            return
         }
         if(tab<=1) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
