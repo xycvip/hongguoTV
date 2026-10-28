@@ -11,7 +11,7 @@ import java.security.MessageDigest
 
 class AppUpdatesTest {
     private val bytes = "signed-apk-test-bytes".toByteArray()
-    private fun json() = JSONObject().put("schema", 1).put("packageName", "com.hongguotv.nativeapp")
+    private fun json() = JSONObject().put("schema", 1).put("packageName", "com.x.hongguotv")
         .put("versionCode", 10001).put("versionName", "0.9.0+1").put("minSdk", 26).put("tag", "kotlin-v0.9.0-build.1")
         .put("apk", JSONObject().put("name", "hongguotv-kotlin-0.9.0-build.1-android8.apk").put("size", bytes.size)
             .put("sha256", MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }))
