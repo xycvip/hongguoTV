@@ -46,10 +46,13 @@ class LocalBackupStorage(private val context: Context) {
     val restoreAllowed: Boolean
         get() = when {
             !supported -> false
-            // 读取本应用写入的 MediaStore 条目无需权限；跨安装读取失败时由调用方兜底
-            Build.VERSION.SDK_INT >= 29 -> true
+            // Android 11+：检查“所有文件访问”授权，供跨安装恢复公共目录中的备份。
+            Build.VERSION.SDK_INT >= 30 -> Environment.isExternalStorageManager()
+            // Android 10：读取公共目录备份需要读取存储权限；写入 MediaStore 不需要权限。
+            Build.VERSION.SDK_INT == 29 -> context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
             else -> backupAllowed
         }
+    // 设置页打开时也检查权限，不只在用户点击“本地备份与恢复”时检查。
     val needsPermission: Boolean get() = !backupAllowed || !restoreAllowed
     /** Opens the system permission UI. Returns false when the device exposes no such screen. */
     fun request(activity: Activity): Boolean {
@@ -64,7 +67,12 @@ class LocalBackupStorage(private val context: Context) {
                 activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), REQUEST_READ); true
             }
             else -> {
-                activity.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_WRITE); true
+                // Android 8/9 使用普通运行时存储授权；同时请求读写权限，兼容电视厂商定制的权限弹窗。
+                activity.requestPermissions(
+                    arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                    REQUEST_WRITE
+                )
+                true
             }
         }
     }
