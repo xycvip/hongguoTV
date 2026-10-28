@@ -2,7 +2,7 @@
 
 自家电视使用的非官方红果短剧客户端，与红果官方无关联。**Kotlin 原生独立 APK**：安装后联网即可浏览播放，无需 Node / Docker / 服务器。最低 Android 8.0（API 26），电视遥控器操作，ARM32 / ARM64 / x86 / x86_64 通用。
 
-**[下载最新版 APK](https://github.com/jycao2/hongguoTV/releases/latest)** · [版本记录与构建说明](kotlin-tv/README.md) · [自动更新机制](kotlin-tv/AUTO_UPDATES.md)
+**[下载最新版 APK（下载地址保持不变）](https://github.com/jycao2/hongguoTV/releases/latest)** · [版本记录与构建说明](kotlin-tv/README.md) · [自动更新机制](kotlin-tv/AUTO_UPDATES.md)
 
 ## 主要功能
 
@@ -22,15 +22,3 @@
 - `scripts/`：正式包构建与发布脚本
 - `deploy/`：匿名装机统计的云函数部署
 - `docs/`：接口研究、部署与历史交付资料
-
-## 隐私
-
-应用每次启动向自建腾讯云函数发送一次匿名 GET（随机安装 ID + 版本号），用于估算真实装机量；不收集 IP、机型、观看内容或任何账号信息，失败静默。除此之外无任何第三方统计 / 广告 / 崩溃上报 SDK。详见 [隐私与匿名统计](kotlin-tv/README.md#隐私与匿名统计)。
-
-## 免责声明
-
-本项目仅做技术交流与学习用途，旨在研究 Android 原生开发、媒体播放、网络请求签名等技术实现，不提供、不存储、不传播任何视频内容。三方片源接口需由用户自行添加，应用不内置任何接口地址，其内容的合法性由对应源站自行负责。
-
-## 许可证
-
-本项目代码按 [GPL-3.0](LICENSE) 提供，第三方部分保留各自许可（见 `kotlin-tv/NOTICE.md`）。
