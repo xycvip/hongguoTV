@@ -7,7 +7,7 @@
 - 收藏和历史保存在本机，可通过「本地备份与恢复」在重装后自动恢复。
 - APK 不含 JNI 库，可由 Android 在 ARM32、ARM64、x86、x86_64 上运行；视频解码能力依赖设备。
 - 源码分支：`main`，推送即触发发布构建。
-- [下载正式签名 APK](https://github.com/jycao2/hongguoTV/releases/latest)
+- [下载正式签名 APK](https://github.com/xycvip/hongguoTV/releases/latest)
 
 ## 0.23.0 修复
 
