@@ -266,6 +266,19 @@ class MainActivity: Activity() {
                     }
                 }
                 val now=android.os.SystemClock.elapsedRealtime()
+                val currentEpisodeId=data?.episodes?.getOrNull(episodeIndex)
+                if(startupPreviewEpisodeId!=null && currentEpisodeId==startupPreviewEpisodeId) {
+                    if(p?.isPlaying==true && playbackReady && !playError) {
+                        val previous=startupPreviewLastTickAt
+                        if(previous>0L) startupPreviewPlayedMs+=(now-previous).coerceIn(0L,1500L)
+                        startupPreviewLastTickAt=now
+                        if(startupPreviewPlayedMs>=30_000L && previous>0L && startupPreviewPlayedMs-(now-previous).coerceIn(0L,1500L)<30_000L) {
+                            saveProgress(); lastSaved=now
+                        }
+                    } else startupPreviewLastTickAt=0L
+                } else {
+                    startupPreviewEpisodeId=null; startupPreviewPlayedMs=0L; startupPreviewLastTickAt=0L
+                }
                 if(player?.isPlaying==true && now-lastSaved>5000) { saveProgress(); lastSaved=now }
             }
             main.postDelayed(this,1000)
@@ -312,6 +325,10 @@ class MainActivity: Activity() {
     private var startupHomeRefreshStarted=false
     /** 启动全屏推荐期间只保留过场；实际视频首帧出现后按正常播放规则记录进度。 */
     private var bootAutoPlaybackPending=false
+    /** 开机自动推荐只在实际播放满 30 秒后才写入历史；手动播放不受此门槛影响。 */
+    private var startupPreviewEpisodeId: String?=null
+    private var startupPreviewPlayedMs=0L
+    private var startupPreviewLastTickAt=0L
     private fun refreshHomeDataInBackground() {
         if(startupHomeRefreshStarted || isDestroyed || !library.isLoaded) return
         startupHomeRefreshStarted=true
@@ -1981,6 +1998,7 @@ class MainActivity: Activity() {
         val reuse=screen=="player" && player!=null && playerView!=null && !recovering && !playError
         library.setWatched(data.series.id,false)
         val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
+        val isStartupPreview=bootAutoPlaybackPending && autoplay && !recovering
         val prefetched=if(position==0L && !recovering) preparedNext.take("${data.episodes[selectedIndex]}:${library.maxQuality}") else null
         val claimedHttp=if(prefetched!=null) prefetchHttp.also { prefetchHttp=null } else null
         saveProgress(); library.flush(); invalidatePage(); favoriteMonitor.stop(); releaseCatalogViews(); stopDanmaku()
@@ -2001,6 +2019,16 @@ class MainActivity: Activity() {
         outroSkipSeconds=skipMark?.outroSeconds ?: 0; outroTriggered=false; ffActive=false
         if(autoplay) sleepStopped=false
         screen="player"; episodeIndex=selectedIndex; group=episodeIndex/20
+        if(isStartupPreview) {
+            startupPreviewEpisodeId=data.episodes[selectedIndex]
+            startupPreviewPlayedMs=0L
+            startupPreviewLastTickAt=0L
+        } else if(!recovering) {
+            // 用户手动选集/正常进入播放时立即恢复原有历史记录逻辑。
+            startupPreviewEpisodeId=null
+            startupPreviewPlayedMs=0L
+            startupPreviewLastTickAt=0L
+        }
         panel=false; playError=false; playbackReady=false; quality=""; pausedForLifecycle=!autoplay
         player?.playWhenReady=requestedAutoplay
         prefetchAttempts=0; prefetchAttemptAt=0
@@ -2070,9 +2098,8 @@ class MainActivity: Activity() {
                     if(active() && firstFrame) {
                         firstFrame=false
                         hideBootSplash()
-                        val wasStartupPreview=bootAutoPlaybackPending
                         bootAutoPlaybackPending=false
-                        if(wasStartupPreview) main.postDelayed({ if(active() && p.currentPosition>=1000L) saveProgress() },1000L)
+                        // 不在首帧后立即保存：开机推荐必须累计真实播放 30 秒，才允许写入观看历史。
                         android.util.Log.i("HongguoTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
                     }
                 }
@@ -2675,9 +2702,15 @@ class MainActivity: Activity() {
     private fun saveProgress(completed: Boolean=false) {
         val p=player ?: return; val data=detail ?: return; if(!playbackReady || episodeIndex !in data.episodes.indices) return
         val episodeCompleted=completed || p.playbackState==Player.STATE_ENDED
-        // 启动推荐过场尚未切换到真实视频首帧时不记录；首帧出现后与其他播放一致。
-        if(bootAutoPlaybackPending && bootSplash!=null) return
+        // 开机自动推荐视频必须实际播放满 30 秒才写入历史；暂停/缓冲不计时。
+        // 只限制启动时自动播放的这一集，手动正常播放仍按原逻辑记录。
+        if(startupPreviewEpisodeId==data.episodes[episodeIndex] && startupPreviewPlayedMs<30_000L) return
         library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),p.duration.coerceAtLeast(0),episodeCompleted,System.currentTimeMillis()))
+        if(startupPreviewEpisodeId==data.episodes[episodeIndex]) {
+            startupPreviewEpisodeId=null
+            startupPreviewPlayedMs=0L
+            startupPreviewLastTickAt=0L
+        }
     }
     /** Starts the official-comment overlay for the current episode; safe to call repeatedly. */
     private fun startDanmaku() {
