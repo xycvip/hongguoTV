@@ -225,6 +225,7 @@ class MainActivity: Activity() {
     private var historyManage: View?=null
     /** 设置页重建后要恢复焦点的设置项标签前缀。 */
     private var settingsFocusKey: String?=null
+    private var localBackupSettingButton: TextView?=null
     private var detail: Detail?=null
     private var episodeIndex=0
     private var group=0
@@ -488,6 +489,7 @@ class MainActivity: Activity() {
         if(requestCode==LocalBackupStorage.REQUEST_MANAGE) {
             val next=localPermissionContinuation; localPermissionContinuation=null
             if(next!=null && !isDestroyed) next()
+            localBackupSettingButton?.text=localBackupLabel()
         }
     }
     override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,grantResults: IntArray) {
@@ -495,6 +497,7 @@ class MainActivity: Activity() {
         if(requestCode==LocalBackupStorage.REQUEST_READ || requestCode==LocalBackupStorage.REQUEST_WRITE) {
             val next=localPermissionContinuation; localPermissionContinuation=null
             if(next!=null && !isDestroyed) next()
+            localBackupSettingButton?.text=localBackupLabel()
         }
     }
     private fun base(title: String?=null): LinearLayout {
@@ -1437,6 +1440,7 @@ class MainActivity: Activity() {
         }
         lateinit var localBackupButton: TextView
         localBackupButton=setting(device,localBackupLabel()) { showLocalBackupDialog(localBackupButton) }
+        localBackupSettingButton=localBackupButton
         lateinit var backup: TextView
         backup=setting(device,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
