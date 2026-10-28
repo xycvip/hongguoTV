@@ -307,9 +307,12 @@ class MainActivity: Activity() {
         val body=base(); error(body,problem) { message(base(),"正在读取本机记录…"); loadLibrary() }
     }
     private var launchRandomPlaybackStarted=false
+    /** 开机自动播放的首集在完整播放结束前不写入观看记录。 */
+    private var bootAutoPlaybackPending=false
     private fun launchRandomPlayback() {
         if(launchRandomPlaybackStarted || isDestroyed || !library.isLoaded || !foreground) return
         launchRandomPlaybackStarted=true
+        bootAutoPlaybackPending=true
         initialCatalogPending=false
         fun playRandomOrFallback() {
             if(isDestroyed) return
@@ -2660,7 +2663,11 @@ class MainActivity: Activity() {
     }
     private fun saveProgress(completed: Boolean=false) {
         val p=player ?: return; val data=detail ?: return; if(!playbackReady || episodeIndex !in data.episodes.indices) return
-        library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),p.duration.coerceAtLeast(0),completed || p.playbackState==Player.STATE_ENDED,System.currentTimeMillis()))
+        val episodeCompleted=completed || p.playbackState==Player.STATE_ENDED
+        // 开机随机自动播放的首集，未完整播完前不产生观看历史；手动播放逻辑不受影响。
+        if(bootAutoPlaybackPending && !episodeCompleted) return
+        library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),p.duration.coerceAtLeast(0),episodeCompleted,System.currentTimeMillis()))
+        if(bootAutoPlaybackPending && episodeCompleted) bootAutoPlaybackPending=false
     }
     /** Starts the official-comment overlay for the current episode; safe to call repeatedly. */
     private fun startDanmaku() {
