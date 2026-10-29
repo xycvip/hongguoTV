@@ -71,6 +71,7 @@ jobs:
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
           VERSION_CODE="$((10#$DATE_CODE * 100 + DAILY_COUNT + 1))"
           echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "Using date-based monotonic versionCode: $VERSION_CODE"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Tests and release lint
