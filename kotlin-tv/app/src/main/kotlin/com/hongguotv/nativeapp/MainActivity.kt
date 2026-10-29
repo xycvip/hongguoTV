@@ -1117,8 +1117,9 @@ class MainActivity: Activity() {
                 }
                 result
             }, { result ->
-                if(requestTab==0 && requestPage==1 && requestGenre==null) library.cacheHome(requestType,result.items,result.hasMore)
-                {
+                if(requestTab==0 && requestPage==1 && requestGenre==null) {
+                    library.cacheHome(requestType,result.items,result.hasMore)
+                }
                     catalog=result.items; hasMore=result.hasMore; ranking=result.ranking
                     // 手机输入的精确剧名搜索零结果时自动恢复联想，帮助用户纠正剧名
                     if(requestTab==1 && result.items.isEmpty()) { phoneSearched=false; scheduleSuggest() }
@@ -1135,7 +1136,6 @@ class MainActivity: Activity() {
                         if(result.items.isEmpty()) searchInput?.requestFocus()
                         else catalogRecycler?.post { (resultFirstCard ?: searchInput)?.requestFocus() }
                     }
-                }
             }, { problem ->
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
                     homeRefreshControl?.text=if(catalog.isNotEmpty()) "当前显示上次内容 · 联网后按确认刷新" else "热门暂时无法加载 · 按确认重试"
