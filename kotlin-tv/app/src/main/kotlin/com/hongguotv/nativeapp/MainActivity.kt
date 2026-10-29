@@ -176,6 +176,9 @@ class MainActivity: Activity() {
     private var tab=0
     private var page=1
     private var query=""
+    /** 搜索页默认聚合漫剧与短剧；用户点单一类型后切换为单类搜索。 */
+    private var aggregateSearch=true
+    private var aggregateButton: View?=null
     private var catalog=emptyList<Series>()
     private var hasMore=false
     private var catalogFocus=""
@@ -720,7 +723,7 @@ class MainActivity: Activity() {
         homeScreen?.let { homePosition=it.capturePosition() }
         (catalogRecycler?.layoutManager as? GridLayoutManager)?.let { scrollPositions[catalogPageKey]=it.findFirstVisibleItemPosition() }
         homeScreen=null; selectionPreview=null; catalogRecycler=null; catalogAdapter=null; loadingMore=false
-        nav.clear(); typeButtons.clear(); searchInput=null; searchButton=null; searchActions.clear()
+        nav.clear(); typeButtons.clear(); aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
         azFirst=null; azLastRow.clear(); suggestRow=null; suggestFirst=null; suggestTicket++; main.removeCallbacks(pendingSuggest)
         suggestVertical=false; searchBody=null; keyboardKeys=emptyMap(); keyboardRows=emptyList(); historyFirst=null; historyItems=emptyList(); suggestScrollRef=null; resultFirstCard=null
         historyManage=null; rankSwitch=null; rankRefresh=null; rankSubtitle=null; genreButton=null; genreClear=null; collectionBack=null; favoriteBadges.clear()
@@ -758,7 +761,7 @@ class MainActivity: Activity() {
         tabState[tab]=CatalogState(page,catalog,hasMore,ranking,rankBoard,genre,aiCatalog,aiGenre); tabFocus[tab]=catalogFocus
         // 从其他模块切回搜索页时重置为全新搜索状态，不保留上次的搜索词与结果
         if(next==1) {
-            query=""; phoneSearched=false; lastSuggestWords=emptyList<String>(); lastSuggestKey=""; suggestFocusIndex=-1; keyboardLastLabel=null
+            query=""; aggregateSearch=true; phoneSearched=false; lastSuggestWords=emptyList<String>(); lastSuggestKey=""; suggestFocusIndex=-1; keyboardLastLabel=null
             tabState.remove(1); tabFocus.remove(1)
         }
         tab=next; val saved=tabState[next]; page=saved?.page ?: 1; catalog=saved?.items ?: emptyList(); hasMore=saved?.hasMore ?: false; ranking=saved?.ranking; catalogFocus=tabFocus[next].orEmpty()
@@ -769,7 +772,8 @@ class MainActivity: Activity() {
         if(next==1) searchInput?.requestFocus()
     }
     private fun switchContentType(type: ContentType) {
-        if(library.contentType==type) return
+        if(library.contentType==type && (tab!=1 || !aggregateSearch)) return
+        if(tab==1) aggregateSearch=false
         leaveCollection()
         (searchInput as? EditText)?.let { query=it.text.toString().trim() }
         library.contentType=type
@@ -779,6 +783,16 @@ class MainActivity: Activity() {
         releaseCatalogViews()
         page=1; catalog=emptyList(); hasMore=false; ranking=null; catalogFocus=""; homePosition=null; genre=null
         showCatalog(load=(tab==0 || query.isNotBlank()),focusType=true)
+    }
+    private fun switchAggregateSearch() {
+        if(tab!=1 || aggregateSearch) return
+        leaveCollection()
+        aggregateSearch=true
+        lastSuggestWords=emptyList<String>(); lastSuggestKey=""; phoneSearched=false
+        for(index in 0..1) { tabState.remove(index); tabFocus.remove(index) }
+        releaseCatalogViews()
+        page=1; catalog=emptyList(); hasMore=false; ranking=null; catalogFocus=""; homePosition=null; genre=null
+        showCatalog(load=query.isNotBlank(),focusType=true)
     }
     private fun leaveCollection() {
         if(collection==null) return
@@ -841,9 +855,14 @@ class MainActivity: Activity() {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
             if(!inlineHomeFilters()) types.addView(text("片库",12f,muted),lp(dp(42),-2))
             // AI 剧只在排行榜内提供分类入口，不占首页/搜索的内容类型页签
+            if(tab==1) {
+                aggregateButton=addButton(types,"全部",aggregateSearch) { switchAggregateSearch() }
+                    .apply { nextFocusUpId=nav[tab].id }
+            }
             listOf(ContentType.COMIC,ContentType.SHORT).forEach { type ->
-                typeButtons[type]=addButton(types,type.label,library.contentType==type) { switchContentType(type) }
-                    .apply { isSelected=library.contentType==type; nextFocusUpId=nav[tab].id }
+                val selected=(tab!=1 || !aggregateSearch) && library.contentType==type
+                typeButtons[type]=addButton(types,type.label,selected) { switchContentType(type) }
+                    .apply { isSelected=selected; nextFocusUpId=nav[tab].id }
             }
             if(tab==0) {
                 genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
@@ -955,7 +974,7 @@ class MainActivity: Activity() {
                     head.addView(clearHistory,lp(-2,-2))
                     block.addView(head)
                     val items=history.take(4).map { entry ->
-                        button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type) }.apply {
+                        button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type,aggregate=false) }.apply {
                             textSize=13f; minHeight=dp(32); setPadding(dp(10),dp(4),dp(10),dp(4)); gravity=Gravity.CENTER_VERTICAL
                             maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
                         }
@@ -1080,13 +1099,14 @@ class MainActivity: Activity() {
             if(tab==0) catalogGrid(body,focusNav,focusType,loading=true)
             else { message(body,"正在加载…"); if(focusType) typeButtons[library.contentType]?.requestFocus() else nav[tab].requestFocus() }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
+            val requestAggregate=requestTab==1 && aggregateSearch
             val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
             val requestAi=if(requestTab==2) aiCatalog else false; val requestAiGenre=if(requestAi) aiGenre else null
             work({
                 val result=when(requestTab) {
                     0 -> repository.home(requestPage,requestType,requestGenre)
                     2 -> if(requestAi) repository.home(requestPage,ContentType.AI,requestAiGenre) else repository.ranking(requestBoard,requestPage)
-                    else -> repository.search(requestQuery,requestPage,requestType)
+                    else -> if(requestAggregate) repository.searchCombined(requestQuery,requestPage) else repository.search(requestQuery,requestPage,requestType)
                 }
                 result
             }, { result ->
@@ -1167,7 +1187,7 @@ class MainActivity: Activity() {
         val displayed=mutableListOf<Series>()
         displayed+=if(localCatalog()) catalog else if(tab==0) catalog.filterNot { it.id in library.hidden() } else catalog
         if(displayed.isEmpty()) {
-            message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
+            message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else if(aggregateSearch) "没有找到相关漫剧或短剧，换个关键词试试" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
             wireSearchPanel(null)
             if(focusType) typeButtons[library.contentType]?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
             return
@@ -1690,10 +1710,11 @@ class MainActivity: Activity() {
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
         if(target!=null) target.requestFocus() else nav[tab].requestFocus()
     }
-    private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false) {
+    private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=aggregateSearch) {
         val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
         (searchInput as? EditText)?.let { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
-        if(library.contentType!=type) { library.contentType=type; for(index in 0..1) { tabState.remove(index); tabFocus.remove(index) } }
+        aggregateSearch=aggregate
+        if(!aggregate && library.contentType!=type) { library.contentType=type; for(index in 0..1) { tabState.remove(index); tabFocus.remove(index) } }
         // 手机输入的精确剧名默认不再联想，纯首拼或编辑输入后恢复
         phoneSearched=fromPhone
         library.rememberSearch(clean,type); query=clean; tab=1; page=1; catalogFocus=""; searchFocusPending=true; showCatalog(true)
@@ -1796,7 +1817,7 @@ class MainActivity: Activity() {
     private fun showSearchHistory(anchor: View) {
         val history=library.searches()
         if(history.isEmpty()) { tvTools.info("搜索历史","搜索过的剧名会保存在这里，最多保留 20 条。",anchor); return }
-        tvTools.choose("搜索历史",history.map { "${it.type.label} · ${it.query}" },anchor,{ index -> runSearch(history[index].query,history[index].type) },"清空历史") {
+        tvTools.choose("搜索历史",history.map { "${it.type.label} · ${it.query}" },anchor,{ index -> runSearch(history[index].query,history[index].type,aggregate=false) },"清空历史") {
             tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",anchor) { library.clearSearches() }
         }
     }
