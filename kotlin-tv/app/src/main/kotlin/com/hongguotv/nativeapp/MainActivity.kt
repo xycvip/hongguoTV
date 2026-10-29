@@ -307,10 +307,47 @@ class MainActivity: Activity() {
     private fun addButton(parent: LinearLayout,label: String,selected: Boolean=false,onClick: ()->Unit): TextView {
         val view=button(label,selected,onClick); parent.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; rightMargin=dp(8) }); return view
     }
+    /**
+     * Android 16：隐藏系统栏，并允许横屏内容延伸到摄像头挖孔区域。
+     * 保留旧版 flags 以兼容电视盒子和较旧 Android 版本；窗口重新获得焦点时再次应用。
+     */
+    @Suppress("DEPRECATION")
+    private fun applyImmersiveFullscreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val params = window.attributes
+            params.layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+            window.attributes = params
+        }
+        window.decorView.systemUiVisibility =
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.hide(
+                android.view.WindowInsets.Type.statusBars() or
+                android.view.WindowInsets.Type.navigationBars()
+            )
+            window.insetsController?.systemBarsBehavior =
+                android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersiveFullscreen()
+    }
+
     override fun onCreate(state: Bundle?) {
         TvStyle.apply(getSharedPreferences("native-library-v1", Context.MODE_PRIVATE).getString("theme", null))
         super.onCreate(state)
-        window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        applyImmersiveFullscreen()
         library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
         updater=AppUpdater(this) { foreground && library.isLoaded && screen=="catalog" && !tvTools.showing }
         connectivity=getSystemService(ConnectivityManager::class.java)
@@ -401,80 +438,132 @@ class MainActivity: Activity() {
     }
 
     /**
-     * 优先使用系统文件选择器。部分 Android 9 电视没有 DocumentsUI/文件保存器，
-     * 此时退回应用专用目录，不申请整盘存储权限，也不会丢失备份功能。
+     * 使用 TVBox 风格的传统共享存储访问方案：公共根目录/HongGuoTV。
+     * 目标 SDK 28 用于兼容旧版存储权限行为；仍需在真实 Android 11+ 电视上验证。
      */
     private fun backupFolder(): java.io.File {
-        val base=getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS) ?: java.io.File(filesDir,"Documents")
-        return java.io.File(base,"HongguoTVBackups").apply { mkdirs() }
+        return java.io.File(android.os.Environment.getExternalStorageDirectory(), "HongGuoTV")
     }
+
+    private var pendingBackupAction = -1
+    private var pendingBackupAnchor: View? = null
+    private val REQUEST_STORAGE_PERMISSION = 7203
 
     private fun showFileBackupDialog(anchor: View) {
         tvTools.choose("本地备份与恢复",listOf("导出备份文件","从备份文件恢复"),anchor,{ choice ->
-            when(choice) {
-                0 -> {
-                    val stamp=java.text.SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(java.util.Date())
-                    val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type="application/json"
-                        putExtra(Intent.EXTRA_TITLE,"hongguotv-backup-$stamp.json")
-                    }
-                    runCatching { startActivityForResult(intent,REQUEST_EXPORT_BACKUP) }
-                        .onFailure { exportLibraryBackupToAppFolder(anchor) }
-                }
-                1 -> {
-                    val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type="*/*"
-                        putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("application/json","text/json","text/plain"))
-                    }
-                    runCatching { startActivityForResult(intent,REQUEST_IMPORT_BACKUP) }
-                        .onFailure { showLocalBackupFiles(anchor) }
-                }
-            }
+            pendingBackupAction = choice
+            pendingBackupAnchor = anchor
+            ensureBackupStoragePermission()
         })
     }
 
-    /** 无系统保存器时，将文件写入 Android 为本应用分配的专用目录，不需要存储权限。 */
-    private fun exportLibraryBackupToAppFolder(anchor: View?) {
-        val snapshot=runCatching { library.snapshot() }.getOrElse {
-            tvTools.info("备份失败","无法读取当前本机记录，请稍后重试。",anchor)
+    private fun ensureBackupStoragePermission() {
+        val readGranted = Build.VERSION.SDK_INT < 23 ||
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val writeGranted = Build.VERSION.SDK_INT < 23 ||
+            checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (readGranted && writeGranted) {
+            runPendingBackupAction()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= 23) {
+            requestPermissions(
+                arrayOf(
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ),
+                REQUEST_STORAGE_PERMISSION
+            )
+        } else {
+            runPendingBackupAction()
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_STORAGE_PERMISSION) return
+        val granted = grantResults.isNotEmpty() &&
+            grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (granted) {
+            runPendingBackupAction()
+        } else {
+            tvTools.info(
+                "需要存储权限",
+                "红果 TV 需要访问公共存储目录，才能在 HongGuoTV 文件夹中保存或读取备份。你可以在系统设置中允许存储权限后重试。",
+                pendingBackupAnchor
+            )
+            pendingBackupAction = -1
+        }
+    }
+
+    private fun runPendingBackupAction() {
+        val action = pendingBackupAction
+        val anchor = pendingBackupAnchor
+        pendingBackupAction = -1
+        when (action) {
+            0 -> exportLibraryBackupToPublicFolder(anchor)
+            1 -> showLocalBackupFiles(anchor)
+        }
+    }
+
+    /** 将备份保存到共享存储根目录/HongGuoTV，卸载应用后文件仍可保留。 */
+    private fun exportLibraryBackupToPublicFolder(anchor: View?) {
+        val snapshot = runCatching { library.snapshot() }.getOrElse {
+            tvTools.info("备份失败", "无法读取当前本机记录，请稍后重试。", anchor)
             return
         }
         io.execute {
-            val result=runCatching {
-                val folder=backupFolder()
-                val stamp=java.text.SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(java.util.Date())
-                val file=java.io.File(folder,"hongguotv-backup-$stamp.json")
-                file.writeText(LibraryBackup.encode(snapshot),Charsets.UTF_8)
+            val result = runCatching {
+                val folder = backupFolder()
+                if (!folder.exists() && !folder.mkdirs()) error("无法创建目录：${folder.absolutePath}")
+                if (!folder.isDirectory || !folder.canWrite()) error("目录不可写：${folder.absolutePath}")
+                val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(java.util.Date())
+                val file = java.io.File(folder, "hongguotv-backup-$stamp.json")
+                file.writeText(LibraryBackup.encode(snapshot), Charsets.UTF_8)
                 file.absolutePath
             }
             main.post {
-                if(isDestroyed) return@post
+                if (isDestroyed) return@post
                 result.onSuccess { path ->
-                    tvTools.info("备份已保存","这台电视没有系统文件保存器，备份已保存到应用专用目录：\n${path}\n\n可使用电视上的文件管理器复制该 JSON 文件。",anchor)
+                    tvTools.info("备份已保存", "备份文件已保存到公共目录：\n${path}\n\n卸载红果 TV 通常不会删除此文件。", anchor)
                 }.onFailure { error ->
-                    tvTools.info("备份失败","无法保存备份文件：${error.message ?: "未知错误"}",anchor)
+                    tvTools.info("备份失败", "无法保存备份文件：${error.message ?: "未知错误"}", anchor)
                 }
             }
         }
     }
 
-    /** 无系统文件选择器时，允许从应用专用备份目录中选取之前导出的 JSON 文件。 */
+    /** 使用应用内文件列表读取公共目录中的 JSON，不依赖系统文件选择器。 */
     private fun showLocalBackupFiles(anchor: View?) {
-        val folder=backupFolder()
-        val files=folder.listFiles()?.filter { it.isFile && it.extension.equals("json",true) }
+        val folder = backupFolder()
+        val ready = runCatching {
+            if (!folder.exists()) folder.mkdirs()
+            folder.isDirectory
+        }.getOrDefault(false)
+        if (!ready) {
+            tvTools.info("无法打开备份目录", "无法访问公共目录：\n${folder.absolutePath}\n\n请检查存储权限或设备存储状态。", anchor)
+            return
+        }
+        val files = folder.listFiles()?.filter { it.isFile && it.extension.equals("json", true) }
             ?.sortedByDescending { it.lastModified() }.orEmpty()
-        if(files.isEmpty()) {
-            tvTools.info("无法选择备份文件","当前电视没有可用的系统文件选择器，应用专用备份目录中也没有 JSON 备份。\n\n先导出备份可保存到：\n${folder.absolutePath}\n\n也可以在电视上安装文件管理器后重试导入。",anchor)
+        if (files.isEmpty()) {
+            tvTools.info(
+                "没有找到备份文件",
+                "请先将备份 JSON 文件复制到以下目录，再重新选择恢复：\n\n${folder.absolutePath}",
+                anchor
+            )
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("选择本机备份文件")
+            .setTitle("选择备份文件")
             .setItems(files.map { it.name }.toTypedArray()) { _, which ->
-                if(which in files.indices) importLibraryBackup(Uri.fromFile(files[which]),anchor)
+                if (which in files.indices) importLibraryBackup(Uri.fromFile(files[which]), anchor)
             }
-            .setNegativeButton("取消",null)
+            .setNegativeButton("取消", null)
             .show()
     }
 
