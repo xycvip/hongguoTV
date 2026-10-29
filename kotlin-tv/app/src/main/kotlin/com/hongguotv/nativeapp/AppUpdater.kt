@@ -182,15 +182,21 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             }
         }
     }
+    @Suppress("DEPRECATION")
+    private fun installedVersionCode(): Long = runCatching {
+        val info=activity.packageManager.getPackageInfo(activity.packageName,0)
+        if(Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
+    }.getOrDefault(BuildConfig.VERSION_CODE.toLong())
+
     /** @return true when the request actually started; callers may retry later otherwise. */
     private fun check(manual: Boolean): Boolean {
         if (busy || !active || !idle()) return false
         preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply()
         updateStatus("正在检查新版…")
         work({ repository.latest() }) { update ->
-            available = update.takeIf { it.newerThan(BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT) }; ready = false
+            available = update.takeIf { it.newerThan(installedVersionCode(), Build.VERSION.SDK_INT) }; ready = false
             if (available == null) {
-                updateStatus(if (update.versionCode > BuildConfig.VERSION_CODE && update.minSdk > Build.VERSION.SDK_INT) "新版需要 Android API ${update.minSdk}，当前电视继续使用本版" else "已是最新版本 ${BuildConfig.VERSION_NAME}")
+                updateStatus(if (update.versionCode > installedVersionCode() && update.minSdk > Build.VERSION.SDK_INT) "新版需要 Android API ${update.minSdk}，当前电视继续使用本版" else "已是最新版本 ${BuildConfig.VERSION_NAME}")
                 worker.execute { apk.delete() }
             } else {
                 updateStatus("发现 ${update.versionName} · ${"%.1f".format(update.size/1048576.0)} MB\n${update.notes}")
@@ -222,9 +228,11 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val candidate = pm.getPackageArchiveInfo(apk.path, flags) ?: throw IOException("安装包无法识别")
         val installed = pm.getPackageInfo(activity.packageName, flags)
         val version = if (Build.VERSION.SDK_INT >= 28) candidate.longVersionCode else candidate.versionCode.toLong()
+        val installedVersion = if (Build.VERSION.SDK_INT >= 28) installed.longVersionCode else installed.versionCode.toLong()
+        if (version <= installedVersion) throw IOException("服务器返回的安装包版本（$version）不高于当前已安装版本（$installedVersion），已阻止降级安装。请重新检查更新。")
         fun signers(info: android.content.pm.PackageInfo) =
             ((if (Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners else null) ?: info.signatures)?.map { it.toCharsString() }?.toSet().orEmpty()
-        if (candidate.packageName != activity.packageName || version != update.versionCode || candidate.versionName != update.versionName || version <= BuildConfig.VERSION_CODE ||
+        if (candidate.packageName != activity.packageName || version != update.versionCode || candidate.versionName != update.versionName ||
             candidate.applicationInfo?.minSdkVersion != update.minSdk || signers(installed).isEmpty() || signers(installed) != signers(candidate))
             throw IOException("新版包名、版本或签名不匹配，已阻止安装")
     }
