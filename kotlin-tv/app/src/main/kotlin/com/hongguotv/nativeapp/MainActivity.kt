@@ -203,6 +203,8 @@ class MainActivity: Activity() {
     private val tabFocus=mutableMapOf<Int,String>()
     private val nav=mutableListOf<View>()
     private val typeButtons=mutableMapOf<ContentType,View>()
+    private var homeRefreshControl: TextView?=null
+    private val homeShelfLoads=mutableSetOf<ContentType>()
     private var searchInput: View?=null
     private var searchButton: View?=null
     private val searchActions=mutableListOf<View>()
@@ -385,8 +387,8 @@ class MainActivity: Activity() {
                         catalog=resultPage.items; hasMore=resultPage.hasMore; homeFromCache=false
                         if(screen=="catalog" && page==1) {
                             homeScreen?.updateShelves(homeShelves(),requestFocus=false)
-                            homeScreen?.refresh?.text="刷新热门"
-                            homeScreen?.refresh?.setOnClickListener { showCatalog(true) }
+                            homeRefreshControl?.text="刷新热门"
+                            homeRefreshControl?.setOnClickListener { showCatalog(true) }
                         }
                     }
                     android.util.Log.i("HongguoTV","Startup background home refresh completed items=${resultPage.items.size}")
@@ -723,7 +725,7 @@ class MainActivity: Activity() {
         homeScreen?.let { homePosition=it.capturePosition() }
         (catalogRecycler?.layoutManager as? GridLayoutManager)?.let { scrollPositions[catalogPageKey]=it.findFirstVisibleItemPosition() }
         homeScreen=null; selectionPreview=null; catalogRecycler=null; catalogAdapter=null; loadingMore=false
-        nav.clear(); typeButtons.clear(); aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
+        nav.clear(); typeButtons.clear(); homeRefreshControl=null; aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
         azFirst=null; azLastRow.clear(); suggestRow=null; suggestFirst=null; suggestTicket++; main.removeCallbacks(pendingSuggest)
         suggestVertical=false; searchBody=null; keyboardKeys=emptyMap(); keyboardRows=emptyList(); historyFirst=null; historyItems=emptyList(); suggestScrollRef=null; resultFirstCard=null
         historyManage=null; rankSwitch=null; rankRefresh=null; rankSubtitle=null; genreButton=null; genreClear=null; collectionBack=null; favoriteBadges.clear()
@@ -853,22 +855,20 @@ class MainActivity: Activity() {
         }
         if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
-            if(!inlineHomeFilters()) types.addView(text("片库",12f,muted),lp(dp(42),-2))
-            listOf(ContentType.COMIC,ContentType.SHORT).forEach { type ->
-                typeButtons[type]=addButton(types,type.label,library.contentType==type) { switchContentType(type) }
-                    .apply { isSelected=library.contentType==type; nextFocusUpId=nav[tab].id }
+            homeRefreshControl=addButton(types,"刷新热门") { showCatalog(true) }.apply {
+                tag="home:refresh"
+                nextFocusUpId=nav[tab].id
             }
-            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
-            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
+            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=homeRefreshControl?.id ?: nav[tab].id }
+            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=genreButton?.id ?: homeRefreshControl?.id ?: nav[tab].id }
             if(inlineHomeFilters()) {
                 top.addView(Space(this),lp(0,1).apply { weight=1f })
-                typeButtons.values.forEach { view -> (view as TextView).apply { textSize=12f; minHeight=dp(34); setPadding(dp(12),dp(7),dp(12),dp(7)) } }
-                types.setPadding(0,0,0,0); top.addView(types)
+                types.setPadding(0,0,0,0)
+                top.addView(types)
             } else {
-                types.addView(text("长按确认 · 管理片单",12f,muted).apply { setPadding(dp(14),0,0,0) })
                 container.addView(types)
             }
-            nav.forEach { it.nextFocusDownId=typeButtons[library.contentType]?.id ?: nav[tab].id }
+            nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: nav[tab].id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -1090,7 +1090,7 @@ class MainActivity: Activity() {
         }
         if(load) {
             if(tab==0) catalogGrid(body,focusNav,focusType,loading=true)
-            else { message(body,"正在加载…"); if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else nav[tab].requestFocus() }
+            else { message(body,"正在加载…"); if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else nav[tab].requestFocus() }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
             val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
@@ -1105,8 +1105,8 @@ class MainActivity: Activity() {
             }, { result ->
                 if(requestTab==0 && requestPage==1 && requestGenre==null) library.cacheHome(requestType,result.items,result.hasMore)
                 if(requestTab==0 && requestPage==1 && requestGenre==null && (homeFromCache || tvTools.showing || updater.showing)) {
-                    homeScreen?.refresh?.text="热门已更新 · 按确认查看"
-                    homeScreen?.refresh?.setOnClickListener { catalog=result.items; hasMore=result.hasMore; ranking=result.ranking; showCatalog() }
+                    homeRefreshControl?.text="热门已更新 · 按确认查看"
+                    homeRefreshControl?.setOnClickListener { catalog=result.items; hasMore=result.hasMore; ranking=result.ranking; showCatalog() }
                 } else {
                     catalog=result.items; hasMore=result.hasMore; ranking=result.ranking
                     // 手机输入的精确剧名搜索零结果时自动恢复联想，帮助用户纠正剧名
@@ -1123,8 +1123,8 @@ class MainActivity: Activity() {
                 }
             }, { problem ->
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
-                    homeScreen?.refresh?.text=if(catalog.isNotEmpty()) "当前显示上次内容 · 联网后按确认刷新" else "热门暂时无法加载 · 按确认重试"
-                    homeScreen?.refresh?.setOnClickListener { showCatalog(true) }
+                    homeRefreshControl?.text=if(catalog.isNotEmpty()) "当前显示上次内容 · 联网后按确认刷新" else "热门暂时无法加载 · 按确认重试"
+                    homeRefreshControl?.setOnClickListener { showCatalog(true) }
                     return@work
                 }
                 catalog=emptyList(); hasMore=false; ranking=null; rankSubtitle?.text=if(requestAi) "AI剧分类加载失败" else "榜单加载失败"
@@ -1182,7 +1182,7 @@ class MainActivity: Activity() {
         if(displayed.isEmpty()) {
             message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else if(aggregateSearch) "没有找到相关漫剧或短剧，换个关键词试试" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
             wireSearchPanel(null)
-            if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
+            if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
             return
         }
         val cols=if(tab==1) searchColumns else gridColumns
@@ -1219,7 +1219,7 @@ class MainActivity: Activity() {
             it.nextFocusDownId=when {
                 tab==2 -> (if(aiCatalog) aiBack ?: aiGenreButton ?: rankRefresh else aiEntry ?: rankSwitch ?: rankRefresh)?.id ?: recycler.id
                 tab==1 -> searchInput?.id ?: recycler.id
-                tab==0 -> typeButtons[library.contentType]?.id ?: recycler.id
+                tab==0 -> homeRefreshControl?.id ?: recycler.id
                 else -> favoriteCheck?.id ?: historyManage?.id ?: recycler.id
             }
         }
@@ -1234,7 +1234,7 @@ class MainActivity: Activity() {
         searchButton?.nextFocusDownId=azFirst?.id ?: recycler.id
         searchActions.forEach { it.nextFocusDownId=azFirst?.id ?: recycler.id }
         wireSearchPanel(recycler)
-        if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else if(focusNav) nav[tab].requestFocus()
+        if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else if(focusNav) nav[tab].requestFocus()
         else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
         else {
             val found=displayed.indexOfFirst { it.id==catalogFocus }
@@ -1415,18 +1415,18 @@ class MainActivity: Activity() {
     private fun renderHome(body: LinearLayout,focusNav: Boolean,focusType: Boolean,loading: Boolean) {
         homeUpdateCount=library.updatedFavorites()
         val preview=SeriesPreview(this); selectionPreview=preview; body.addView(preview)
-        val top=if(inlineHomeFilters()) nav[0] else typeButtons.getValue(library.contentType)
+        val top=homeRefreshControl ?: nav[0]
         val home=HomeScreen(this,top,::loadCover,{ item,label -> preview.show(item,if(label.startsWith("第 ")) selectionStatus(item) else listOf(label,selectionStatus(item)).filter { it.isNotBlank() }.joinToString(" · ")) },
             { item,resume -> openDetail(item,resume) },::quickActions,{ catalogFocus=it })
         homeScreen=home; body.addView(home,lp(-1,0).apply { weight=1f })
         val hot=catalog.filterNot { it.id in library.hidden() }
-        home.render(homeShelves(),catalogFocus,!focusNav && !focusType,
-            if(hasMore) { { page=2; catalogFocus=""; showCatalog(true) } } else null,homePosition)
-        home.refresh.text=if(loading) if(homeFromCache) "已显示上次内容 · 正在更新热门…" else "正在更新热门…" else "刷新热门"
-        home.refresh.setOnClickListener { showCatalog(true) }
-        typeButtons.values.forEach { it.nextFocusDownId=home.firstId() }
-        if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=home.firstId() }
-        if(focusNav) nav[0].requestFocus() else if(focusType) typeButtons.getValue(library.contentType).requestFocus()
+        home.render(homeShelves(),catalogFocus,!focusNav && !focusType,null,homePosition)
+        homeRefreshControl?.text=if(loading) if(homeFromCache) "已显示上次内容 · 正在更新热门…" else "正在更新热门…" else "刷新热门"
+        homeRefreshControl?.setOnClickListener { showCatalog(true); loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true) }
+        homeRefreshControl?.nextFocusDownId=home.firstId()
+        if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: home.firstId() }
+        if(focusNav) nav[0].requestFocus() else if(focusType) homeRefreshControl?.requestFocus()
+        loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,false)
         if(hot.isNotEmpty() && !homeContentLogged) {
             homeContentLogged=true
             body.post { android.util.Log.i("HongguoTV","Home content ready cached=$homeFromCache elapsedMs=${android.os.SystemClock.elapsedRealtime()-activityStarted}") }
@@ -1439,7 +1439,9 @@ class MainActivity: Activity() {
     private fun homeShelves(): List<HomeScreen.Shelf> {
         val recent=library.history().filterNot { library.watched(it.series.id) }
         val updates=library.favorites().filter { library.favoriteUpdate(it.id)?.hasUpdate == true }
-        val later=library.later(); val hidden=library.hidden(); val hot=catalog.filterNot { it.id in hidden }
+        val later=library.later(); val hidden=library.hidden()
+        val shortItems=(if(library.contentType==ContentType.SHORT) catalog else library.cachedHome(ContentType.SHORT)?.items.orEmpty()).filterNot { it.id in hidden }
+        val comicItems=(if(library.contentType==ContentType.COMIC) catalog else library.cachedHome(ContentType.COMIC)?.items.orEmpty()).filterNot { it.id in hidden }
         return listOf(
             HomeScreen.Shelf("resume","接着看",recent.take(8).map { p -> HomeScreen.Entry(p.series,
                 "第 ${p.episodeIndex+1} 集 · ${if(p.completed) "接着看下一集" else formatTime(p.position)}",true,
@@ -1449,8 +1451,10 @@ class MainActivity: Activity() {
                 if(updates.size>8) { { showCollection("updates") } } else null),
             HomeScreen.Shelf("later","稍后看",later.take(10).map { HomeScreen.Entry(it,"稍后看 · 长按管理") },
                 if(later.size>10) { { showCollection("later") } } else null),
-            HomeScreen.Shelf("hot","热门发现 · ${library.contentType.label}",hot.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
-                if(hot.size>10) { { showCollection("hot") } } else null))
+            HomeScreen.Shelf("hot-short","热门发现 · 短剧",shortItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
+                if(shortItems.size>10) { { showCollection("hot-short") } } else null),
+            HomeScreen.Shelf("hot-comic","热门发现 · 漫剧",comicItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
+                if(comicItems.size>10) { { showCollection("hot-comic") } } else null))
     }
     private fun refreshLibraryCards(changedId: String,removed: Boolean=false) {
         if(screen!="catalog") return
@@ -1527,8 +1531,8 @@ class MainActivity: Activity() {
             if(!tvTools.showing && !updater.showing && currentFocus?.tag?.toString()?.startsWith("resume:")==true) {
                 homeUpdateCount=library.updatedFavorites(); home.updateShelves(homeShelves())
             } else {
-                home.refresh.text="收藏更新 ${library.updatedFavorites()} 部 · 按确认查看"
-                home.refresh.setOnClickListener { showCatalog() }
+                homeRefreshControl?.text="收藏更新 ${library.updatedFavorites()} 部 · 按确认查看"
+                homeRefreshControl?.setOnClickListener { showCatalog() }
             }
         }
     }
