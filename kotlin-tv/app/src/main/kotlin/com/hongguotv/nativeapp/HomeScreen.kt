@@ -179,7 +179,7 @@ class HomeScreen(
     }
 
     private fun target(key: String,position: Position?): View {
-        if(key=="home:refresh") return refresh
+        if(key=="home:refresh") return top
         if(key=="home:more") moreButton?.let { return it }
         cards[key]?.let { return it.view }
         if(position!=null) {
@@ -248,5 +248,5 @@ class HomeScreen(
             row.cards.forEach { card -> card.view.getChildAt(0).let { artwork -> if(artwork.layoutParams.height!=imageHeight) artwork.layoutParams=artwork.layoutParams.apply { height=imageHeight } } }
         }
     }
-    fun firstId()=rows.firstOrNull()?.cards?.firstOrNull()?.view?.id ?: refresh.id
+    fun firstId()=rows.firstOrNull()?.cards?.firstOrNull()?.view?.id ?: top.id
 }
