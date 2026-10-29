@@ -1182,7 +1182,7 @@ class MainActivity: Activity() {
         if(displayed.isEmpty()) {
             message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else if(aggregateSearch) "没有找到相关漫剧或短剧，换个关键词试试" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
             wireSearchPanel(null)
-            if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
+            if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
             return
         }
         val cols=if(tab==1) searchColumns else gridColumns
@@ -1234,7 +1234,7 @@ class MainActivity: Activity() {
         searchButton?.nextFocusDownId=azFirst?.id ?: recycler.id
         searchActions.forEach { it.nextFocusDownId=azFirst?.id ?: recycler.id }
         wireSearchPanel(recycler)
-        if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else if(focusNav) nav[tab].requestFocus()
+        if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else if(focusNav) nav[tab].requestFocus()
         else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
         else {
             val found=displayed.indexOfFirst { it.id==catalogFocus }
