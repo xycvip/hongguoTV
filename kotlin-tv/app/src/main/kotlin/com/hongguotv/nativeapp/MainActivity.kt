@@ -3228,7 +3228,7 @@ class MainActivity: Activity() {
             val cardWidthDp = minOf(
                 (availableWidthDp - 24f).coerceAtLeast(260f),
                 (availableHeightDp - 28f).coerceAtLeast(260f),
-                if (mobileLayout) 340f else 620f
+                if (mobileLayout) 340f else 460f
             )
             val cardWidth = dp(cardWidthDp.toInt())
             val card = column().apply {
@@ -3357,7 +3357,7 @@ class MainActivity: Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(12))
         }
-        val sections = listOf("观看历史", "账户收藏", "预约中", "已上线")
+        val sections = listOf("观看历史", "账户收藏", "待上线", "已上线")
         sections.forEachIndexed { index, label ->
             val item = addButton(tabs, label, accountSection == index) {
                 accountSection = index
@@ -3447,7 +3447,7 @@ class MainActivity: Activity() {
             2, 3 -> {
                 val online = accountSection == 3
                 val state = cloudAccount.reservationState(online)
-                sectionHeading(if (online) "已上线" else "预约中", if (state.loading) "正在同步预约记录…" else state.message)
+                sectionHeading(if (online) "已上线" else "待上线", if (state.loading) "正在同步预约记录…" else state.message)
                 if (!state.loaded && !state.loading) cloudAccount.refreshReservations()
                 if (state.rows.isEmpty()) {
                     val emptyText = if (state.loading) "正在读取预约记录…" else if (state.loaded) "暂无${if (online) "已上线" else "待上线"}作品" else state.message
