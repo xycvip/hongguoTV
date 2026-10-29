@@ -114,6 +114,7 @@ class MainActivity: Activity() {
     private var launchStarted=android.os.SystemClock.elapsedRealtime()
     private val activityStarted=launchStarted
     private var homeContentLogged=false
+    private lateinit var cloudAccount: AccountController
     private lateinit var library: Library
     private lateinit var tvTools: TvTools
     private lateinit var extras: PlaybackExtras
@@ -365,6 +366,14 @@ class MainActivity: Activity() {
         applyImmersiveFullscreen()
         library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
         updater=AppUpdater(this) { foreground && library.isLoaded && screen=="catalog" && !tvTools.showing }
+        cloudAccount = AccountController(this) { remote ->
+            openDetail(remote.series, true)
+        }
+        cloudAccount.onHistoryChanged = {
+            if (screen == "account" && !cloudAccount.showing && !isDestroyed) {
+                main.post { if (screen == "account" && !cloudAccount.showing) showAccountPage() }
+            }
+        }
         connectivity=getSystemService(ConnectivityManager::class.java)
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback); networkRegistered=true }
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
@@ -855,8 +864,8 @@ class MainActivity: Activity() {
             if(compactHeader) visibility=View.GONE
         },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
         top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
-        listOf("首页","搜索","排行榜","收藏","最近观看","设置").forEachIndexed { index,label ->
-            val item=addButton(top,label,index==tab) { switchTab(index) }
+        listOf("首页","搜索","排行榜","收藏","最近观看","设置","我的").forEachIndexed { index,label ->
+            val item=addButton(top,label,index==tab || (index==6 && screen=="account")) { if(index==6) showAccountPage() else switchTab(index) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(index==tab) accent else muted)
                 item.background=rounded(if(focused) white else if(index==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
@@ -3125,7 +3134,17 @@ class MainActivity: Activity() {
         // 开机自动推荐视频必须实际播放满 30 秒才写入历史；暂停/缓冲不计时。
         // 只限制启动时自动播放的这一集，手动正常播放仍按原逻辑记录。
         if(startupPreviewEpisodeId==data.episodes[episodeIndex] && startupPreviewPlayedMs<30_000L) return
-        library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),p.duration.coerceAtLeast(0),episodeCompleted,System.currentTimeMillis()))
+        val position=p.currentPosition.coerceAtLeast(0)
+        val duration=p.duration.coerceAtLeast(0)
+        val updated=System.currentTimeMillis()
+        library.save(WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,position,duration,episodeCompleted,updated))
+        runCatching {
+            cloudAccount.upload(
+                CloudProgress(data.series,data.episodes[episodeIndex],episodeIndex,position,duration,updated,data.episodes.size),
+                data.episodes.size,
+                force=episodeCompleted
+            )
+        }
         if(startupPreviewEpisodeId==data.episodes[episodeIndex]) {
             startupPreviewEpisodeId=null
             startupPreviewPlayedMs=0L
@@ -3178,11 +3197,83 @@ class MainActivity: Activity() {
         sleepTimer.cancel(); sleepStopped=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
         if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
     }
+
+    /** 官方账号页：云端数据独立展示，不覆盖或清空本机收藏、历史。 */
+    private fun showAccountPage() {
+        if (!::cloudAccount.isInitialized || !library.isLoaded) return
+        invalidatePage()
+        screen = "account"
+        releaseCatalogViews()
+        val container = base("我的 · 红果官方账号")
+        val intro = text("登录官方红果账号后，可读取云端收藏、观看历史，并尝试同步本机播放进度。", 14f, muted)
+        intro.setPadding(0, dp(4), 0, dp(14))
+        container.addView(intro, lp())
+        val card = column().apply {
+            background = rounded(surface)
+            setPadding(dp(22), dp(18), dp(22), dp(18))
+        }
+        card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录红果官方账号", 24f, white).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        }, lp())
+        card.addView(text(if (cloudAccount.signedIn) "账号状态：${cloudAccount.historyStatus}" else "用手机红果 App 扫码，在手机上确认后即可登录电视", 14f, muted).apply {
+            setPadding(0, dp(8), 0, dp(12))
+        }, lp())
+        val actions = row()
+        addButton(actions, if (cloudAccount.signedIn) "账号管理 / 退出" else "二维码登录", onClick = {
+            if (cloudAccount.signedIn) cloudAccount.show() else cloudAccount.loginByQr()
+        })
+        addButton(actions, "手机号登录", onClick = { cloudAccount.show() })
+        if (cloudAccount.signedIn) addButton(actions, "刷新账号数据", onClick = {
+            cloudAccount.refreshHistory()
+            cloudAccount.refreshFavorites()
+            Toast.makeText(this, "正在刷新云端账号数据…", Toast.LENGTH_SHORT).show()
+        })
+        card.addView(actions, lp())
+        if (!cloudAccount.signedIn) {
+            card.addView(text("二维码约 60 秒有效；过期后重新获取。若平台要求额外验证，请按手机官方 App 提示完成。", 13f, muted).apply {
+                setPadding(0, dp(12), 0, 0)
+            }, lp())
+        }
+        container.addView(card, lp().apply { bottomMargin = dp(14) })
+        val scroll = ScrollView(this).apply { isFillViewport = false; clipToPadding = false }
+        val body = column()
+        if (cloudAccount.signedIn) {
+            val fav = cloudAccount.favoriteState()
+            body.addView(text("云端收藏 · ${fav.rows.size}", 19f, white).apply {
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(8), 0, dp(8))
+            }, lp())
+            body.addView(text(fav.message, 13f, muted).apply { setPadding(0, 0, 0, dp(6)) }, lp())
+            fav.rows.take(30).forEach { item ->
+                val entry = button("★  ${item.series.title}", onClick = { openDetail(item.series, true) })
+                body.addView(entry, lp().apply { bottomMargin = dp(5) })
+            }
+            body.addView(text("云端观看历史 · ${cloudAccount.historyRows().size}", 19f, white).apply {
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(0, dp(14), 0, dp(8))
+            }, lp())
+            body.addView(text(cloudAccount.historyStatus, 13f, muted).apply { setPadding(0, 0, 0, dp(6)) }, lp())
+            cloudAccount.historyRows().take(50).forEach { item ->
+                val mins = (item.position / 60000L).coerceAtLeast(0)
+                val entry = button("▶  ${item.series.title}  ·  第 ${item.episodeIndex + 1} 集  ·  ${mins} 分钟", onClick = {
+                    openDetail(item.series, true)
+                })
+                body.addView(entry, lp().apply { bottomMargin = dp(5) })
+            }
+        } else {
+            body.addView(text("登录后可查看云端收藏和最近 50 部观看记录。云端记录与本机数据分开保存；退出账号不会删除本机记录。", 15f, muted), lp())
+        }
+        scroll.addView(body)
+        container.addView(scroll, lp().apply { height = 0; weight = 1f })
+        applyClock()
+    }
+
     private fun goBack() {
         if(!library.isLoaded) { finish(); return }
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
             "detail" -> showCatalog()
+            "account" -> showCatalog()
             else -> if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
     }
@@ -3277,7 +3368,7 @@ class MainActivity: Activity() {
     override fun onDestroy() {
         generation++; cancelWork()
         if(networkRegistered) connectivity.unregisterNetworkCallback(networkCallback)
-        favoriteMonitor.destroy(); tvTools.destroy(); updater.destroy(); saveProgress(); releasePlayer(); library.close()
+        favoriteMonitor.destroy(); tvTools.destroy(); updater.destroy(); saveProgress(); cloudAccount.destroy(); releasePlayer(); library.close()
         artwork.close(); releaseCatalogViews(); mediaSession.release(); main.removeCallbacksAndMessages(null)
         io.shutdownNow(); prefetchWorker.shutdownNow(); networkCleanup.shutdown()
         Thread({ repository.http.dispatcher.cancelAll(); repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown() },"hongguotv-network-cleanup").start()
