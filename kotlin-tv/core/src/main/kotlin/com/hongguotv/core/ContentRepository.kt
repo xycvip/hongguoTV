@@ -156,6 +156,50 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         return try { fillSeasons(webSearch(keyword,page,SHORT_WEB_GENRE),page,type,keyword) }
         catch(e: Exception) { throw IOException("搜索暂不可用（App接口：${appError?.message ?: "无结果"}；网站：${e.message}）",e) }
     }
+    /**
+     * Search comics and short dramas together. Results are globally ranked by title similarity;
+     * each card keeps its content-type label so users can distinguish the two catalogs.
+     * A temporary failure in one catalog does not hide successful results from the other.
+     */
+    fun searchCombined(keyword: String, page: Int = 1): CatalogPage {
+        require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
+        val comicResult = runCatching { search(keyword,page,ContentType.COMIC) }
+        val shortResult = runCatching { search(keyword,page,ContentType.SHORT) }
+        val comic = comicResult.getOrNull()
+        val short = shortResult.getOrNull()
+        if(comic==null && short==null) {
+            throw IOException("漫剧和短剧搜索均暂不可用（漫剧：${comicResult.exceptionOrNull()?.message ?: "未知错误"}；短剧：${shortResult.exceptionOrNull()?.message ?: "未知错误"}）")
+        }
+        val candidates = buildList {
+            comic?.items?.forEach { add(ContentType.COMIC to it) }
+            short?.items?.forEach { add(ContentType.SHORT to it) }
+        }
+        val ranked = candidates.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<Pair<ContentType,Series>>> { titleMatchScore(it.value.second.title,keyword) }.thenBy { it.index })
+            .map { it.value }
+            .distinctBy { it.second.id }
+            .map { (type,series) ->
+                val detail = series.badge.trim()
+                series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · $detail")
+            }
+        return CatalogPage(ranked,(comic?.hasMore==true)||(short?.hasMore==true))
+    }
+
+    /** Exact normalized titles outrank prefix matches, which outrank ordinary substring matches. */
+    private fun titleMatchScore(title: String, keyword: String): Int {
+        fun normalize(value: String) = value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+        val t=normalize(title)
+        val q=normalize(keyword)
+        if(t.isEmpty() || q.isEmpty()) return 0
+        if(t==q) return 100_000
+        if(t.startsWith(q)) return 90_000-(t.length-q.length).coerceAtMost(10_000)
+        if(t.contains(q)) return 80_000-(t.length-q.length).coerceAtMost(10_000)
+        if(q.contains(t)) return 70_000-(q.length-t.length).coerceAtMost(10_000)
+        var prefix=0
+        while(prefix<t.length && prefix<q.length && t[prefix]==q[prefix]) prefix++
+        return prefix*100
+    }
+
     // 站点搜索页已改为 SPA，数据由 /api/search/result/ 下发（返回 searchList/totalPages/hasMore，10 条一页）。
     private fun webSearch(keyword: String, page: Int, genre: String?): CatalogPage {
         val url="$site/api/search/result/?query=${Signer.encode(keyword)}&page=$page"
