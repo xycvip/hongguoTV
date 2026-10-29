@@ -126,6 +126,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/publish-tv-update.py
+      - name: Keep only the newest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Keep the newest stable published release; delete older release entries only.
+          # Git tags and source history are intentionally left untouched.
+          OLD_RELEASE_IDS="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[][] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | reverse | .[1:] | .[].id')"
+          if [[ -z "$OLD_RELEASE_IDS" ]]; then
+            echo "Only one stable release exists; nothing to delete."
+            exit 0
+          fi
+          while IFS= read -r RELEASE_ID; do
+            [[ -n "$RELEASE_ID" ]] || continue
+            echo "Deleting old release ID $RELEASE_ID"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
+          done <<< "$OLD_RELEASE_IDS"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
