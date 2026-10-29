@@ -131,7 +131,6 @@ class PhoneLogin(private val http: OkHttpClient) {
                         .toString(),
                     "new_authn_sdk_log_id" to challenge.logId,
                 ),
-                includeBaseForm = false,
             )
             if (errorCode(reply) == 1045) {
                 lastDescription = describe(reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
@@ -267,9 +266,13 @@ class PhoneLogin(private val http: OkHttpClient) {
     }
 
     private fun isSuccess(reply: JSONObject): Boolean {
-        val code = errorCode(reply)
-        return reply.optString("message") == "success" &&
-            reply.optJSONObject("data") != null && (code == 0 || code == -1)
+        val data = reply.optJSONObject("data") ?: return false
+        val code = when {
+            data.has("error_code") -> data.optString("error_code")
+            reply.has("error_code") -> reply.optString("error_code")
+            else -> ""
+        }
+        return reply.optString("message") == "success" && (code.isBlank() || code == "0")
     }
 
     private fun errorCode(reply: JSONObject): Int {
