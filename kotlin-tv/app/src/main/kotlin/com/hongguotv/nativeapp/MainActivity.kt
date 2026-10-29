@@ -205,6 +205,7 @@ class MainActivity: Activity() {
     private val typeButtons=mutableMapOf<ContentType,View>()
     private var homeRefreshControl: TextView?=null
     private val homeShelfLoads=mutableSetOf<ContentType>()
+    private val queuedHomeShelfRefresh=mutableSetOf<ContentType>()
     private var searchInput: View?=null
     private var searchButton: View?=null
     private val searchActions=mutableListOf<View>()
@@ -391,7 +392,7 @@ class MainActivity: Activity() {
                         if(screen=="catalog" && page==1) {
                             homeScreen?.updateShelves(homeShelves(),requestFocus=false)
                             homeRefreshControl?.text="刷新热门"
-                            homeRefreshControl?.setOnClickListener { showCatalog(true) }
+                            homeRefreshControl?.setOnClickListener { refreshAllHome() }
                         }
                     }
                     android.util.Log.i("HongguoTV","Startup background home refresh completed items=${resultPage.items.size}")
@@ -1439,7 +1440,7 @@ class MainActivity: Activity() {
         val hot=catalog.filterNot { it.id in library.hidden() }
         home.render(homeShelves(),catalogFocus,!focusNav && !focusType,null,homePosition)
         homeRefreshControl?.text=if(loading) if(homeFromCache) "已显示上次内容 · 正在更新热门…" else "正在更新热门…" else "刷新热门"
-        homeRefreshControl?.setOnClickListener { refreshHomePending=true; showCatalog(true); loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true); loadHomeShelf(ContentType.AI,true) }
+        homeRefreshControl?.setOnClickListener { refreshAllHome() }
         homeRefreshControl?.nextFocusDownId=home.firstId()
         if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: home.firstId() }
         if(focusNav) nav[0].requestFocus() else if(focusType) homeRefreshControl?.requestFocus()
@@ -1454,16 +1455,26 @@ class MainActivity: Activity() {
             body.post { android.util.Log.i("HongguoTV","Home displayed cached=$homeFromCache elapsedMs=${android.os.SystemClock.elapsedRealtime()-started}") }
         }
     }
+    /** 一次刷新首页主内容、另一种剧集类型和 AI 剧榜；焦点由主内容完成回调统一恢复。 */
+    private fun refreshAllHome() {
+        if(refreshHomePending) return
+        refreshHomePending=true
+        showCatalog(true)
+        loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true)
+        loadHomeShelf(ContentType.AI,true)
+    }
+
     /** Load the other homepage category in the background so both shelves are available without delaying the first screen. */
     private fun loadHomeShelf(type: ContentType,force: Boolean) {
         if(type!=ContentType.SHORT && type!=ContentType.COMIC && type!=ContentType.AI) return
         if(!force && !library.cachedHome(type)?.items.isNullOrEmpty()) return
-        if(!homeShelfLoads.add(type)) return
+        if(!homeShelfLoads.add(type)) { if(force) queuedHomeShelfRefresh.add(type); return }
         io.execute {
             val result=runCatching { if(type==ContentType.AI) repository.ranking(RankBoard.AI,1) else repository.home(1,type,null) }
             main.post {
                 homeShelfLoads.remove(type)
                 if(isDestroyed) return@post
+                val refreshAgain=queuedHomeShelfRefresh.remove(type)
                 result.onSuccess { loaded ->
                     library.cacheHome(type,loaded.items,loaded.hasMore)
                     if(screen=="catalog" && tab==0 && collection==null && genre==null) {
@@ -1472,6 +1483,7 @@ class MainActivity: Activity() {
                 }.onFailure { problem ->
                     android.util.Log.i("HongguoTV","Homepage shelf refresh failed for ${type.label}: ${problem.message}")
                 }
+                if(refreshAgain) loadHomeShelf(type,true)
             }
         }
     }
