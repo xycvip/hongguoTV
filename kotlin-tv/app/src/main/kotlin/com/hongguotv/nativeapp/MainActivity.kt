@@ -413,7 +413,6 @@ class MainActivity: Activity() {
             done(); return
         }
         if(storage.restoreAllowed) { restoreLocalBackup(done); return }
-        library.localPermissionAsked=true
         val prompt=TvDialog.confirm(this,"本地备份","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时在设置中关闭。", onCancel = {
             library.localRestoreChecked=true
             done()
@@ -521,6 +520,20 @@ class MainActivity: Activity() {
                 Toast.makeText(this,"未获得存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
             }
         }
+        // Android 9：若此前已经请求过，且系统不再允许显示权限说明/请求弹窗，转到应用详情页手动授权。
+        if(Build.VERSION.SDK_INT <= 28 &&
+            current.backupAllowed.not() &&
+            library.localPermissionAsked &&
+            !shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+            val intent=Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            runCatching { startActivityForResult(intent,LocalBackupStorage.REQUEST_APP_SETTINGS) }
+                .onFailure {
+                    localPermissionContinuation=null
+                    if(enableAfterGrant) library.localBackupEnabled=false
+                    Toast.makeText(this,"请在系统设置的红果TV应用信息中开启存储权限",Toast.LENGTH_LONG).show()
+                }
+            return
+        }
         if(!current.request(this)) {
             localPermissionContinuation=null
             if(enableAfterGrant) library.localBackupEnabled=false
@@ -536,7 +549,7 @@ class MainActivity: Activity() {
     }
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
-        if(requestCode==LocalBackupStorage.REQUEST_MANAGE) {
+        if(requestCode==LocalBackupStorage.REQUEST_MANAGE || requestCode==LocalBackupStorage.REQUEST_APP_SETTINGS) {
             val next=localPermissionContinuation; localPermissionContinuation=null
             if(next!=null && !isDestroyed) next()
             localBackupSettingButton?.text=localBackupLabel()
@@ -545,6 +558,8 @@ class MainActivity: Activity() {
     override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
         if(requestCode==LocalBackupStorage.REQUEST_READ || requestCode==LocalBackupStorage.REQUEST_WRITE) {
+            // 只有系统回调后才标记“已询问”；后续若被永久拒绝，可引导到应用详情页。
+            if(requestCode==LocalBackupStorage.REQUEST_WRITE) library.localPermissionAsked=true
             val next=localPermissionContinuation; localPermissionContinuation=null
             if(next!=null && !isDestroyed) next()
             localBackupSettingButton?.text=localBackupLabel()
