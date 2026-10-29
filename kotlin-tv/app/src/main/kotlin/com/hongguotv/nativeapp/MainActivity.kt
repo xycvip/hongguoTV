@@ -489,6 +489,14 @@ class MainActivity: Activity() {
         } else backupWithToast(anchor)
     }
     private fun requestLocalBackupPermission(anchor: TextView,enableAfterGrant: Boolean=false) {
+        // 点击设置开关时重新读取真实权限状态；如果权限已存在就直接继续，不重复弹系统授权框。
+        val current=library.localBackup()
+        if(current.backupAllowed && current.restoreAllowed) {
+            if(enableAfterGrant) library.localBackupEnabled=true
+            anchor.text=localBackupLabel()
+            localBackupAction(anchor)
+            return
+        }
         localPermissionContinuation={
             val storage=library.localBackup()
             if(storage.backupAllowed && storage.restoreAllowed) {
@@ -496,12 +504,12 @@ class MainActivity: Activity() {
                 anchor.text=localBackupLabel()
                 localBackupAction(anchor)
             } else {
-                library.localBackupEnabled=false
+                if(enableAfterGrant) library.localBackupEnabled=false
                 anchor.text=localBackupLabel()
                 Toast.makeText(this,"未获得存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
             }
         }
-        if(!library.localBackup().request(this)) {
+        if(!current.request(this)) {
             localPermissionContinuation=null
             if(enableAfterGrant) library.localBackupEnabled=false
             anchor.text=localBackupLabel()
@@ -700,7 +708,6 @@ class MainActivity: Activity() {
             page.addView(footerHost,lp(-1,-2))
             container.addView(page,lp(-1,0).apply { weight=1f })
             settings(body,footerHost)
-            checkStoragePermissionOnSettingsOpen()
             if(focusNav) nav[tab].requestFocus()
             return
         }
@@ -1392,10 +1399,10 @@ class MainActivity: Activity() {
         heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
         heading(device,"片单与设备","保管记录，保持应用更新")
         lateinit var startupAutoplayButton: TextView
-        startupAutoplayButton=setting(playback,"开机全屏播放推荐  ·  ${if(startupAutoplayEnabled()) "开启" else "关闭"}") {
+        startupAutoplayButton=setting(playback,"启动时播放推荐  ·  ${if(startupAutoplayEnabled()) "开启" else "关闭"}") {
             val enabled=!startupAutoplayEnabled()
             getSharedPreferences("startup_playback",MODE_PRIVATE).edit().putBoolean("autoplay_recommendation",enabled).apply()
-            startupAutoplayButton.text="开机全屏播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
+            startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
         }
         lateinit var qualityButton: TextView
         qualityButton=setting(playback,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
@@ -2363,8 +2370,8 @@ class MainActivity: Activity() {
         content.addView(TvDialog.title(this,"弹幕屏蔽词"))
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_MULTIPLE
-            adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true)
-            setOnItemClickListener { _,_,index,_ -> checked[index]=isItemChecked(index) }
+            adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true,checkedStates=checked)
+            setOnItemClickListener { _,_,index,_ -> checked[index]=isItemChecked(index); (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged() }
         }
         content.addView(list,lp(-1,0).apply { weight=1f })
         val buttons=row().apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
@@ -2372,10 +2379,10 @@ class MainActivity: Activity() {
             extras.blockedWords=emptySet(); applyBlockedWords(); anchor.text="弹幕屏蔽词  ·  0 个"
             checked.fill(false)
             list.clearChoices()
-            list.post { list.invalidateViews(); list.requestLayout() }
+            list.post { (list.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged(); list.invalidateViews(); list.requestLayout() }
         }
         val save=TvDialog.capsuleButton(this,"保存") {
-            extras.blockedWords=words.filterIndexed { index,_ -> list.isItemChecked(index) }.toSet()
+            extras.blockedWords=words.filterIndexed { index,_ -> checked[index] }.toSet()
             applyBlockedWords(); anchor.text="弹幕屏蔽词  ·  ${extras.blockedWords.size} 个"
             Toast.makeText(this@MainActivity,"屏蔽词已保存，立即生效",Toast.LENGTH_SHORT).show()
         }
@@ -2650,7 +2657,7 @@ class MainActivity: Activity() {
         content.addView(TvDialog.title(this,"全局默认倍速"))
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label))
+            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label),selectedIndex=selected.coerceAtLeast(0))
             setOnItemClickListener { _,_,index,_ ->
                 library.playbackSpeed=speeds[index]
                 if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
@@ -2687,7 +2694,7 @@ class MainActivity: Activity() {
         var qualityDialog: AlertDialog? = null
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" })
+            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" },selectedIndex=selected.coerceAtLeast(0))
             setOnItemClickListener { _,_,index,_ ->
                 val target=options[index]; val changed=library.maxQuality!=target
                 library.maxQuality=target
