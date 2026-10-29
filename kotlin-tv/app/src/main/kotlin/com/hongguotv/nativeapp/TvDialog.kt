@@ -109,9 +109,11 @@ object TvDialog {
                         gravity = Gravity.CENTER_VERTICAL
                         setPadding(dp(activity, 16), dp(activity, 10), dp(activity, 16), dp(activity, 10))
                         minimumHeight = dp(activity, 48)
-                        isFocusable = true
+                        // 不能让行容器自己获得焦点或变成 clickable：
+                        // 否则它会拦截 ListView 的 item click，导致单选/多选点了没有反应。
+                        isFocusable = false
                         isFocusableInTouchMode = false
-                        isClickable = true
+                        isClickable = false
                         descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                         addView(TextView(activity).apply {
                             tag = "tv-choice-label"
@@ -127,13 +129,6 @@ object TvDialog {
                             setTextColor(TvStyle.accent)
                             setTypeface(null, android.graphics.Typeface.BOLD)
                         }, LinearLayout.LayoutParams(dp(activity, 30), -2))
-                        setOnFocusChangeListener { view, focused ->
-                            view.background = GradientDrawable().apply {
-                                setColor(if (focused) Color.argb(28, 255, 255, 255) else Color.TRANSPARENT)
-                                cornerRadius = dp(activity, 10).toFloat()
-                                setStroke(dp(activity, if (focused) 1 else 0), if (focused) TvStyle.accent else Color.TRANSPARENT)
-                            }
-                        }
                         background = GradientDrawable().apply {
                             setColor(Color.TRANSPARENT)
                             cornerRadius = dp(activity, 10).toFloat()
