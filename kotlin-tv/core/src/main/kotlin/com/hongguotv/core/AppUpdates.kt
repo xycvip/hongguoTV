@@ -22,8 +22,8 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
          * Public GitHub is often slow or unreachable from mainland China home networks.
          * These mirror CDNs act as transparent proxies and are generally accessible there,
          * so we fall through them in order until one responds. Each entry is a function
-         * that takes the original GitHub URL and returns the proxied form; the raw URL
-         * is always tried first.
+         * that takes the original GitHub URL and returns the proxied form; the raw URL is
+         * always tried first.
          */
         val MIRRORS: List<(String) -> String> = listOf(
             { it },                                        // raw GitHub first
@@ -47,7 +47,8 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             require(update.versionCode in 1..Int.MAX_VALUE.toLong() && update.minSdk in 26..100)
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
             require(update.tag.matches(Regex("kotlin-v[0-9][0-9A-Za-z.+-]{0,80}")))
-            require(update.fileName.matches(Regex("hongguotv-kotlin-[0-9][0-9A-Za-z.+-]{0,80}-android8\\.apk")))
+            // Keep this in sync with scripts/publish-tv-update.py: HongguoTV-<version>.apk
+            require(update.fileName.matches(Regex("HongguoTV-[0-9][0-9A-Za-z.+-]{0,80}\\.apk")))
             require(update.size in 1..MAX_APK_BYTES && update.sha256.matches(Regex("[0-9a-f]{64}")))
             return update
         }
