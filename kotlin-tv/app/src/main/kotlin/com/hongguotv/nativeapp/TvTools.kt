@@ -46,7 +46,7 @@ class TvTools(private val activity: Activity) {
     fun destroy() { close(); worker.shutdownNow() }
     fun info(title: String,message: String,anchor: View?) = open(TvDialog.info(activity,title,message),anchor)
     fun confirm(title: String,message: String,anchor: View?,action: ()->Unit) {
-        open(TvDialog.confirm(activity,title,message,action),anchor)
+        open(TvDialog.confirm(activity,title,message,action = action),anchor)
     }
     fun choose(title: String,labels: List<String>,anchor: View?,onChoice: (Int)->Unit,extra: String?=null,onExtra: ()->Unit={}) {
         val next=TvDialog.choose(activity,title,labels,onChoice,extra,onExtra)
