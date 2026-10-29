@@ -92,7 +92,6 @@ class PhoneLogin(private val http: OkHttpClient) {
         if (expired) throw Failure("本次登录会话已失效，请重新获取验证码", 1)
         val challenge = pendingMfa ?: throw Failure("当前没有待确认的上行短信验证，请重新提交验证码")
         require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
-        submittedCode = code
         var lastDescription = "尚未收到平台确认"
         repeat(30) {
             if (cancelled || Thread.currentThread().isInterrupted) throw Failure("登录已取消")
