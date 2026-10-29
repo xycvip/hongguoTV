@@ -71,10 +71,12 @@ jobs:
             exit 1
           fi
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
-          VERSION_CODE="$((10#$DATE_CODE * 100 + DAILY_COUNT + 1))"
+          # Use the unique workflow run number, not only the number of successful releases.
+          # Failed builds also consume run numbers, so even an APK from a failed build
+          # cannot cause the next build to reuse its versionCode.
+          VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
           # Never publish a versionCode less than or equal to the latest published APK.
-          # This also protects against old/new runs racing or a release being published
-          # after the daily counter was calculated.
+          # This also protects against previously published versions from another build path.
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
           if curl --fail --silent --show-error --location \
