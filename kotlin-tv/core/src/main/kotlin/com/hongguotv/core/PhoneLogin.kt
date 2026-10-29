@@ -11,8 +11,8 @@ import org.json.JSONObject
 /**
  * 手机号 + 验证码登录（大陆与境外号码都收）。
  * * [send]：先匿名注册一台**新设备**（[DeviceRegister]），再用这台设备的身份发码。 设备注册仅是前置条件；短信登录换取会话尚未完成实机验收。
- * * [verify]：用**同一台设备**验码，平台在 `Set-Cookie` 里下发 `sessionid`。 换到的凭据带上这台设备的 `device_id` /
- *   `iid`（[AccountCredentials.device]）， 之后账号接口的签名都用它，会话与设备保持一致。
+ * * [verify]：使用同一设备完成官方 Passport 短信登录；遇到上行短信挑战时，从响应读取目标号码和正文，
+ *   由界面打开短信编辑页，用户发送后轮询官方验证接口并使用返回票据重试登录。
  *
  * 一个实例对应一次登录；重新发码会换一台新设备，之前的验证码随之作废。
  */
@@ -214,7 +214,15 @@ class PhoneLogin(private val http: OkHttpClient) {
         signed.headers.forEach { (k, v) -> request.header(k, v) }
         request.header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
         request.header("Accept", "application/json")
-        request.header("User-Agent", VendorConstants.APP_UA)
+        request.header("User-Agent", "com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
+        request.header("X-XS-From-Web", "0")
+        request.header("Sdk-Version", "2")
+        request.header("Passport-Sdk-Version", "5051452")
+        request.header("X-SS-DP", "8662")
+        request.header("X-Tt-Store-Region", "cn")
+        request.header("X-Tt-Store-Region-Src", "did")
+        request.header("X-Vc-Bdturing-Sdk-Version", "4.0.3.cn")
+        request.header("Lc", "101")
         if (cookies.isNotEmpty()) request.header("Cookie", cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
         if (token.isNotBlank()) request.header("X-Tt-Token", token)
         request.post(payload.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType()))
@@ -286,15 +294,6 @@ class PhoneLogin(private val http: OkHttpClient) {
         private const val PASSPORT = "https://is.snssdk.com"
         /** login-lab 实测：24 = 登录验证码；1 / 3 是绑定 / 换绑手机号。 */
         const val LOGIN_CODE_TYPE = "24"
-        /** `validate_code` 是要验证的主角；`sms_login` 系列是同一套 passport 上常见的直登端点，顺手一起试。 */
-        private val VERIFY_ATTEMPTS =
-            listOf(
-                "/passport/mobile/validate_code/v1/" to false,
-                "/passport/mobile/validate_code/v1/" to true,
-                "/passport/mobile/sms_login/" to true,
-                "/passport/mobile/sms_login_only/" to true,
-            )
-
         /**
          * 区号 + 本地号码 → 平台认的手机号；不合格时抛 [IllegalArgumentException]，[Throwable.message] 可直接显示。
          * * 大陆（86）：1 开头 11 位，原样发（实测可用）；
