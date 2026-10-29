@@ -293,7 +293,8 @@ class PhoneLogin(private val http: OkHttpClient) {
         .joinToString("") { "%02x".format((it.toInt() and 0xff) xor 5) }
 
     private fun wirePhone(value: String): String {
-        if (!value.startsWith("+")) return value
+        // Passport expects the mainland mobile field in canonical +86 format before XOR/hex encoding.
+        if (!value.startsWith("+")) return "+86$value"
         val code = value.drop(1).takeWhile(Char::isDigit)
         val local = value.drop(1 + code.length).filter(Char::isDigit)
         val widths = when (local.length) {
