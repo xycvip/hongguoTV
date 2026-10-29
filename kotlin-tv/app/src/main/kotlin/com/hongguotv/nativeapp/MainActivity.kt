@@ -114,6 +114,7 @@ class MainActivity: Activity() {
     private var launchStarted=android.os.SystemClock.elapsedRealtime()
     private val activityStarted=launchStarted
     private var homeContentLogged=false
+    private var pendingCloudProgress: CloudProgress? = null
     private lateinit var cloudAccount: AccountController
     private lateinit var library: Library
     private lateinit var tvTools: TvTools
@@ -367,6 +368,7 @@ class MainActivity: Activity() {
         library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
         updater=AppUpdater(this) { foreground && library.isLoaded && screen=="catalog" && !tvTools.showing }
         cloudAccount = AccountController(this) { remote ->
+            pendingCloudProgress = remote
             openDetail(remote.series, true)
         }
         cloudAccount.onHistoryChanged = {
@@ -2214,7 +2216,9 @@ class MainActivity: Activity() {
         work({ repository.detail(series.id) }, { result ->
             detail=result; library.observeFavorite(series.id,result.episodes.size,System.currentTimeMillis(),acknowledge=true)
             val progress=library.progress(series.id)
-            val target=ResumePlayback.target(result.episodes,progress?.episodeId,progress?.position ?: 0,progress?.completed==true)
+            val cloud = pendingCloudProgress?.takeIf { it.series.id == series.id }
+            pendingCloudProgress = null
+            val target=ResumePlayback.target(result.episodes,cloud?.episodeId ?: progress?.episodeId,cloud?.position ?: progress?.position ?: 0,progress?.completed==true)
             episodeIndex=target.index; group=episodeIndex/20
             if(resume) playEpisode(target.index,target.position,autoplay=detailAutoplay) else showDetail(false)
         }, { problem -> error(body,problem) { openDetail(series,resume,detailAutoplay) } })
@@ -3256,6 +3260,7 @@ class MainActivity: Activity() {
             cloudAccount.historyRows().take(50).forEach { item ->
                 val mins = (item.position / 60000L).coerceAtLeast(0)
                 val entry = button("▶  ${item.series.title}  ·  第 ${item.episodeIndex + 1} 集  ·  ${mins} 分钟", onClick = {
+                    pendingCloudProgress = item
                     openDetail(item.series, true)
                 })
                 body.addView(entry, lp().apply { bottomMargin = dp(5) })
