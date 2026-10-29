@@ -562,7 +562,7 @@ class MainActivity: Activity() {
         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
         if(requestCode==LocalBackupStorage.REQUEST_READ || requestCode==LocalBackupStorage.REQUEST_WRITE) {
             // 只有系统回调后才标记“已询问”；后续若被永久拒绝，可引导到应用详情页。
-            if(requestCode==LocalBackupStorage.REQUEST_WRITE) library.localPermissionAsked=true
+            library.localPermissionAsked=true
             val next=localPermissionContinuation; localPermissionContinuation=null
             if(next!=null && !isDestroyed) next()
             localBackupSettingButton?.text=localBackupLabel()
