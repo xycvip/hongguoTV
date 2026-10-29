@@ -320,6 +320,12 @@ class MainActivity: Activity() {
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
         mediaSession=TvMediaSession(this,{ if(foreground && screen=="player") requestPlayback(true) },{ if(foreground && screen=="player") requestPlayback(false) },{ position -> if(foreground && screen=="player") seekTo(position) },{ direction -> skipEpisode(direction) },{ if(foreground && screen=="player") returnToDetail() })
         message(base(),"正在读取本机记录…")
+        // Android 8/9：每次冷启动都按旧版运行时权限机制检查公共存储写权限。
+        // 用户拒绝只影响本地备份/恢复，不影响主界面和正常播放。
+        if(Build.VERSION.SDK_INT <= 28 &&
+            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),LocalBackupStorage.REQUEST_WRITE)
+        }
         loadLibrary()
     }
     private fun showLibraryError(problem: Throwable) {
@@ -410,7 +416,7 @@ class MainActivity: Activity() {
             done(); return
         }
         val storage=library.localBackup()
-        if(!storage.supported || (!storage.restoreAllowed && library.localPermissionAsked)) {
+        if(!storage.supported || (!storage.restoreAllowed && (library.localPermissionAsked || Build.VERSION.SDK_INT <= 28))) {
             library.localRestoreChecked=true
             library.maybeBackupOnStartup()
             done(); return
@@ -523,20 +529,7 @@ class MainActivity: Activity() {
                 Toast.makeText(this,"未获得存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
             }
         }
-        // Android 9：若此前已经请求过，且系统不再允许显示权限说明/请求弹窗，转到应用详情页手动授权。
-        if(Build.VERSION.SDK_INT <= 28 &&
-            current.backupAllowed.not() &&
-            library.localPermissionAsked &&
-            !shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-            val intent=Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
-            runCatching { startActivityForResult(intent,LocalBackupStorage.REQUEST_APP_SETTINGS) }
-                .onFailure {
-                    localPermissionContinuation=null
-                    if(enableAfterGrant) library.localBackupEnabled=false
-                    Toast.makeText(this,"请在系统设置的红果TV应用信息中开启存储权限",Toast.LENGTH_LONG).show()
-                }
-            return
-        }
+        // Android 8/9 始终使用 requestPermissions(WRITE_EXTERNAL_STORAGE)；拒绝后应用继续运行。
         if(!current.request(this)) {
             localPermissionContinuation=null
             if(enableAfterGrant) library.localBackupEnabled=false
