@@ -70,8 +70,25 @@ jobs:
           fi
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
           VERSION_CODE="$((10#$DATE_CODE * 100 + DAILY_COUNT + 1))"
+          # Never publish a versionCode less than or equal to the latest published APK.
+          # This also protects against old/new runs racing or a release being published
+          # after the daily counter was calculated.
+          LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
+          LATEST_VERSION_CODE=0
+          if curl --fail --silent --show-error --location \
+              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json" \
+              --output "$LATEST_MANIFEST"; then
+            LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
+          fi
+          if (( LATEST_VERSION_CODE >= VERSION_CODE )); then
+            VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
+          fi
+          if (( VERSION_CODE > 2100000000 )); then
+            echo "versionCode 超出 Android 支持上限，拒绝发布。" >&2
+            exit 1
+          fi
           echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          echo "Using date-based monotonic versionCode: $VERSION_CODE"
+          echo "Using verified monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Tests and release lint
