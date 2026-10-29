@@ -55,26 +55,41 @@ jobs:
             exit 1
           fi
           echo "HONGGUOTV_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          # APP_VERSION is maintained independently from upstream version strings.
-          # Each Actions run gets a unique display/build suffix, even when old releases were deleted.
+          # APP_VERSION is the desired semantic-version baseline. If it matches the
+          # latest release, automatically increment PATCH; if manually raised, honor it.
           APP_VERSION="$(sed -nE 's/^APP_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' kotlin-tv/version.properties | head -n 1)"
           if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "kotlin-tv/version.properties 中 APP_VERSION 必须为 MAJOR.MINOR.PATCH，例如 1.0.0。" >&2
             exit 1
           fi
-          VERSION_NAME="${APP_VERSION}-build.${GITHUB_RUN_NUMBER}"
-          DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
-          # Date + unique workflow run number makes versionCode monotonic across daily builds.
-          VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
-          # Keep every new APK newer than the newest published APK, including releases
-          # created by an older workflow or from another build path.
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
           if curl --fail --silent --show-error --location \
               "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json?cachebust=$(date +%s)" \
               --output "$LATEST_MANIFEST"; then
             LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
+            VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
+          import json, re, sys
+          configured = tuple(map(int, sys.argv[1].split(".")))
+          try:
+              latest_name = str(json.load(open(sys.argv[2])).get("versionName", ""))
+          except Exception:
+              latest_name = ""
+          match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:-build\.\d+)?", latest_name)
+          if not match:
+              chosen = configured
+          else:
+              latest = tuple(map(int, match.groups()))
+              chosen = (latest[0], latest[1], latest[2] + 1) if latest >= configured else configured
+          print(".".join(map(str, chosen)))
+          PY
+          )"
+          else
+            VERSION_NAME="$APP_VERSION"
           fi
+          DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
+          # Date + unique workflow run number makes versionCode monotonic across daily builds.
+          VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
           if (( LATEST_VERSION_CODE >= VERSION_CODE )); then
             VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
           fi
