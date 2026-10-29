@@ -163,43 +163,53 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
      */
     fun searchCombined(keyword: String, page: Int = 1): CatalogPage {
         require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
-        val comicResult = runCatching { search(keyword,page,ContentType.COMIC) }
-        val shortResult = runCatching { search(keyword,page,ContentType.SHORT) }
+
+        // 首屏只请求两种类型各自的第一页，并行取数，避免串行等待或多页请求拖慢搜索。
+        val pool=Executors.newFixedThreadPool(2)
+        val comicFuture=pool.submit(Callable { runCatching { search(keyword,1,ContentType.COMIC) } })
+        val shortFuture=pool.submit(Callable { runCatching { search(keyword,1,ContentType.SHORT) } })
+        val comicResult: Result<CatalogPage>
+        val shortResult: Result<CatalogPage>
+        try {
+            comicResult=comicFuture.get()
+            shortResult=shortFuture.get()
+        } finally {
+            pool.shutdownNow()
+        }
         if(comicResult.exceptionOrNull() is SearchSessionExpiredException || shortResult.exceptionOrNull() is SearchSessionExpiredException) {
             throw SearchSessionExpiredException()
         }
-        val comic = comicResult.getOrNull()
-        val short = shortResult.getOrNull()
+        val comic=comicResult.getOrNull()
+        val short=shortResult.getOrNull()
         if(comic==null && short==null) {
             throw IOException("漫剧和短剧搜索均暂不可用（漫剧：${comicResult.exceptionOrNull()?.message ?: "未知错误"}；短剧：${shortResult.exceptionOrNull()?.message ?: "未知错误"}）")
         }
-        val candidates = buildList {
+        val candidates=buildList {
             comic?.items?.forEach { add(ContentType.COMIC to it) }
             short?.items?.forEach { add(ContentType.SHORT to it) }
         }
         fun normalizeTitle(value: String)=value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
-        val ranked = candidates.withIndex()
-            .sortedWith(Comparator { left, right ->
+        val ranked=candidates.withIndex()
+            .sortedWith(Comparator { left,right ->
                 val leftItem=left.value
                 val rightItem=right.value
                 val score=titleMatchScore(rightItem.second.title,keyword).compareTo(titleMatchScore(leftItem.second.title,keyword))
                 if(score!=0) score
                 else {
-                    val titleOrder=normalizeTitle(leftItem.second.title).compareTo(normalizeTitle(rightItem.second.title))
-                    if(titleOrder!=0) titleOrder
-                    else if(leftItem.first!=rightItem.first) {
+                    val leftTitle=normalizeTitle(leftItem.second.title)
+                    val rightTitle=normalizeTitle(rightItem.second.title)
+                    if(leftTitle==rightTitle && leftItem.first!=rightItem.first) {
                         if(leftItem.first==ContentType.SHORT) -1 else 1
                     } else left.index.compareTo(right.index)
                 }
             })
             .map { it.value }
-            // Never collapse a short drama and a comic just because their IDs or titles match.
+            // 不跨类型合并同名作品；短剧和漫剧同名时都显示。
             .distinctBy { (type,series) -> "${type.storedValue}:${series.id}" }
             .map { (type,series) ->
-                val detail = series.badge.trim()
+                val detail=series.badge.trim()
                 series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · ${detail}")
             }
-        // Unified search is a single merged result set: do not expose a second-page footer.
         return CatalogPage(ranked,false)
     }
 
