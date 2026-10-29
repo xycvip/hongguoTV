@@ -205,6 +205,7 @@ class MainActivity: Activity() {
     /** 顶栏只读接口状态；结果保留在重建后的页面中。 */
     private val apiStatusViews=mutableMapOf<String,TextView>()
     private val apiStatusResults=mutableMapOf<String,Pair<Int,String>>()
+    private val apiStatusAnimators=mutableMapOf<String,ObjectAnimator>()
     private var apiStatusCheckStarted=false
     private val typeButtons=mutableMapOf<ContentType,View>()
     private var homeRefreshControl: TextView?=null
@@ -837,12 +838,16 @@ class MainActivity: Activity() {
         }
         invalidatePage(); screen="catalog"; releaseCatalogViews(); val container=base()
         if(foreground && library.isLoaded && !favoriteMonitor.running) main.post { if(foreground && screen=="catalog") favoriteMonitor.check() }
-        val top=row().apply { setPadding(0,0,0,dp(8)) }
-        val brand=row()
-        brand.addView(ImageView(this).apply { setImageResource(com.hongguotv.nativeapp.R.drawable.app_icon) },lp(dp(28),dp(28)).apply { rightMargin=dp(9) })
-        brand.addView(text("红果",22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
-        brand.addView(text("v${BuildConfig.VERSION_NAME.substringBefore('+')}",12f,muted).apply { setPadding(dp(5),0,0,dp(9)) },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
-        top.addView(brand,lp(dp(172),dp(44)))
+        val compactHeader=widthDp()<900
+        val top=row().apply { setPadding(0,0,0,dp(4)); gravity=Gravity.CENTER_VERTICAL }
+        val brand=row().apply { gravity=Gravity.CENTER_VERTICAL }
+        brand.addView(ImageView(this).apply { setImageResource(com.hongguotv.nativeapp.R.drawable.app_icon) },lp(dp(if(compactHeader) 24 else 28),dp(if(compactHeader) 24 else 28)).apply { rightMargin=dp(6) })
+        brand.addView(text("红果",if(compactHeader) 18f else 22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
+        brand.addView(text("v${BuildConfig.VERSION_NAME.substringBefore('+')}",12f,muted).apply {
+            setPadding(dp(5),0,0,dp(9))
+            if(compactHeader) visibility=View.GONE
+        },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
+        top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
         listOf("首页","搜索","排行榜","收藏","最近观看","设置").forEachIndexed { index,label ->
             val item=addButton(top,label,index==tab) { switchTab(index) }
             fun paint(focused: Boolean) {
@@ -852,24 +857,41 @@ class MainActivity: Activity() {
             }
             paint(false); item.setOnFocusChangeListener { _,focused -> paint(focused) }; nav+=item
         }
-        // 右侧独立状态区：只读、不可选中，与可操作的主导航通过竖线分隔。
-        if(widthDp()>=900) top.addView(Space(this),lp(0,1).apply { weight=1f })
-        top.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(dp(1),dp(26)).apply { leftMargin=dp(5); rightMargin=dp(5) })
+        val statusHost=if(compactHeader) row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,0,0,dp(3)) } else top
+        if(!compactHeader && widthDp()>=900) top.addView(Space(this),lp(0,1).apply { weight=1f })
+        statusHost.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(dp(1),dp(24)).apply { leftMargin=dp(5); rightMargin=dp(5) })
         apiStatusViews.clear()
         listOf("首页","搜索","播放","联想").forEach { name ->
             val chip=text("● $name",10f,muted).apply {
-                setPadding(dp(5),dp(6),dp(5),dp(6))
+                gravity=Gravity.CENTER
+                includeFontPadding=false
+                setPadding(dp(5),dp(5),dp(5),dp(5))
                 background=rounded(surface)
                 isFocusable=false; isFocusableInTouchMode=false; isClickable=false
                 importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 maxLines=1
             }
             apiStatusViews[name]=chip
-            top.addView(chip,lp(-2,dp(34)).apply { leftMargin=dp(2) })
-            apiStatusResults[name]?.let { (color,detail) -> setApiStatus(name,color,detail) }
+            statusHost.addView(chip,lp(if(compactHeader) dp(61) else -2,dp(32)).apply { leftMargin=dp(3) })
+            apiStatusResults[name]?.let { (color,detail) ->
+                if(detail.startsWith("检测中") || detail.startsWith("重试中")) animateApiStatus(name,color,detail)
+                else setApiStatus(name,color,detail)
+            }
         }
-        container.addView(top)
-        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
+        if(compactHeader) {
+            val navScroll=HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled=false; isFillViewport=false; clipToPadding=false
+                addView(top,HorizontalScrollView.LayoutParams(-2,dp(44)))
+            }
+            container.addView(navScroll,lp(-1,dp(46)))
+            val statusScroll=HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled=false; isFillViewport=true; clipToPadding=false
+                addView(statusHost,HorizontalScrollView.LayoutParams(-2,dp(35)))
+            }
+            container.addView(statusScroll,lp(-1,dp(38)))
+        } else container.addView(top)
+        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
+        if(tab==0) container.post { if(screen=="catalog" && tab==0) runAutomaticApiChecks() }
         if(tab==5) {
             // 设置页：内容可滚动，页脚固定在屏幕底部居中，始终可见；去掉容器下内边距让页脚真正贴底
             container.setPadding(container.paddingLeft,container.paddingTop,container.paddingRight,0)
@@ -938,7 +960,7 @@ class MainActivity: Activity() {
                     scheduleSuggest()
                 }
             })
-            val keyHeight=if(tall) dp(32) else dp(29)
+            val keyHeight=if(mode==0) dp(((heightDp()-220f)/16f).toInt().coerceIn(22,38)) else if(tall) dp(32) else dp(29)
             fun azKey(label: String): TextView {
                 val view=button(label) { onAzKey(label) }
                 view.textSize=14f; view.minHeight=keyHeight; view.setPadding(dp(2),dp(3),dp(2),dp(3))
@@ -956,13 +978,13 @@ class MainActivity: Activity() {
                 if(views.size<4) {
                     line.addView(View(this),lp(0,if(mode==0) dp(1) else -1).apply { weight=(4-views.size).toFloat() })
                 }
-                keyboard.addView(line,if(mode==0) lp(-1,-2) else lp(-1,0).apply { weight=1f }); keyLines+=views
+                keyboard.addView(line,if(mode==0) lp(-1,keyHeight+dp(3)) else lp(-1,0).apply { weight=1f }); keyLines+=views
             }
             val lastLine=row().apply { setPadding(0,0,0,dp(3)); gravity=Gravity.CENTER_VERTICAL }
             val del=azKey("删除").also { lastLine.addView(it,lp(0,if(mode==0) -2 else -1).apply { weight=1f; rightMargin=dp(4) }); keyViews["删除"]=it }
             val clear=azKey("清空").also { lastLine.addView(it,lp(0,if(mode==0) -2 else -1).apply { weight=1f; rightMargin=dp(4) }); keyViews["清空"]=it }
             val searchKey=azKey("搜索").also { it.setOnClickListener { search() }; lastLine.addView(it,lp(0,if(mode==0) -2 else -1).apply { weight=1f }); keyViews["搜索"]=it }
-            keyboard.addView(lastLine,if(mode==0) lp(-1,-2) else lp(-1,0).apply { weight=1f })
+            keyboard.addView(lastLine,if(mode==0) lp(-1,keyHeight+dp(3)) else lp(-1,0).apply { weight=1f })
             val lastViews=listOf(del,clear,searchKey)
             keyLines+=lastViews
             keyLines.forEachIndexed { r,views ->
@@ -1002,10 +1024,12 @@ class MainActivity: Activity() {
                     block.addView(head)
                     // 根据屏幕高度动态决定历史显示条数，剩余记录可从“全部历史”进入。
                     // 搜索页只保留少量最近记录；其余统一放进“全部历史”，避免历史栏挤占键盘空间。
-                    val visibleHistoryCount=((heightDp()-250f)/72f).toInt().coerceIn(3,5)
+                    val historyAvailable=(heightDp()-180f).coerceAtLeast(220f)
+                    val historyItemHeight=((historyAvailable-70f)/10f).toInt().coerceIn(38,52)
+                    val visibleHistoryCount=((historyAvailable-70f)/(historyItemHeight+8f)).toInt().coerceIn(2,10)
                     val items=history.take(visibleHistoryCount).map { entry ->
                         button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type) }.apply {
-                            textSize=13f; minHeight=dp(38); setPadding(dp(8),dp(5),dp(8),dp(5)); gravity=Gravity.CENTER_VERTICAL
+                            textSize=13f; minHeight=dp(historyItemHeight); setPadding(dp(8),dp(5),dp(8),dp(5)); gravity=Gravity.CENTER_VERTICAL
                             maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END
                         }
                     }
@@ -1872,10 +1896,12 @@ class MainActivity: Activity() {
         }
         syncSuggestPanel(true)
         // setSingleLine 开启横向滚动模式，marquee 才按全文宽度布局滚得起来；仅 maxLines=1 只会截断省略
-        val views=words.map { word -> button(word) { runSearch(word) }.apply { textSize=14f; minHeight=dp(34); setSingleLine(true); marqueeRepeatLimit=-1; ellipsize=android.text.TextUtils.TruncateAt.END; setPadding(dp(10),dp(6),dp(10),dp(6)) } }
+        val suggestItemHeight=if(suggestVertical) dp(((heightDp()-240f)/18f).toInt().coerceIn(32,46)) else dp(((heightDp()-480f)/20f).toInt().coerceIn(26,34))
+        val suggestGap=dp(((heightDp()-480f)/100f).toInt().coerceIn(2,7))
+        val views=words.map { word -> button(word) { runSearch(word) }.apply { textSize=14f; minHeight=suggestItemHeight; setSingleLine(true); marqueeRepeatLimit=-1; ellipsize=android.text.TextUtils.TruncateAt.END; setPadding(dp(10),dp(5),dp(10),dp(5)) } }
         views.forEachIndexed { index,view ->
-            if(suggestVertical) container.addView(view,lp(-1,-2).apply { bottomMargin=dp(4) })
-            else container.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; rightMargin=dp(8) })
+            if(suggestVertical) container.addView(view,lp(-1,suggestItemHeight).apply { bottomMargin=suggestGap })
+            else container.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; height=suggestItemHeight; rightMargin=suggestGap })
             // 竖排联想：左回键盘离开位置、右/下进结果区（结果首卡优先，否则指向结果网格，避免原地自锁）；横排保持词间左右互连
             view.nextFocusLeftId=if(suggestVertical) (keyboardLastLabel?.let { keyboardKeys[it] } ?: azFirst)?.id ?: historyFirst?.id ?: View.NO_ID else views[if(index==0) 0 else index-1].id
             view.nextFocusRightId=if(suggestVertical) resultFirstCard?.id ?: catalogRecycler?.id ?: view.id else views[if(index==views.size-1) index else index+1].id
@@ -2707,44 +2733,74 @@ class MainActivity: Activity() {
     }
 
     private fun setApiStatus(name: String,color: Int,detail: String) {
+        apiStatusAnimators.remove(name)?.cancel()
+        apiStatusViews[name]?.alpha=1f
         apiStatusResults[name]=color to detail
         val chip=apiStatusViews[name] ?: return
         val label=SpannableString("● $name")
         label.setSpan(ForegroundColorSpan(color),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         chip.text=label
+        chip.gravity=Gravity.CENTER
         chip.contentDescription="$name：$detail"
     }
 
-    /** 首页首次显示时串行轻量自检，状态只读显示在导航栏右侧；不因页面重建重复请求。 */
-    private fun runAutomaticApiChecks() {
-        if(apiStatusCheckStarted || !library.isLoaded || isDestroyed) return
-        apiStatusCheckStarted=true
-        val pending=Color.rgb(238,166,64)
-        val ok=Color.rgb(86,196,122)
-        val failed=Color.rgb(235,95,95)
-        val idle=Color.rgb(145,151,163)
-        listOf("首页","搜索","播放","联想").forEach { setApiStatus(it,pending,"检测中") }
-        io.execute {
-            val results=linkedMapOf<String,Pair<Int,String>>()
-            fun probe(name: String,action: ()->String) {
-                runCatching(action).fold(
-                    { detail -> results[name]=ok to detail },
-                    { problem -> results[name]=failed to ((problem.message ?: problem.javaClass.simpleName).take(100)) }
-                )
-            }
-            probe("首页") { "返回 ${repository.home(1,library.contentType).items.size} 条" }
-            probe("搜索") { "返回 ${repository.search("修仙",1,library.contentType).items.size} 条" }
-            val progress=library.history().firstOrNull()
-            if(progress==null) results["播放"]=idle to "暂无观看记录，无法自动验证播放地址"
-            else probe("播放") { "获取 ${repository.stream(progress.episodeId,library.maxQuality).quality} 清晰度" }
-            probe("联想") { "返回 ${repository.suggest("修仙").size} 个词" }
-            main.post {
-                if(!isDestroyed) results.forEach { (name,result) -> setApiStatus(name,result.first,result.second) }
-            }
+    /** 蓝灯闪烁=首次检测；橙灯闪烁=失败后重试；结束后常亮显示真实结果。 */
+    private fun animateApiStatus(name: String,color: Int,detail: String) {
+        setApiStatus(name,color,detail)
+        val chip=apiStatusViews[name] ?: return
+        val animator=ObjectAnimator.ofFloat(chip,"alpha",1f,0.35f,1f).apply {
+            duration=900L
+            repeatCount=ValueAnimator.INFINITE
+            repeatMode=ValueAnimator.RESTART
         }
+        apiStatusAnimators[name]=animator
+        animator.start()
     }
 
-    /** 接口自检：用户逐项点击，单次串行请求，失败只提示不重试，避免给站点增加并发压力。
+    /** 每次启动首次进入主页时检测；成功即停止，失败最多重试 3 次，页面切换不重复请求。 */
+    private fun runAutomaticApiChecks() {
+        if(apiStatusCheckStarted || !library.isLoaded || isDestroyed || tab!=0) return
+        apiStatusCheckStarted=true
+        val checking=Color.rgb(70,150,255)
+        val retrying=Color.rgb(244,166,64)
+        val ok=Color.rgb(70,190,110)
+        val failed=Color.rgb(235,75,75)
+        val unknown=Color.rgb(238,190,55)
+        listOf("首页","搜索","播放","联想").forEach { animateApiStatus(it,checking,"检测中") }
+        val progress=runCatching { library.history().firstOrNull() }.getOrNull()
+
+        fun probe(name: String,action: ()->String) {
+            io.execute {
+                var final: Pair<Int,String>?=null
+                var lastError="请求失败"
+                for(attempt in 0..3) {
+                    if(attempt>0) {
+                        main.post { if(!isDestroyed) animateApiStatus(name,retrying,"重试中（$attempt/3）") }
+                        try { Thread.sleep(650L) } catch (_: InterruptedException) { Thread.currentThread().interrupt(); return@execute }
+                    }
+                    val result=runCatching(action)
+                    if(result.isSuccess) {
+                        final=ok to result.getOrThrow()
+                        break
+                    }
+                    lastError=(result.exceptionOrNull()?.message ?: result.exceptionOrNull()?.javaClass?.simpleName ?: "请求失败").take(100)
+                }
+                val result=final ?: (failed to lastError)
+                main.post { if(!isDestroyed) setApiStatus(name,result.first,result.second) }
+            }
+        }
+
+        probe("首页") { "请求成功 · 返回 ${repository.home(1,library.contentType).items.size} 条" }
+        probe("搜索") { "请求成功 · 返回 ${repository.search("修仙",1,library.contentType).items.size} 条" }
+        if(progress==null) {
+            setApiStatus("播放",unknown,"暂无观看记录，无法验证播放地址")
+        } else {
+            probe("播放") { "已获取播放地址 · ${repository.stream(progress.episodeId,library.maxQuality).quality}" }
+        }
+        probe("联想") { "请求成功 · 返回 ${repository.suggest("修仙").size} 个词" }
+    }
+
+        /** 接口自检：用户逐项点击，单次串行请求，失败只提示不重试，避免给站点增加并发压力。
      *  状态圆点内嵌在按钮文字前：灰=未检测，橙=检测中，绿=通，红=不通；3 秒内重复点击直接忽略。 */
     private fun showInterfaceCheck(anchor: TextView) {
         val content=column()
@@ -3150,7 +3206,7 @@ class MainActivity: Activity() {
             }
             if(screen=="catalog") {
                 favoriteMonitor.check()
-                if(!apiStatusCheckStarted) main.post { runAutomaticApiChecks() }
+                if(!apiStatusCheckStarted && tab==0) main.post { runAutomaticApiChecks() }
             }
             if(screen=="player") syncMediaSession()
         } else libraryLoadError?.let(::showLibraryError)

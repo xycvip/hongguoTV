@@ -149,6 +149,19 @@ jobs:
             echo "Deleting old release ID $RELEASE_ID"
             gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
           done <<< "$OLD_RELEASE_IDS"
+      - name: Keep only the newest application release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          CURRENT_TAG="$UPDATE_TAG"
+          while IFS= read -r REF; do
+            [[ -n "$REF" ]] || continue
+            TAG="${REF#refs/tags/}"
+            [[ "$TAG" == "$CURRENT_TAG" ]] && continue
+            echo "Deleting old application tag: $TAG"
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG"
+          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/kotlin-v" --jq '.[].ref')
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
