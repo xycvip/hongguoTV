@@ -401,10 +401,14 @@ class MainActivity: Activity() {
     }
 
     /**
-     * 本地备份使用系统文件选择器（SAF），只在用户主动操作时读写用户选定的文件。
-     * 不申请 READ/WRITE_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 权限，
-     * 也不在启动时弹权限框或自动恢复。
+     * 优先使用系统文件选择器。部分 Android 9 电视没有 DocumentsUI/文件保存器，
+     * 此时退回应用专用目录，不申请整盘存储权限，也不会丢失备份功能。
      */
+    private fun backupFolder(): java.io.File {
+        val base=getExternalFilesDir(android.os.Environment.DIRECTORY_DOCUMENTS) ?: java.io.File(filesDir,"Documents")
+        return java.io.File(base,"HongguoTVBackups").apply { mkdirs() }
+    }
+
     private fun showFileBackupDialog(anchor: View) {
         tvTools.choose("本地备份与恢复",listOf("导出备份文件","从备份文件恢复"),anchor,{ choice ->
             when(choice) {
@@ -416,7 +420,7 @@ class MainActivity: Activity() {
                         putExtra(Intent.EXTRA_TITLE,"hongguotv-backup-$stamp.json")
                     }
                     runCatching { startActivityForResult(intent,REQUEST_EXPORT_BACKUP) }
-                        .onFailure { tvTools.info("无法导出备份","当前设备没有可用的文件保存器。",anchor) }
+                        .onFailure { exportLibraryBackupToAppFolder(anchor) }
                 }
                 1 -> {
                     val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
@@ -425,10 +429,53 @@ class MainActivity: Activity() {
                         putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("application/json","text/json","text/plain"))
                     }
                     runCatching { startActivityForResult(intent,REQUEST_IMPORT_BACKUP) }
-                        .onFailure { tvTools.info("无法导入备份","当前设备没有可用的文件选择器。",anchor) }
+                        .onFailure { showLocalBackupFiles(anchor) }
                 }
             }
         })
+    }
+
+    /** 无系统保存器时，将文件写入 Android 为本应用分配的专用目录，不需要存储权限。 */
+    private fun exportLibraryBackupToAppFolder(anchor: View?) {
+        val snapshot=runCatching { library.snapshot() }.getOrElse {
+            tvTools.info("备份失败","无法读取当前本机记录，请稍后重试。",anchor)
+            return
+        }
+        io.execute {
+            val result=runCatching {
+                val folder=backupFolder()
+                val stamp=java.text.SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(java.util.Date())
+                val file=java.io.File(folder,"hongguotv-backup-$stamp.json")
+                file.writeText(LibraryBackup.encode(snapshot),Charsets.UTF_8)
+                file.absolutePath
+            }
+            main.post {
+                if(isDestroyed) return@post
+                result.onSuccess { path ->
+                    tvTools.info("备份已保存","这台电视没有系统文件保存器，备份已保存到应用专用目录：\n${path}\n\n可使用电视上的文件管理器复制该 JSON 文件。",anchor)
+                }.onFailure { error ->
+                    tvTools.info("备份失败","无法保存备份文件：${error.message ?: "未知错误"}",anchor)
+                }
+            }
+        }
+    }
+
+    /** 无系统文件选择器时，允许从应用专用备份目录中选取之前导出的 JSON 文件。 */
+    private fun showLocalBackupFiles(anchor: View?) {
+        val folder=backupFolder()
+        val files=folder.listFiles()?.filter { it.isFile && it.extension.equals("json",true) }
+            ?.sortedByDescending { it.lastModified() }.orEmpty()
+        if(files.isEmpty()) {
+            tvTools.info("无法选择备份文件","当前电视没有可用的系统文件选择器，应用专用备份目录中也没有 JSON 备份。\n\n先导出备份可保存到：\n${folder.absolutePath}\n\n也可以在电视上安装文件管理器后重试导入。",anchor)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("选择本机备份文件")
+            .setItems(files.map { it.name }.toTypedArray()) { _, which ->
+                if(which in files.indices) importLibraryBackup(Uri.fromFile(files[which]),anchor)
+            }
+            .setNegativeButton("取消",null)
+            .show()
     }
 
     private fun exportLibraryBackup(uri: Uri) {
