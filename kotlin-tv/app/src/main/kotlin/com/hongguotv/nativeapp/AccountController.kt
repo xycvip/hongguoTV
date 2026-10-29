@@ -21,7 +21,7 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Credentials stay in an Android Keystore encrypted partition, outside library exports. */
+/** Local storage is encrypted with Android Keystore; explicit user backups export this payload as plaintext. */
 private class AccountStore(context: Context) {
     private val prefs = context.getSharedPreferences("cloud_account_secure", Context.MODE_PRIVATE)
     private val alias = "hongguotv.cloud.account.v1"
