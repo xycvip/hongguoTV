@@ -3231,7 +3231,7 @@ class MainActivity: Activity() {
             setPadding(dp(10), dp(12), dp(10), dp(12))
             minimumHeight = (resources.displayMetrics.heightPixels - dp(140)).coerceAtLeast(dp(250))
         }
-        val cardWidth = dp((widthDp() - 48).coerceAtLeast(280).coerceAtMost(680))
+        val cardWidth = dp((widthDp() - 48).coerceAtLeast(280).coerceAtMost(680).toFloat())
         val card = column().apply {
             background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
             setPadding(dp(24), dp(22), dp(24), dp(22))
@@ -3378,7 +3378,7 @@ class MainActivity: Activity() {
         })
         card.addView(modeRow, lp())
         body.addView(card, lp(cardWidth, -2))
-        scroll.addView(body, ScrollView.LayoutParams(-1, -1))
+        scroll.addView(body, FrameLayout.LayoutParams(-1, -1))
         host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         if (!cloudAccount.signedIn && accountLoginMode == 0 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
             accountQrAutoStarted = true
