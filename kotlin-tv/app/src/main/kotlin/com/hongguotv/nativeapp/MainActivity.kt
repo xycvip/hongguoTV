@@ -1016,11 +1016,9 @@ class MainActivity: Activity() {
                 val rightColumn=column()
                 if(mode==3) {
                     suggestRow=midColumn; suggestVertical=true; suggestScrollRef=midScroll
-                    contentRow.addView(leftScroll,lp(if(roomy) dp(430) else dp(360),-1))
                     contentRow.addView(midScroll,lp(if(roomy) dp(180) else dp(140),-1))
                     contentRow.addView(rightColumn,lp(0,-1).apply { weight=1f })
                 } else {
-                    contentRow.addView(leftScroll,lp(dp(360),-1))
                     contentRow.addView(rightColumn,lp(0,-1).apply { weight=1f })
                     val suggestScroll=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; isFocusable=false }
                     val suggestLine=row(); suggestScroll.addView(suggestLine); suggestRow=suggestLine; suggestVertical=false
