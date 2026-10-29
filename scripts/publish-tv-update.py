@@ -6,9 +6,7 @@ TAG = os.environ["UPDATE_TAG"]
 VERSION_NAME = os.environ["HONGGUOTV_VERSION_NAME"]
 VERSION_CODE = int(os.environ["HONGGUOTV_VERSION_CODE"])
 APK_SRC = "kotlin-tv/app/build/outputs/apk/release/app-release.apk"
-BUILD_NUMBER = VERSION_NAME.rsplit("-build.", 1)[-1]
-APP_VERSION = VERSION_NAME.rsplit("-build.", 1)[0]
-APK_NAME = f"HongguoTV-{APP_VERSION}-{BUILD_NUMBER}.apk"
+APK_NAME = f"HongguoTV-{VERSION_NAME}.apk"
 OUTPUTS = "outputs"
 os.makedirs(OUTPUTS, exist_ok=True)
 apk_path = os.path.join(OUTPUTS, APK_NAME)
@@ -21,7 +19,7 @@ def changelog():
     return (
         "- Android 9 电视没有系统文件保存器时，本地备份改为保存到应用专用目录，并支持从该目录恢复。\n"
         "- 更新检查增加缓存规避，并以设备实际安装版本判断是否允许覆盖安装，避免误下载旧包。\n"
-        "- 版本号改为独立的 MAJOR.MINOR.PATCH-build.构建号，不再依赖上游版本字符串或已发布 Release 记录。"
+        "- 版本号使用 MAJOR.MINOR.PATCH；同一版本线每次成功发布自动递增补丁号，APK 文件名只保留应用版本号。"
     )
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
 manifest = {
