@@ -34,7 +34,23 @@ class PhoneLogin(private val http: OkHttpClient) {
     /** [maskedMobile] 是平台回显的打码号码（如 `+886******23`）。 */
     data class Sent(val maskedMobile: String, val retrySeconds: Int)
 
+    @Volatile private var activeCall: okhttp3.Call? = null
+    @Volatile private var cancelled = false
+    private var pendingMfa: UpSmsChallenge? = null
+    private var submittedCode = ""
+
+    data class UpSmsChallenge(val channelMobile: String, val smsContent: String, val encryptUid: String, val smsCodeKey: String, val logId: String)
+    class UpSmsRequired(val challenge: UpSmsChallenge) :
+        Exception("平台要求发送一条验证短信，请按页面提示完成验证")
+
+    fun cancel() {
+        cancelled = true
+        activeCall?.cancel()
+    }
+
     fun send(mobile: String): Sent {
+        cancel()
+        cancelled = false
         val registered =
             CloudAccountClient(http).registerDevice() ?: throw Failure("设备注册失败，请检查网络后重试")
         deviceId = registered.deviceId
@@ -42,109 +58,223 @@ class PhoneLogin(private val http: OkHttpClient) {
         cookies.clear()
         cookies.putAll(registered.cookies)
         expired = false
+        pendingMfa = null
+        submittedCode = ""
         this.mobile = mobile
-        val reply =
-            call(
-                "/passport/mobile/send_code/v1/",
-                mapOf("mobile" to mobile, "type" to type),
-                form = false,
-            )
+        val reply = call(
+            "/passport/mobile/send_code/v1/",
+            mapOf("auto_read" to "0", "unbind_exist" to "34", "type" to xor("24")),
+        )
         val data = reply.optJSONObject("data") ?: JSONObject()
-        // 风控要求滑块验证：电视上没法做，也不去绕它。
         if (data.has("verify_center_decision_conf"))
-            throw Failure("平台要求先完成滑块验证，当前电视登录流程不支持，尚未完成登录。")
-        if (reply.optString("message") != "success") throw Failure(describe(data) ?: "验证码没发出去")
+            throw Failure("平台要求先完成滑块验证，请在官方红果 App 完成验证后再试。")
+        if (!isSuccess(reply)) throw Failure(describe(data) ?: "验证码没发出去")
         ticket = data.optString("mobile_ticket")
         return Sent(data.optString("mobile").ifBlank { mobile }, data.optInt("retry_time", 60))
     }
 
     fun verify(code: String): AccountCredentials {
-        if (expired) throw Failure("本次登录会话已失效，不能继续使用此会话提交验证码", 1)
+        if (expired) throw Failure("本次登录会话已失效，请重新获取验证码", 1)
         check(deviceId.isNotEmpty()) { "请先发送验证码" }
-        val params =
-            mapOf("mobile" to mobile, "code" to code, "type" to type, "mobile_ticket" to ticket)
-        val replies = mutableListOf<JSONObject>()
-        for ((path, form) in VERIFY_ATTEMPTS) {
-            val reply = call(path, params, form)
-            replies += reply
-            if (cookies.containsKey("sessionid")) break
-            val error = reply.optJSONObject("data")
-            if (error != null && error.optInt("error_code", 0) != 0) {
-                val errorCode = error.optInt("error_code")
-                if (errorCode == 1) {
-                    expired = true
-                    cookies.clear()
-                    ticket = ""
-                    throw Failure(
-                        "平台拒绝本次登录会话（错误码 1）。短信发送成功不代表登录会话有效，当前登录链路尚未接通；请勿反复获取或提交验证码。",
-                        errorCode,
-                    )
-                }
-                throw Failure(describe(error) ?: "验证码校验失败", errorCode, errorCode == 1102)
-            }
+        require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
+        submittedCode = code
+        val reply = smsLogin(code, "")
+        if (isSuccess(reply)) return credentialsOrThrow()
+        val data = reply.optJSONObject("data") ?: JSONObject()
+        parseUpSmsChallenge(data)?.let {
+            pendingMfa = it
+            throw UpSmsRequired(it)
         }
-        if (!cookies.containsKey("sessionid")) {
-            throw Failure(
-                replies.firstNotNullOfOrNull { describe(it.optJSONObject("data") ?: JSONObject()) }
-                    ?: "登录没有成功，平台没有下发登录态"
-            )
-        }
-        val header = cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" }
-        return AccountCredentialsParser.parseHeader(header)
-            .copy(
-                deviceId = deviceId,
-                installId = installId,
-                device = mapOf("device_id" to deviceId, "iid" to installId),
-            )
+        throw Failure(describe(data) ?: "验证码校验失败", errorCode(reply), errorCode(reply) == 1102)
     }
 
-    /** 带这台设备的身份签名后发一次 passport 请求；`Set-Cookie` 并进 [cookies]，返回 JSON（非 JSON 时包成 `raw`）。 */
-    private fun call(path: String, params: Map<String, String>, form: Boolean): JSONObject {
-        val device =
-            LinkedHashMap(VendorConstants.device).apply {
-                put("device_id", deviceId)
-                put("iid", installId)
-                for (key in
-                    listOf(
-                        "version_code",
-                        "manifest_version_code",
-                        "update_version_code",
-                        "pv_player",
-                    )) put(key, "73932")
-                put("version_name", "7.3.9.32")
+    /** 用户从短信编辑页返回并确认已发送后调用；最多 90 秒，每 3 秒查询一次。 */
+    fun verifyUpSmsAndLogin(code: String): AccountCredentials {
+        if (expired) throw Failure("本次登录会话已失效，请重新获取验证码", 1)
+        val challenge = pendingMfa ?: throw Failure("当前没有待确认的上行短信验证，请重新提交验证码")
+        require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
+        submittedCode = code
+        var lastDescription = "尚未收到平台确认"
+        repeat(30) {
+            if (cancelled || Thread.currentThread().isInterrupted) throw Failure("登录已取消")
+            val reply = call(
+                "/passport/upsms/verify/",
+                mapOf(
+                    "encrypt_uid" to challenge.encryptUid,
+                    "verify_ticket" to "",
+                    "verify_scene" to "sms_login",
+                    "verify_reason" to "ato",
+                    "copywriting_key" to "sms_login",
+                    "ies_safety_diversion_tag" to "mfa",
+                    "new_verify_flow" to "",
+                    "new_authn_sdk_version" to "1.1.31",
+                    "new_authn_sdk_verify_reason" to "ato",
+                    "new_authn_sdk_verify_scene" to "sms_login",
+                    "request_tag_from" to "h5",
+                    "biz_params" to JSONObject()
+                        .put("passport_mfa_retry_tag", "1")
+                        .put("sms_code_key", challenge.smsCodeKey)
+                        .toString(),
+                    "new_authn_sdk_log_id" to challenge.logId,
+                ),
+                includeBaseForm = false,
+            )
+            if (errorCode(reply) == 1045) {
+                lastDescription = describe(reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
+                if (it < 29) Thread.sleep(3000L)
+                return@repeat
             }
-        val passport =
-            mapOf("aid" to "8662", "app_name" to "novelread", "device_platform" to "android") +
-                params.filterValues { it.isNotBlank() }
-        val payload = if (form) Signer.encode(passport).toByteArray() else null
-        val signed =
-            Signer(device = device)
-                .sign(PASSPORT + path, if (form) device else device + passport, payload)
+            if (!isSuccess(reply)) {
+                val data = reply.optJSONObject("data") ?: JSONObject()
+                val description = describe(data) ?: "上行短信验证失败"
+                if (description.contains("过期") || description.contains("失效")) {
+                    expired = true
+                    pendingMfa = null
+                }
+                throw Failure(description, errorCode(reply))
+            }
+            val data = reply.optJSONObject("data") ?: JSONObject()
+            val mfaTicket = data.optString("ticket").ifBlank { data.optString("verify_ticket") }
+            if (mfaTicket.isBlank()) throw Failure("上行短信验证响应缺少登录票据")
+            val loginReply = smsLogin(code, mfaTicket)
+            if (!isSuccess(loginReply)) {
+                val loginData = loginReply.optJSONObject("data") ?: JSONObject()
+                throw Failure(describe(loginData) ?: "验证通过，但账号登录未完成", errorCode(loginReply))
+            }
+            pendingMfa = null
+            return credentialsOrThrow()
+        }
+        throw Failure("等待平台确认超时（90 秒），请确认短信已成功发送后重试。$lastDescription", 1045, true)
+    }
+
+    private fun smsLogin(code: String, mfaTicket: String): JSONObject {
+        val params = linkedMapOf("code" to xor(code))
+        if (mfaTicket.isNotBlank()) {
+            params["passport_mfa_retry_tag"] = "1"
+            params["sms_code_key"] = xor(mfaTicket)
+        }
+        return call("/passport/mobile/sms_login/", params)
+    }
+
+    private fun credentialsOrThrow(): AccountCredentials {
+        if (!cookies.keys.any { it == "sessionid" || it == "sessionid_ss" }) {
+            throw Failure("平台返回登录成功，但没有下发有效会话，请重试。")
+        }
+        val header = cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" }
+        return AccountCredentialsParser.parseHeader(header).copy(
+            deviceId = deviceId,
+            installId = installId,
+            device = mapOf("device_id" to deviceId, "iid" to installId),
+        )
+    }
+
+    private fun parseUpSmsChallenge(data: JSONObject): UpSmsChallenge? {
+        val ways = data.optJSONArray("verify_ways") ?: return null
+        var number = ""
+        var content = ""
+        for (i in 0 until ways.length()) {
+            val way = ways.optJSONObject(i) ?: continue
+            if (way.optString("verify_way") == "upsms" || way.optString("sms_content").isNotBlank()) {
+                number = way.optString("channel_mobile")
+                content = way.optString("sms_content")
+                if (number.isNotBlank() && content.isNotBlank()) break
+            }
+        }
+        val encryptUid = data.optString("encrypt_uid")
+        val codeKey = data.optString("sms_code_key")
+        val logId = data.optJSONObject("event_params")?.optString("log_id").orEmpty()
+        if (encryptUid.isBlank() || codeKey.isBlank() || number.isBlank() || content.isBlank()) return null
+        return UpSmsChallenge(number, content, encryptUid, codeKey, logId)
+    }
+
+    /** Signed Passport form request. Authentication material is never written to trace/logs. */
+    private fun call(
+        path: String,
+        params: Map<String, String>,
+        includeBaseForm: Boolean = true,
+    ): JSONObject {
+        if (cancelled) throw Failure("登录已取消")
+        val device = LinkedHashMap(VendorConstants.device).apply {
+            put("device_id", deviceId)
+            put("iid", installId)
+            for (key in listOf("version_code", "manifest_version_code", "update_version_code", "pv_player"))
+                put(key, "73932")
+            put("version_name", "7.3.9.32")
+        }
+        val query = device + mapOf("aid" to "8662", "app_name" to "novelread", "device_platform" to "android")
+        val bodyFields = if (includeBaseForm) {
+            linkedMapOf(
+                "mobile" to xor(wirePhone(mobile)),
+                "account_sdk_source" to "app",
+                "passport_support_flow" to "captcha,verify",
+                "mix_mode" to "1",
+            ).apply { putAll(params) }
+        } else params
+        val payload = Signer.encode(bodyFields).toByteArray(Charsets.UTF_8)
+        val signed = Signer(device = device).sign(PASSPORT + path, query, payload)
         val request = Request.Builder().url(signed.url)
         signed.headers.forEach { (k, v) -> request.header(k, v) }
-        if (cookies.isNotEmpty())
-            request.header(
-                "Cookie",
-                cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" },
-            )
-        if (payload != null)
-            request.post(payload.toRequestBody("application/x-www-form-urlencoded".toMediaType()))
-        val reply =
-            http.newCall(request.build()).execute().use { response ->
+        request.header("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+        request.header("Accept", "application/json")
+        request.header("User-Agent", VendorConstants.APP_UA)
+        if (cookies.isNotEmpty()) request.header("Cookie", cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
+        request.post(payload.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType()))
+        val call = http.newCall(request.build())
+        activeCall = call
+        val reply = try {
+            call.execute().use { response ->
                 response.headers("Set-Cookie").forEach { line ->
                     val pair = line.substringBefore(';')
                     val name = pair.substringBefore('=').trim()
                     val value = pair.substringAfter('=', "").trim()
                     if (name.isNotEmpty() && value.isNotEmpty()) cookies[name] = value
                 }
+                val token = response.header("X-Tt-Token")
+                if (!token.isNullOrBlank()) cookies["x-tt-token"] = token
                 val text = cloudResponse(response)
-                runCatching { JSONObject(text) }
-                    .getOrElse {
-                        JSONObject().put("http", response.code).put("raw", text.take(300))
-                    }
+                runCatching { JSONObject(text) }.getOrElse {
+                    JSONObject().put("http", response.code).put("raw", text.take(300))
+                }
             }
-        // Never retain authentication responses or verification codes in diagnostics.
+        } finally {
+            if (activeCall === call) activeCall = null
+        }
         return reply
+    }
+
+    private fun isSuccess(reply: JSONObject): Boolean {
+        val code = errorCode(reply)
+        return reply.optString("message") == "success" &&
+            reply.optJSONObject("data") != null && (code == 0 || code == -1)
+    }
+
+    private fun errorCode(reply: JSONObject): Int {
+        val data = reply.optJSONObject("data")
+        return if (data?.has("error_code") == true) data.optInt("error_code", -1)
+        else reply.optInt("error_code", -1)
+    }
+
+    private fun xor(value: String): String = value.toByteArray(Charsets.UTF_8)
+        .joinToString("") { "%02x".format((it.toInt() and 0xff) xor 5) }
+
+    private fun wirePhone(value: String): String {
+        if (!value.startsWith("+")) return value
+        val code = value.drop(1).takeWhile(Char::isDigit)
+        val local = value.drop(1 + code.length).filter(Char::isDigit)
+        val widths = when (local.length) {
+            10 -> listOf(3, 4, 3)
+            11 -> listOf(3, 4, 4)
+            else -> listOf(3, 3, 3, 3)
+        }
+        var remaining = local
+        val groups = widths.mapNotNull { width ->
+            if (remaining.isEmpty()) null else {
+                val group = remaining.take(width)
+                remaining = remaining.drop(width)
+                group
+            }
+        } + listOfNotNull(remaining.takeIf { it.isNotEmpty() })
+        return "+$code " + groups.joinToString(" ")
     }
 
     private fun describe(data: JSONObject): String? =
