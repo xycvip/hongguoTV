@@ -70,7 +70,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         val data = reply.optJSONObject("data") ?: JSONObject()
         if (data.has("verify_center_decision_conf"))
             throw Failure("平台要求先完成滑块验证，请在官方红果 App 完成验证后再试。")
-        if (!isSuccess(reply)) throw Failure(describe(data) ?: "验证码没发出去")
+        if (!isSuccess(reply)) throw Failure(describe(reply, data) ?: "验证码没发出去", errorCode(reply))
         ticket = data.optString("mobile_ticket")
         return Sent(data.optString("mobile").ifBlank { mobile }, data.optInt("retry_time", 60))
     }
