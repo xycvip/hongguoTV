@@ -917,28 +917,30 @@ class MainActivity: Activity() {
                     scheduleSuggest()
                 }
             })
-            val keyHeight=if(tall) dp(34) else dp(30)
+            val keyHeight=if(tall) dp(32) else dp(29)
             fun azKey(label: String): TextView {
                 val view=button(label) { onAzKey(label) }
-                view.textSize=14f; view.minHeight=keyHeight; view.setPadding(dp(3),dp(4),dp(3),dp(4))
+                view.textSize=14f; view.minHeight=keyHeight; view.setPadding(dp(2),dp(3),dp(2),dp(3))
                 val paint=view.onFocusChangeListener
                 view.setOnFocusChangeListener { v,focused -> paint?.onFocusChange(v,focused); if(focused) keyboardLastLabel=label }
                 return view
             }
-            // 电视遥控器专用按键面板：A-Z、0-9 全部常驻显示，不做字母/数字切页。
-            // 字母、数字分区排列，末行提供删除/清空/搜索；固定键盘区域，不受历史数量影响。
+            // 电视遥控器搜索键盘：每行最多 4 个键，字母和数字固定显示，不分页。
             val keyboard=column().apply { setPadding(0,dp(2),0,dp(2)) }
             val keyLines=mutableListOf<List<TextView>>()
             val keyViews=linkedMapOf<String,TextView>()
-            listOf("ABCDEF","GHIJK","LMNOP","QRSTU","VWXYZ","01234","56789").forEach { keys ->
+            listOf("ABCD","EFGH","IJKL","MNOP","QRST","UVWX","YZ","0123","4567","89").forEach { keys ->
                 val line=row().apply { setPadding(0,0,0,dp(3)); gravity=Gravity.CENTER_VERTICAL }
-                val views=keys.map { key -> azKey(key.toString()).also { line.addView(it,lp(0,-2).apply { weight=1f; rightMargin=dp(5) }); keyViews[key.toString()]=it } }
+                val views=keys.map { key -> azKey(key.toString()).also { line.addView(it,lp(0,-2).apply { weight=1f; rightMargin=dp(4) }); keyViews[key.toString()]=it } }
+                if(views.size<4) {
+                    line.addView(View(this),lp(0,dp(1)).apply { weight=(4-views.size).toFloat() })
+                }
                 keyboard.addView(line); keyLines+=views
             }
             val lastLine=row().apply { setPadding(0,0,0,dp(3)); gravity=Gravity.CENTER_VERTICAL }
-            val del=azKey("删除").also { lastLine.addView(it,lp(0,-2).apply { weight=1.2f; rightMargin=dp(5) }); keyViews["删除"]=it }
-            val clear=azKey("清空").also { lastLine.addView(it,lp(0,-2).apply { weight=1.2f; rightMargin=dp(5) }); keyViews["清空"]=it }
-            val searchKey=azKey("搜索").also { it.setOnClickListener { search() }; lastLine.addView(it,lp(0,-2).apply { weight=1.2f }); keyViews["搜索"]=it }
+            val del=azKey("删除").also { lastLine.addView(it,lp(0,-2).apply { weight=1f; rightMargin=dp(4) }); keyViews["删除"]=it }
+            val clear=azKey("清空").also { lastLine.addView(it,lp(0,-2).apply { weight=1f; rightMargin=dp(4) }); keyViews["清空"]=it }
+            val searchKey=azKey("搜索").also { it.setOnClickListener { search() }; lastLine.addView(it,lp(0,-2).apply { weight=1f }); keyViews["搜索"]=it }
             keyboard.addView(lastLine)
             val lastViews=listOf(del,clear,searchKey)
             keyLines+=lastViews
@@ -947,7 +949,6 @@ class MainActivity: Activity() {
                     key.nextFocusLeftId=views[if(c==0) 0 else c-1].id
                     key.nextFocusRightId=views[if(c==views.size-1) c else c+1].id
                     val up=keyLines.getOrNull(r-1); val down=keyLines.getOrNull(r+1)
-                    // 行间按相对列位置映射，避免不同列数导致焦点跳偏。
                     key.nextFocusUpId=up?.get(((c+0.5f)*up.size/views.size).toInt().coerceIn(0,up.size-1))?.id ?: input.id
                     key.nextFocusDownId=down?.get(((c+0.5f)*down.size/views.size).toInt().coerceIn(0,down.size-1))?.id ?: key.id
                 }
@@ -961,48 +962,54 @@ class MainActivity: Activity() {
                 val suggestLine=row(); suggestScroll.addView(suggestLine); suggestRow=suggestLine; suggestVertical=false
                 container.addView(suggestScroll,lp(-1,-2).apply { bottomMargin=dp(4) })
             } else {
-                // 顶部对齐：左栏随历史增多变高时，键盘顶边保持固定，不挤压搜索框间距
+                // 历史与键盘分开滚动，历史条数不会挤压键盘高度；焦点移动时各自滚入可视区。
                 val contentRow=row().apply { gravity=Gravity.TOP }
-                // 左栏与联想栏包滚动容器：小尺寸电视内容超高时可滚动，焦点移出视口时自动滚入
-                val leftScroll=ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipToPadding=false }
-                // 左栏拆成「历史在最左、键盘在右」；按屏幕宽度分配空间，保证按键仍足够大。
                 val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
-                leftScroll.addView(leftColumn)
-                // 左栏底部搜索历史：内嵌最新 4 条 + 全部历史入口，空历史整块隐藏
                 val history=library.searches()
                 if(history.isNotEmpty()) {
-                    val block=column()
-                    val head=row().apply { setPadding(0,dp(2),0,dp(4)) }
-                    head.addView(text("搜索历史",13f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
+                    val historyScroll=ScrollView(this).apply {
+                        isVerticalScrollBarEnabled=false; clipToPadding=false; isFillViewport=true
+                    }
+                    val block=column().apply { setPadding(0,0,dp(4),0) }
+                    val head=row().apply { setPadding(0,dp(2),0,dp(6)) }
+                    head.addView(text("搜索历史",14f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
                     lateinit var clearHistory: TextView
                     clearHistory=button("清空历史") { tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",clearHistory) { library.clearSearches(); showCatalog(); main.post { searchInput?.requestFocus() } } }
-                        .apply { textSize=12f; minHeight=dp(28); setPadding(dp(10),dp(4),dp(10),dp(4)) }
+                        .apply { textSize=12f; minHeight=dp(30); setPadding(dp(6),dp(4),dp(6),dp(4)) }
                     head.addView(clearHistory,lp(-2,-2))
                     block.addView(head)
                     val items=history.take(4).map { entry ->
                         button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type) }.apply {
-                            textSize=13f; minHeight=dp(32); setPadding(dp(10),dp(4),dp(10),dp(4)); gravity=Gravity.CENTER_VERTICAL
-                            maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
+                            textSize=13f; minHeight=dp(38); setPadding(dp(8),dp(5),dp(8),dp(5)); gravity=Gravity.CENTER_VERTICAL
+                            maxLines=2; ellipsize=android.text.TextUtils.TruncateAt.END
                         }
                     }
                     items.forEachIndexed { index,item ->
-                        block.addView(item,lp(-1,-2).apply { bottomMargin=dp(4) })
+                        block.addView(item,lp(-1,-2).apply { bottomMargin=dp(6) })
                         item.nextFocusUpId=if(index==0) clearHistory.id else items[index-1].id
                     }
                     historyItems=items
                     clearHistory.nextFocusDownId=items.firstOrNull()?.id ?: clearHistory.id
-                    clearHistory.nextFocusRightId=azFirst?.id ?: View.NO_ID
                     if(history.size>4) {
                         lateinit var all: TextView
-                        all=button("全部历史（${history.size}）›") { showSearchHistory(all) }.apply { textSize=12f; minHeight=dp(30); setPadding(dp(10),dp(4),dp(10),dp(4)) }
+                        all=button("全部历史（${history.size}）›") { showSearchHistory(all) }.apply { textSize=12f; minHeight=dp(34); setPadding(dp(8),dp(4),dp(8),dp(4)) }
                         block.addView(all,lp(-1,-2)); historyItems=items+all
                     }
-                    leftColumn.addView(block,lp(dp(if(roomy) 112 else 92),-2))
+                    historyScroll.addView(block)
+                    leftColumn.addView(historyScroll,lp(dp(if(roomy) 160 else 145),-1))
                     historyFirst=items.firstOrNull() ?: clearHistory
-                    // 历史区与键盘留出明确间距；历史第一项可直接通过遥控器选中。
+                    clearHistory.nextFocusRightId=azFirst?.id ?: View.NO_ID
                     clearHistory.nextFocusUpId=(keyboardLastLabel?.let { keyViews[it] } ?: del).id
+                } else {
+                    historyFirst=null; historyItems=emptyList()
                 }
-                leftColumn.addView(keyboard,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
+                val keyboardScroll=ScrollView(this).apply {
+                    isVerticalScrollBarEnabled=false; clipToPadding=false; isFillViewport=true
+                    descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
+                }
+                keyboardScroll.addView(keyboard)
+                leftColumn.addView(keyboardScroll,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
+                contentRow.addView(leftColumn,lp(if(mode==3) dp(if(roomy) 430 else 360) else dp(360),-1))
                 val midScroll=ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipToPadding=false }
                 val midColumn=column().apply { setPadding(0,dp(2),dp(10),0) }
                 midScroll.addView(midColumn)
