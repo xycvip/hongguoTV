@@ -3326,12 +3326,15 @@ class MainActivity: Activity() {
             }), lp(-1, dp(if (compactCard) 38 else 44)).apply { bottomMargin = dp(if (compactCard) 5 else 14) })
         } else {
             val phoneRow = row().apply { gravity = Gravity.CENTER_VERTICAL }
-            lateinit var countryButton: TextView
-            countryButton = button(cloudAccount.inlineCountryCode + "  ▾", onClick = {
-                val code = cloudAccount.cycleInlineCountryCode()
-                countryButton.text = "${code}  ▾"
-            })
-            phoneRow.addView(countryButton, lp(-2, dp(if (compactCard) 36 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
+            val countryLabel = TextView(this).apply {
+                text = "+86"
+                textSize = 15f
+                setTextColor(white)
+                gravity = Gravity.CENTER
+                background = rounded(Color.rgb(25, 29, 35))
+                setPadding(dp(10), 0, dp(10), 0)
+            }
+            phoneRow.addView(countryLabel, lp(-2, dp(if (compactCard) 36 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
             accountPhoneInput = EditText(this).apply {
                 hint = "请输入手机号"
                 setText(accountPhoneValue)
