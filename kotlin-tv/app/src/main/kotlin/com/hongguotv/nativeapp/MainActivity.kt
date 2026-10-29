@@ -479,11 +479,17 @@ class MainActivity: Activity() {
     private val REQUEST_STORAGE_PERMISSION = 7203
 
     private fun showFileBackupDialog(anchor: View) {
-        tvTools.choose("本地备份与恢复",listOf("导出备份文件","从备份文件恢复"),anchor,{ choice ->
-            pendingBackupAction = choice
-            pendingBackupAnchor = anchor
-            ensureBackupStoragePermission()
-        })
+        tvTools.choose(
+            "本地备份与恢复",
+            listOf("导出备份文件","从备份文件恢复"),
+            anchor,
+            { choice ->
+                pendingBackupAction = choice
+                pendingBackupAnchor = anchor
+                ensureBackupStoragePermission()
+            },
+            "备份会包含红果账户登录凭据（明文），请勿分享备份文件。云端观看历史、收藏和预约不会写入备份；恢复后会尝试登录并从云端刷新。"
+        )
     }
 
     private fun ensureBackupStoragePermission() {
@@ -677,7 +683,8 @@ class MainActivity: Activity() {
                 result.onSuccess { data ->
                     tvTools.choose("选择恢复方式",listOf("合并记录，保留当前播放设置","合并记录并恢复备份中的播放设置"),anchor,{ choice ->
                         val restoreSettings=choice==1
-                        val message="备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有数据。"
+                        val accountNote = if (data.accountState.isNullOrBlank()) "\\n备份中没有账户登录信息。" else "\\n备份包含明文红果账户凭据，恢复时会尝试登录并刷新云端数据；云端观影资料本身不在备份中。"
+                        val message="备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\\n\\n恢复会合并到当前记录，不会清空现有数据.${accountNote}"
                         tvTools.confirm("确认恢复备份",message,anchor) {
                             runCatching {
                                 favoriteMonitor.stop()
