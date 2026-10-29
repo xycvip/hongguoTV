@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins { id("com.android.application"); kotlin("android") }
 val signingProperties = Properties().apply { val config = rootProject.file("keystore.properties"); if (config.exists()) config.inputStream().use { load(it) } }
+val appVersionProperties = Properties().apply { val config = rootProject.file("version.properties"); if (config.exists()) config.inputStream().use { load(it) } }
 fun signingValue(env: String, key: String): String? = System.getenv(env) ?: signingProperties.getProperty(key)
 
 android {
@@ -12,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = System.getenv("HONGGUOTV_VERSION_CODE")?.toInt() ?: 12
-        versionName = System.getenv("HONGGUOTV_VERSION_NAME") ?: "26.10.23.0"
+        versionName = System.getenv("HONGGUOTV_VERSION_NAME") ?: appVersionProperties.getProperty("APP_VERSION", "1.0.0")
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
