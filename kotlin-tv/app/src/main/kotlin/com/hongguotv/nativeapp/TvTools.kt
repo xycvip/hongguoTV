@@ -229,7 +229,7 @@ class TvTools(private val activity: Activity) {
                     val row=LinearLayout(activity).apply { gravity=Gravity.CENTER_VERTICAL }
                     row.addView(qr(session.url),LinearLayout.LayoutParams(dp(185),dp(185)))
                     val instructions=column()
-                    instructions.addView(label("手机扫码，用浏览器下载备份或选择备份文件恢复。\n仅限同一局域网；关闭即失效，最长 5 分钟。恢复需在电视确认。",16f))
+                    instructions.addView(label("手机扫码，用浏览器下载备份或选择备份文件恢复。\n备份含明文红果账户凭据，请勿分享文件；云端账户观影资料不写入备份。\n仅限同一局域网；关闭即失效，最长 5 分钟。恢复需在电视确认。",16f))
                     instructions.addView(label(session.url,12f).apply { setTextColor(TvStyle.muted) })
                     row.addView(instructions,LinearLayout.LayoutParams(0,-2,1f)); content.addView(row)
                 }
