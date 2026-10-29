@@ -3306,9 +3306,10 @@ class MainActivity: Activity() {
             }), lp(-1, dp(44)).apply { bottomMargin = dp(14) })
         } else {
             val phoneRow = row().apply { gravity = Gravity.CENTER_VERTICAL }
-            val country = button(cloudAccount.inlineCountryCode + "  ▾", onClick = {
+            lateinit var countryButton: TextView
+            countryButton = button(cloudAccount.inlineCountryCode + "  ▾", onClick = {
                 val code = cloudAccount.cycleInlineCountryCode()
-                (it as? TextView)?.text = "${code}  ▾"
+                countryButton.text = "${code}  ▾"
             })
             phoneRow.addView(country, lp(-2, dp(48)).apply { rightMargin = dp(8) })
             accountPhoneInput = EditText(this).apply {
