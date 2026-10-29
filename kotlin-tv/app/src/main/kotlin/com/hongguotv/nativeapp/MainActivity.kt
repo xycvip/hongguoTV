@@ -414,14 +414,26 @@ class MainActivity: Activity() {
         }
         if(storage.restoreAllowed) { restoreLocalBackup(done); return }
         library.localPermissionAsked=true
-        TvDialog.confirm(this,"本地备份","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时在设置中关闭。") {
-            localPermissionContinuation={ restoreLocalBackup(done) }
+        val prompt=TvDialog.confirm(this,"本地备份","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时在设置中关闭。", onCancel = {
+            library.localRestoreChecked=true
+            done()
+        }) {
+            localPermissionContinuation={
+                val after=library.localBackup()
+                if(after.restoreAllowed) restoreLocalBackup(done)
+                else {
+                    library.localRestoreChecked=true
+                    Toast.makeText(this,"未获得存储权限，已跳过本机恢复；可在设置中重新授权",Toast.LENGTH_LONG).show()
+                    done()
+                }
+            }
             if(!storage.request(this)) {
                 localPermissionContinuation=null; library.localRestoreChecked=true
                 Toast.makeText(this,"当前设备无法授予存储权限，可在设置中使用手机备份迁移",Toast.LENGTH_LONG).show()
                 done()
             }
-        }.also { it.setOnDismissListener { library.localRestoreChecked=true; done() }; it.show() }
+        }
+        prompt.show()
     }
     private fun restoreLocalBackup(done: () -> Unit) {
         io.execute {
@@ -555,9 +567,7 @@ class MainActivity: Activity() {
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
             setPadding(dp(10),dp(5),dp(10),dp(5))
-            // 半透明底色保证时钟叠在海报、视频或浅色页面上时仍清晰可见。
-            background=TvStyle.shape(this@MainActivity,Color.argb(175,8,12,18),Color.TRANSPARENT)
-            elevation=dp(8).toFloat()
+            // 时钟文字直接叠在页面上，不绘制背景或阴影。
         }
         // 时钟始终置于根布局最上层，放在右上角并避开测试版标识。
         val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(4) else dp(16)
@@ -2371,7 +2381,12 @@ class MainActivity: Activity() {
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_MULTIPLE
             adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true,checkedStates=checked)
-            setOnItemClickListener { _,_,index,_ -> checked[index]=isItemChecked(index); (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged() }
+            setOnItemClickListener { _,_,index,_ ->
+                // 不依赖 ListView 的临时 choice 状态；以数据数组作为唯一勾选来源。
+                checked[index] = !checked[index]
+                setItemChecked(index, checked[index])
+                (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
+            }
         }
         content.addView(list,lp(-1,0).apply { weight=1f })
         val buttons=row().apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
@@ -2653,12 +2668,15 @@ class MainActivity: Activity() {
         if(speedDialog!=null) return
         val speeds=PlaybackSpeed.options
         val selected=speeds.indexOf(library.playbackSpeed)
+        val checked=BooleanArray(speeds.size) { it == selected.coerceAtLeast(0) }
         val content=column()
         content.addView(TvDialog.title(this,"全局默认倍速"))
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label),selectedIndex=selected.coerceAtLeast(0))
+            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label),checkedStates=checked)
             setOnItemClickListener { _,_,index,_ ->
+                checked.fill(false); checked[index]=true
+                (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
                 library.playbackSpeed=speeds[index]
                 if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
                 if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "倍速 " else "默认倍速  ·  ")+PlaybackSpeed.label(library.playbackSpeed)
@@ -2689,13 +2707,16 @@ class MainActivity: Activity() {
     private fun showQualityPicker(anchor: TextView,inPlayer: Boolean) {
         val options=PlaybackQuality.options
         val selected=options.indexOf(library.maxQuality)
+        val checked=BooleanArray(options.size) { it == selected.coerceAtLeast(0) }
         val content=column()
         content.addView(TvDialog.title(this,"全局默认清晰度"))
         var qualityDialog: AlertDialog? = null
         val list=ListView(this).apply {
             choiceMode=ListView.CHOICE_MODE_SINGLE
-            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" },selectedIndex=selected.coerceAtLeast(0))
+            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" },checkedStates=checked)
             setOnItemClickListener { _,_,index,_ ->
+                checked.fill(false); checked[index]=true
+                (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
                 val target=options[index]; val changed=library.maxQuality!=target
                 library.maxQuality=target
                 if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
