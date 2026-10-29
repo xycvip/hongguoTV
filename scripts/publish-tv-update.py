@@ -15,14 +15,11 @@ sha256 = hashlib.sha256(open(apk_path, "rb").read()).hexdigest()
 size = os.path.getsize(apk_path)
 
 def changelog():
-    # Keep both the GitHub release description and the in-app update manifest short.
-    # Long commit lists are difficult to navigate on TV devices.
+    # Keep release notes limited to changes in this release; the release title already has the version.
     return (
-        f"红果TV {VERSION_NAME} 更新说明：\n\n"
-        "- 修复启动播放与首页刷新问题。\n"
-        "- 优化启动动画。\n"
-        "- 调整本地备份默认设置。\n"
-        "- 支持 Android 8 及以上版本。"
+        "- 修复设置弹窗勾选状态异常。\n"
+        "- 修复 Android 9 存储权限检查与申请流程。\n"
+        "- 将设置项名称改为“启动时播放推荐”。"
     )
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
