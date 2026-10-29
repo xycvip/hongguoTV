@@ -876,7 +876,7 @@ class MainActivity: Activity() {
                 if(tab==0) types.addView(text("长按确认 · 管理片单",12f,muted).apply { setPadding(dp(14),0,0,0) })
                 container.addView(types)
             }
-            nav.forEach { it.nextFocusDownId=(typeButtons[library.contentType] ?: typeButtons.values.firstOrNull())?.id ?: nav[tab].id }
+            nav.forEach { it.nextFocusDownId=(if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.id ?: typeButtons.values.firstOrNull()?.id ?: nav[tab].id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -900,6 +900,7 @@ class MainActivity: Activity() {
                 searchActions.addAll(listOf(recent))
             }
             typeButtons.values.forEach { it.nextFocusDownId=input.id }
+            aggregateButton?.nextFocusDownId=input.id
             input.setOnEditorActionListener { _,_,_-> search(); true }; container.addView(searchRow)
             input.addTextChangedListener(object: android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?,start: Int,count: Int,after: Int) {}
@@ -1097,7 +1098,7 @@ class MainActivity: Activity() {
         }
         if(load) {
             if(tab==0) catalogGrid(body,focusNav,focusType,loading=true)
-            else { message(body,"正在加载…"); if(focusType) typeButtons[library.contentType]?.requestFocus() else nav[tab].requestFocus() }
+            else { message(body,"正在加载…"); if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else nav[tab].requestFocus() }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
             val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
@@ -1189,7 +1190,7 @@ class MainActivity: Activity() {
         if(displayed.isEmpty()) {
             message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else if(aggregateSearch) "没有找到相关漫剧或短剧，换个关键词试试" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
             wireSearchPanel(null)
-            if(focusType) typeButtons[library.contentType]?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
+            if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
             return
         }
         val cols=if(tab==1) searchColumns else gridColumns
@@ -1240,7 +1241,7 @@ class MainActivity: Activity() {
         searchButton?.nextFocusDownId=azFirst?.id ?: recycler.id
         searchActions.forEach { it.nextFocusDownId=azFirst?.id ?: recycler.id }
         wireSearchPanel(recycler)
-        if(focusType) typeButtons[library.contentType]?.requestFocus() else if(focusNav) nav[tab].requestFocus()
+        if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else if(focusNav) nav[tab].requestFocus()
         else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
         else {
             val found=displayed.indexOfFirst { it.id==catalogFocus }
