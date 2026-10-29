@@ -117,7 +117,37 @@ class HomeScreen(
                 val key=if(entry!=null) "${shelf.key}:${entry.series.id}" else "${shelf.key}:more"
                 val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
                 val image=if(entry!=null) ImageView(context).apply { scaleType=ImageView.ScaleType.FIT_CENTER; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO } else null
-                view.addView(image ?: label("›",36f).apply { gravity=Gravity.CENTER },LayoutParams(-1,((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()))
+                val posterHeight=((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
+                if(image!=null) {
+                    view.addView(image,LayoutParams(-1,posterHeight))
+                } else {
+                    // “查看全部”使用完整的探索卡片，不再是空白海报框里孤零零的箭头。
+                    val moreTile=LinearLayout(context).apply {
+                        orientation=VERTICAL
+                        gravity=Gravity.CENTER
+                        setPadding(dp(8),dp(10),dp(8),dp(10))
+                        background=android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                            intArrayOf(TvStyle.surface,TvStyle.background)
+                        ).apply {
+                            cornerRadius=dp(8).toFloat()
+                            setStroke(dp(1),accent)
+                        }
+                    }
+                    moreTile.addView(label("✦",30f,accent).apply {
+                        gravity=Gravity.CENTER
+                        setPadding(0,0,0,dp(8))
+                    })
+                    moreTile.addView(label("探索更多",14f,TvStyle.text).apply {
+                        gravity=Gravity.CENTER
+                        typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                    })
+                    moreTile.addView(label("发现精彩剧集  ›",10f,TvStyle.muted).apply {
+                        gravity=Gravity.CENTER
+                        setPadding(0,dp(6),0,0)
+                    })
+                    view.addView(moreTile,LayoutParams(-1,posterHeight))
+                }
                 val title=label(entry?.series?.title ?: "查看全部",14f).apply { minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
                 val badge=label(entry?.label ?: shelf.title,12f,TvStyle.muted).apply { minLines=1; maxLines=1; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(2),0,0) }
                 val progress=ProgressBar(context,null,android.R.attr.progressBarStyleHorizontal).apply { max=100; progress=entry?.progress ?: 0; visibility=if(entry?.progress==null) INVISIBLE else VISIBLE; progressTintList=android.content.res.ColorStateList.valueOf(accent) }
