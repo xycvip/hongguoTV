@@ -38,6 +38,7 @@ class PhoneLogin(private val http: OkHttpClient) {
     @Volatile private var cancelled = false
     @Volatile private var token = ""
     private var pendingMfa: UpSmsChallenge? = null
+    private var pendingMfaExpiresAt = 0L
 
     data class UpSmsChallenge(val channelMobile: String, val smsContent: String, val encryptUid: String, val smsCodeKey: String, val logId: String)
     class UpSmsRequired(val challenge: UpSmsChallenge) :
@@ -59,6 +60,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         cookies.putAll(registered.cookies)
         expired = false
         pendingMfa = null
+        pendingMfaExpiresAt = 0L
         token = ""
         this.mobile = mobile
         val reply = call(
@@ -82,6 +84,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         val data = reply.optJSONObject("data") ?: JSONObject()
         parseUpSmsChallenge(data)?.let {
             pendingMfa = it
+            pendingMfaExpiresAt = System.currentTimeMillis() + 10 * 60 * 1000L
             throw UpSmsRequired(it)
         }
         throw Failure(describe(data) ?: "验证码校验失败", errorCode(reply), errorCode(reply) == 1102)
@@ -91,10 +94,22 @@ class PhoneLogin(private val http: OkHttpClient) {
     fun verifyUpSmsAndLogin(code: String): AccountCredentials {
         if (expired) throw Failure("本次登录会话已失效，请重新获取验证码", 1)
         val challenge = pendingMfa ?: throw Failure("当前没有待确认的上行短信验证，请重新提交验证码")
+        if (System.currentTimeMillis() >= pendingMfaExpiresAt) {
+            pendingMfa = null
+            pendingMfaExpiresAt = 0L
+            expired = true
+            throw Failure("上行短信验证已过期，请重新获取验证码。", 1)
+        }
         require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
         var lastDescription = "尚未收到平台确认"
         repeat(30) {
             if (cancelled || Thread.currentThread().isInterrupted) throw Failure("登录已取消")
+            if (System.currentTimeMillis() >= pendingMfaExpiresAt) {
+                pendingMfa = null
+                pendingMfaExpiresAt = 0L
+                expired = true
+                throw Failure("上行短信验证已过期，请重新获取验证码。", 1)
+            }
             val reply = call(
                 "/passport/upsms/verify/",
                 mapOf(
@@ -140,6 +155,7 @@ class PhoneLogin(private val http: OkHttpClient) {
                 throw Failure(describe(loginData) ?: "验证通过，但账号登录未完成", errorCode(loginReply))
             }
             pendingMfa = null
+            pendingMfaExpiresAt = 0L
             return credentialsOrThrow()
         }
         throw Failure("等待平台确认超时（90 秒），请确认短信已成功发送后重试。$lastDescription", 1045, true)
