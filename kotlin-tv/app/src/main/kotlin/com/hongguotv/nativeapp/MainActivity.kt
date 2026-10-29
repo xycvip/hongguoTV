@@ -3231,7 +3231,7 @@ class MainActivity: Activity() {
             setPadding(dp(10), dp(12), dp(10), dp(12))
             minimumHeight = (resources.displayMetrics.heightPixels - dp(140)).coerceAtLeast(dp(250))
         }
-        val cardWidth = dp((widthDp() - 48).coerceAtLeast(280).coerceAtMost(680).toFloat())
+        val cardWidth = dp((widthDp() - 48f).coerceAtLeast(280f).coerceAtMost(680f))
         val card = column().apply {
             background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
             setPadding(dp(24), dp(22), dp(24), dp(22))
@@ -3317,7 +3317,7 @@ class MainActivity: Activity() {
                 val code = cloudAccount.cycleInlineCountryCode()
                 countryButton.text = "${code}  ▾"
             })
-            phoneRow.addView(country, lp(-2, dp(48)).apply { rightMargin = dp(8) })
+            phoneRow.addView(countryButton, lp(-2, dp(48)).apply { rightMargin = dp(8) })
             accountPhoneInput = EditText(this).apply {
                 hint = "请输入手机号"
                 setText(accountPhoneValue)
