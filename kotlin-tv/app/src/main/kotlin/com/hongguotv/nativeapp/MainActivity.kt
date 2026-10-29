@@ -708,21 +708,22 @@ class MainActivity: Activity() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
         if(!library.isLoaded || !library.showClock) return
-        // 字号、内边距与边距随屏幕宽高变化：手机上收紧，电视上保持清晰但不过大。
+        // 时钟作为轻量辅助信息显示，避免抢占页面标题和导航的视觉焦点。
         val screenWidth=widthDp()
         val screenHeight=heightDp()
-        val clockSize=(screenWidth/24f).coerceIn(14f,22f)
-        val horizontalPadding=(screenWidth*0.012f).toInt().coerceIn(4,16)
-        val verticalPadding=(screenHeight*0.006f).toInt().coerceIn(2,8)
-        val view=text("",clockSize,white).apply {
+        val mobile=screenWidth < 600f
+        val clockSize=if(mobile) 12f else 15f
+        val horizontalPadding=if(mobile) 4 else 7
+        val verticalPadding=if(mobile) 2 else 3
+        val view=text("",clockSize,muted).apply {
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
+            alpha=0.88f
             setPadding(dp(horizontalPadding),dp(verticalPadding),dp(horizontalPadding),dp(verticalPadding))
-            // 时钟文字直接叠在页面上，不绘制背景或阴影。
         }
-        // 按屏幕高度调整顶部留白，并按宽度留出右侧安全距离，避免手机上显得过大或贴边。
-        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) (screenHeight*0.006f).toInt().coerceIn(2,8) else (screenHeight*0.018f).toInt().coerceIn(6,20)
-        val rightMargin=(screenWidth*0.025f).toInt().coerceIn(8,28)
+        // 手机端靠近右上方但留足安全边距；电视端略微下移，避开系统状态区。
+        val topMargin=if(mobile) 8 else (screenHeight*0.025f).toInt().coerceIn(12,26)
+        val rightMargin=if(mobile) 14 else (screenWidth*0.03f).toInt().coerceIn(18,36)
         root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=dp(topMargin); this.rightMargin=dp(rightMargin) })
         clockView=view
         val tick=object: Runnable {
