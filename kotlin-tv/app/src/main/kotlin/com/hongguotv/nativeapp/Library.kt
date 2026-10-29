@@ -8,7 +8,6 @@ import android.os.Looper
 import android.util.Log
 import com.hongguotv.core.*
 import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 // The backup and native library use the same immutable progress shape.
@@ -19,24 +18,12 @@ class Library(context: Context) {
     private companion object {
         // A replacement Activity must not load before its predecessor's final checkpoint commits.
         val retiredWrites = mutableListOf<LatestWriteQueue<String, () -> Any?>>()
-        /** 普通进度变更的备份节流窗口：播放中每 5 秒就有一次进度落盘，没必要跟着整包重写。 */
-        const val PROGRESS_BACKUP_INTERVAL_MS = 5 * 60_000L
     }
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val loader = Executors.newSingleThreadExecutor { task -> Thread(task, "hongguotv-library-load") }
     private val prefs by lazy { app.getSharedPreferences("native-library-v1", Context.MODE_PRIVATE) }
     private val homePrefs by lazy { app.getSharedPreferences("native-home-cache-v1", Context.MODE_PRIVATE) }
-    private val localPrefs by lazy { app.getSharedPreferences("native-local-backup-v1", Context.MODE_PRIVATE) }
-    private val localBackupStorage = LocalBackupStorage(app)
-    private val backupWorker = Executors.newSingleThreadScheduledExecutor { task -> Thread(task, "hongguotv-local-backup") }
-    private val backupLock = Any()
-    private var backupTask: ScheduledFuture<*>? = null
-    /** 已排队的备份计划时间点（epoch ms），用于复用更早的计划，避免任务被反复推迟。 */
-    private var backupDueAt = 0L
-    @Volatile private var backupDirty = false
-    /** 上次成功落盘时间：两次备份之间至少间隔 1 分钟，避免播放中每 5 秒重写整包。 */
-    @Volatile private var lastBackupAt = 0L
     private val writes = LatestWriteQueue<String, () -> Any?>("hongguotv-library-write", write = { batch -> commit(prefs, batch) },
         failed = { Log.w("HongguoTV", "Local library commit failed; pending changes retained for retry") })
     private val homeWrites = LatestWriteQueue<String, () -> Any?>("hongguotv-home-write", write = { batch -> commit(homePrefs, batch) },
@@ -105,7 +92,7 @@ class Library(context: Context) {
         }
     }
     private fun state(): LibraryIndex = checkNotNull(index) { "Load the local library before accessing it" }
-    private fun put(key: String, value: Any?) { writes.submit(mapOf(key to { value })); scheduleLocalBackup() }
+    private fun put(key: String, value: Any?) { writes.submit(mapOf(key to { value })) }
     private fun persist(vararg keys: String) {
         val state = state()
         val batch = linkedMapOf<String, () -> Any?>()
@@ -124,8 +111,6 @@ class Library(context: Context) {
             }
         }
         writes.submit(batch)
-        // 只有播放进度是高频变更：其余收藏/历史操作/设置都尽快落盘
-        scheduleLocalBackup(urgent = keys.any { it != "progress" })
     }
     fun favorites() = state().favorites()
     fun favorite(id: String) = state().favorite(id)
@@ -241,9 +226,6 @@ class Library(context: Context) {
     var thirdFavoritesProvider: (() -> List<BackupThirdFavorite>)? = null
     var thirdFavoritesRestore: ((List<BackupThirdFavorite>) -> Unit)? = null
 
-    /** 三方片源变化后尽快落盘，避免只有片源变更时备份长期停留在旧内容。 */
-    fun requestBackup() = scheduleLocalBackup()
-
     fun restore(incoming: BackupData, restoreSettings: Boolean) {
         val merged = LibraryBackup.merge(snapshot(), incoming, restoreSettings)
         index = LibraryIndex(merged, state().updates())
@@ -258,83 +240,11 @@ class Library(context: Context) {
             "danmakuOpacity" to { merged.settings.danmakuOpacity }, "danmakuFont" to { merged.settings.danmakuFont },
             "danmakuSpeed" to { merged.settings.danmakuSpeed }, "danmakuRows" to { merged.settings.danmakuRows }, "showClock" to { merged.settings.showClock },
             "sourceHidden" to { merged.settings.sourceHidden }))
-        scheduleLocalBackup()
         flush()
-    }
-    // ---- Local rotating backup ----
-    var localBackupEnabled: Boolean
-        get() = localPrefs.getBoolean("enabled", false)
-        set(value) { localPrefs.edit().putBoolean("enabled", value).apply() }
-    var localRestoreChecked: Boolean
-        get() = localPrefs.getBoolean("restoreChecked", false)
-        set(value) { localPrefs.edit().putBoolean("restoreChecked", value).apply() }
-    var localPermissionAsked: Boolean
-        get() = localPrefs.getBoolean("permissionAsked", false)
-        set(value) { localPrefs.edit().putBoolean("permissionAsked", value).apply() }
-    fun localBackup(): LocalBackupStorage = localBackupStorage
-    /** True when the library holds no user data, so a backup may be restored without overwriting anything. */
-    fun isEmptyForRestore(): Boolean {
-        val data = runCatching { snapshot() }.getOrNull() ?: return false
-        return data.favorites.isEmpty() && data.later.isEmpty() && data.history.isEmpty() && data.searches.isEmpty() &&
-            data.favoriteGroups.isEmpty() && data.watched.isEmpty() && data.hidden.isEmpty()
-    }
-    fun readLocalBackup(): BackupData? = localBackupStorage.load()
-    fun hasLocalBackup(): Boolean = localBackupStorage.store()?.hasBackup() == true
-    fun applyLocalBackup(data: BackupData) = restore(data, true)
-    /** Immediate backup for the settings entry; the callback runs on the main thread. */
-    fun backupNow(onDone: (Boolean) -> Unit) {
-        val data = runCatching { snapshot() }.getOrNull()
-        if (data == null) { main.post { onDone(false) }; return }
-        backupWorker.execute {
-            val ok = localBackupStorage.store()?.save(data) == true
-            if (ok) { backupDirty = false; lastBackupAt = System.currentTimeMillis() }
-            main.post { onDone(ok) }
-        }
-    }
-    /** First run after an upgrade may have data but no backup yet; empty libraries are never written. */
-    fun maybeBackupOnStartup() {
-        if (!localBackupEnabled || index == null || isEmptyForRestore()) return
-        val store = localBackupStorage.store() ?: return
-        if (store.hasBackup()) return
-        val data = runCatching { snapshot() }.getOrNull() ?: return
-        backupWorker.execute { if (store.save(data)) lastBackupAt = System.currentTimeMillis() }
-    }
-    private fun scheduleLocalBackup(urgent: Boolean = true) {
-        if (!localBackupEnabled || index == null) return
-        backupDirty = true
-        synchronized(backupLock) {
-            val now = System.currentTimeMillis()
-            // 变更先防抖 5 秒；播放进度这类高频变更再叠一个 5 分钟最小间隔，避免整包反复 fsync。
-            // 收藏、设置、片源等低频变更走 urgent，只防抖不受最小间隔限制。
-            val due = if(urgent) now + 5_000L else maxOf(now + 5_000L, lastBackupAt + PROGRESS_BACKUP_INTERVAL_MS)
-            // 已有更早的计划就复用：否则播放中每 5 秒都会把任务往后推，可能一直轮不到写盘
-            val pending = backupTask
-            if (pending != null && !pending.isDone && backupDueAt in 1..due) return
-            pending?.cancel(false)
-            backupDueAt = due
-            backupTask = backupWorker.schedule({
-                synchronized(backupLock) { backupTask = null; backupDueAt = 0L }
-                // 真正写盘时再取快照，保证是最新进度
-                runCatching { snapshot() }.getOrNull()?.let { writeLocalBackup(it) }
-            }, (due - now).coerceAtLeast(0), TimeUnit.MILLISECONDS)
-        }
-    }
-    private fun writeLocalBackup(data: BackupData) {
-        if (!localBackupEnabled) return
-        val ok = localBackupStorage.store()?.save(data) == true
-        if (ok) { backupDirty = false; lastBackupAt = System.currentTimeMillis() }
     }
     /** Requests prompt background commit, without lifecycle-thread disk waits. */
     fun flush() {
         writes.flush(); homeWrites.flush()
-        if (backupDirty && index != null) {
-            val data = runCatching { snapshot() }.getOrNull()
-            if (data != null) {
-                // 放弃排队中的延时备份，改为立刻写一次，避免 5 秒后又重复写同一份数据
-                synchronized(backupLock) { backupTask?.cancel(false); backupTask = null; backupDueAt = 0L }
-                backupWorker.execute { writeLocalBackup(data) }
-            }
-        }
     }
     /** Drain pending commits after Activity destruction; abrupt process death is still a boundary. */
     fun close() {
@@ -342,14 +252,6 @@ class Library(context: Context) {
         closed = true
         readyCallbacks.clear(); errorCallbacks.clear()
         loader.shutdown()
-        if (backupDirty && index != null) {
-            val data = runCatching { snapshot() }.getOrNull()
-            if (data != null) {
-                synchronized(backupLock) { backupTask?.cancel(false); backupTask = null; backupDueAt = 0L }
-                backupWorker.execute { writeLocalBackup(data) }
-            }
-        }
-        backupWorker.shutdown()
         synchronized(retiredWrites) {
             writes.close(); homeWrites.close()
             retiredWrites += writes; retiredWrites += homeWrites

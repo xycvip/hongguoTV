@@ -3,7 +3,6 @@ package com.hongguotv.nativeapp
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.Manifest
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -18,10 +17,8 @@ import android.view.*
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.Uri
-import android.provider.Settings
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.widget.*
@@ -48,6 +45,8 @@ private const val FOOTER_LOADING=1
 private const val FOOTER_END=2
 private const val FOOTER_ERROR=3
 private const val FOOTER_MORE_HOT=4
+private const val REQUEST_EXPORT_BACKUP=7201
+private const val REQUEST_IMPORT_BACKUP=7202
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity: Activity() {
@@ -87,7 +86,6 @@ class MainActivity: Activity() {
     private var pendingDetail: Series?=null
     private var detailAutoplay=true
     private var libraryLoadError: Throwable?=null
-    private var localPermissionContinuation: (() -> Unit)?=null
     private var clockView: TextView?=null
     private var clockTick: Runnable?=null
     private var workScope: RequestScope?=null
@@ -230,7 +228,6 @@ class MainActivity: Activity() {
     private var historyManage: View?=null
     /** 设置页重建后要恢复焦点的设置项标签前缀。 */
     private var settingsFocusKey: String?=null
-    private var localBackupSettingButton: TextView?=null
     private var detail: Detail?=null
     private var episodeIndex=0
     private var group=0
@@ -321,12 +318,6 @@ class MainActivity: Activity() {
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
         mediaSession=TvMediaSession(this,{ if(foreground && screen=="player") requestPlayback(true) },{ if(foreground && screen=="player") requestPlayback(false) },{ position -> if(foreground && screen=="player") seekTo(position) },{ direction -> skipEpisode(direction) },{ if(foreground && screen=="player") returnToDetail() })
         message(base(),"正在读取本机记录…")
-        // Android 8/9：每次冷启动都按旧版运行时权限机制检查公共存储写权限。
-        // 用户拒绝只影响本地备份/恢复，不影响主界面和正常播放。
-        if(Build.VERSION.SDK_INT <= 28 &&
-            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),LocalBackupStorage.REQUEST_WRITE)
-        }
         loadLibrary()
     }
     private fun showLibraryError(problem: Throwable) {
@@ -405,163 +396,111 @@ class MainActivity: Activity() {
         library.loadAsync(onFailure={ problem ->
             if(!isDestroyed) { libraryLoadError=problem; if(foreground) showLibraryError(problem) }
         }) {
-            if(!isDestroyed && foreground) handleLocalBackupOnStartup {
-                if(!isDestroyed && foreground) { showInitialScreen(); favoriteMonitor.check() }
-            }
+            if(!isDestroyed && foreground) { showInitialScreen(); favoriteMonitor.check() }
         }
     }
-    private fun handleLocalBackupOnStartup(done: () -> Unit) {
-        if(!library.localBackupEnabled || library.localRestoreChecked) {
-            library.localRestoreChecked=true
-            library.maybeBackupOnStartup()
-            done(); return
-        }
-        val storage=library.localBackup()
-        if(!storage.supported || (!storage.restoreAllowed && (library.localPermissionAsked || Build.VERSION.SDK_INT <= 28))) {
-            library.localRestoreChecked=true
-            library.maybeBackupOnStartup()
-            done(); return
-        }
-        if(storage.restoreAllowed) { restoreLocalBackup(done); return }
-        val prompt=TvDialog.confirm(this,"本地备份","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时在设置中关闭。", onCancel = {
-            library.localRestoreChecked=true
-            done()
-        }) {
-            localPermissionContinuation={
-                val after=library.localBackup()
-                if(after.restoreAllowed) restoreLocalBackup(done)
-                else {
-                    library.localRestoreChecked=true
-                    Toast.makeText(this,"未获得存储权限，已跳过本机恢复；可在设置中重新授权",Toast.LENGTH_LONG).show()
-                    done()
+
+    /**
+     * 本地备份使用系统文件选择器（SAF），只在用户主动操作时读写用户选定的文件。
+     * 不申请 READ/WRITE_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 权限，
+     * 也不在启动时弹权限框或自动恢复。
+     */
+    private fun showFileBackupDialog(anchor: View) {
+        tvTools.choose("本地备份与恢复",listOf("导出备份文件","从备份文件恢复"),anchor,{ choice ->
+            when(choice) {
+                0 -> {
+                    val stamp=java.text.SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(java.util.Date())
+                    val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type="application/json"
+                        putExtra(Intent.EXTRA_TITLE,"hongguotv-backup-$stamp.json")
+                    }
+                    runCatching { startActivityForResult(intent,REQUEST_EXPORT_BACKUP) }
+                        .onFailure { tvTools.info("无法导出备份","当前设备没有可用的文件保存器。",anchor) }
+                }
+                1 -> {
+                    val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type="*/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("application/json","text/json","text/plain"))
+                    }
+                    runCatching { startActivityForResult(intent,REQUEST_IMPORT_BACKUP) }
+                        .onFailure { tvTools.info("无法导入备份","当前设备没有可用的文件选择器。",anchor) }
                 }
             }
-            if(!storage.request(this)) {
-                localPermissionContinuation=null; library.localRestoreChecked=true
-                Toast.makeText(this,"当前设备无法授予存储权限，可在设置中使用手机备份迁移",Toast.LENGTH_LONG).show()
-                done()
-            }
-        }
-        prompt.show()
+        })
     }
-    private fun restoreLocalBackup(done: () -> Unit) {
+
+    private fun exportLibraryBackup(uri: Uri) {
+        val snapshot=runCatching { library.snapshot() }.getOrElse {
+            tvTools.info("备份失败","无法读取当前本机记录，请稍后重试。",null)
+            return
+        }
         io.execute {
-            val data=runCatching { library.readLocalBackup() }.getOrNull()
-            runOnUiThread {
-                if(isDestroyed) return@runOnUiThread
-                val restored=data!=null && library.isEmptyForRestore()
-                if(restored) {
-                    favoriteMonitor.stop()
-                    library.applyLocalBackup(data!!)
-                    tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
-                    Toast.makeText(this,"已从本机备份恢复收藏与记录",Toast.LENGTH_LONG).show()
+            val result=runCatching {
+                val bytes=LibraryBackup.encode(snapshot).toByteArray(Charsets.UTF_8)
+                contentResolver.openOutputStream(uri,"wt")?.use { output -> output.write(bytes); output.flush() }
+                    ?: error("无法打开备份文件")
+            }
+            main.post {
+                if(isDestroyed) return@post
+                result.onSuccess { Toast.makeText(this,"备份文件已导出",Toast.LENGTH_LONG).show() }
+                    .onFailure { Toast.makeText(this,"导出失败：${it.message ?: "无法写入文件"}",Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun importLibraryBackup(uri: Uri,anchor: View?) {
+        io.execute {
+            val result=runCatching {
+                val input=contentResolver.openInputStream(uri) ?: error("无法读取所选文件")
+                val bytes=input.use { stream ->
+                    val output=java.io.ByteArrayOutputStream()
+                    val buffer=ByteArray(8192)
+                    var total=0
+                    while(true) {
+                        val count=stream.read(buffer)
+                        if(count<0) break
+                        total+=count
+                        require(total<=LibraryBackup.MAX_BYTES) { "备份文件超过 2 MB 限制" }
+                        output.write(buffer,0,count)
+                    }
+                    output.toByteArray()
                 }
-                library.localRestoreChecked=true
-                library.maybeBackupOnStartup()
-                done()
+                LibraryBackup.decode(String(bytes,Charsets.UTF_8))
+            }
+            main.post {
+                if(isDestroyed) return@post
+                result.onFailure { Toast.makeText(this,"备份文件无效：${it.message ?: "无法解析"}",Toast.LENGTH_LONG).show() }
+                result.onSuccess { data ->
+                    tvTools.choose("选择恢复方式",listOf("合并记录，保留当前播放设置","合并记录并恢复备份中的播放设置"),anchor,{ choice ->
+                        val restoreSettings=choice==1
+                        val message="备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有数据。"
+                        tvTools.confirm("确认恢复备份",message,anchor) {
+                            runCatching {
+                                favoriteMonitor.stop()
+                                library.restore(data,restoreSettings)
+                                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
+                                showCatalog(); favoriteMonitor.check()
+                                Toast.makeText(this,"备份记录已合并恢复",Toast.LENGTH_LONG).show()
+                            }.onFailure { tvTools.info("恢复失败","记录未能完整恢复：${it.message ?: "未知错误"}",anchor) }
+                        }
+                    })
+                }
             }
         }
     }
-    /** 设置页每次打开时检查存储权限；缺少时直接请求系统授权，不强制开启本地自动备份。 */
-    private fun checkStoragePermissionOnSettingsOpen() {
-        val storage=library.localBackup()
-        if(!storage.supported || !storage.needsPermission) return
-        if(!storage.request(this)) {
-            Toast.makeText(this,"无法打开系统存储授权页面，请在系统设置中为红果TV授予存储权限",Toast.LENGTH_LONG).show()
-        } else if(Build.VERSION.SDK_INT>=30) {
-            Toast.makeText(this,"请在系统页面允许红果TV访问所有文件，然后返回应用",Toast.LENGTH_LONG).show()
-        }
-    }
-    private fun localBackupLabel(): String {
-        if(!library.localBackupEnabled) return "本地备份与恢复  ·  已关闭"
-        val storage=library.localBackup()
-        if(!storage.supported) return "本地备份与恢复  ·  不可用"
-        if(storage.needsPermission) return "本地备份与恢复  ·  待授权"
-        return "本地备份与恢复  ·  已开启"
-    }
-    private fun showLocalBackupDialog(anchor: TextView) {
-        val storage=library.localBackup()
-        if(!storage.supported) {
-            TvDialog.info(this,"本地备份与恢复","当前设备没有可用的公共存储，无法自动备份；可使用「手机备份与恢复」迁移记录。").show()
-            return
-        }
-        if(!library.localBackupEnabled) {
-            TvDialog.confirm(this,"本地备份与恢复","开启后，收藏、观看记录与播放设置会备份到本机公共目录，卸载重装后可自动恢复。备份是明文文件，可随时关闭。") {
-                if(storage.needsPermission) requestLocalBackupPermission(anchor,enableAfterGrant=true)
-                else { library.localBackupEnabled=true; anchor.text=localBackupLabel(); localBackupAction(anchor) }
-            }.show()
-            return
-        }
-        val needsPermission=storage.needsPermission
-        val actions=if(needsPermission) arrayOf("授权存储权限","关闭本地自动备份") else arrayOf(if(library.isEmptyForRestore() && library.hasLocalBackup()) "立即恢复" else "立即备份","关闭本地自动备份")
-        TvDialog.choose(this,"本地备份与恢复",actions.toList(), { which ->
-            if(which==0) {
-                if(needsPermission) requestLocalBackupPermission(anchor) else localBackupAction(anchor)
-            } else {
-                library.localBackupEnabled=false; anchor.text=localBackupLabel()
-                Toast.makeText(this,"已关闭本地自动备份，已有备份文件保留",Toast.LENGTH_SHORT).show()
-            }
-        }).show()
-    }
-    /** Empty library with an existing backup must restore instead of overwriting it with nothing. */
-    private fun localBackupAction(anchor: TextView) {
-        if(library.isEmptyForRestore() && library.hasLocalBackup()) {
-            restoreLocalBackup { anchor.text=localBackupLabel() }
-        } else backupWithToast(anchor)
-    }
-    private fun requestLocalBackupPermission(anchor: TextView,enableAfterGrant: Boolean=false) {
-        // 点击设置开关时重新读取真实权限状态；如果权限已存在就直接继续，不重复弹系统授权框。
-        val current=library.localBackup()
-        if(current.backupAllowed && current.restoreAllowed) {
-            if(enableAfterGrant) library.localBackupEnabled=true
-            anchor.text=localBackupLabel()
-            localBackupAction(anchor)
-            return
-        }
-        localPermissionContinuation={
-            val storage=library.localBackup()
-            if(storage.backupAllowed && storage.restoreAllowed) {
-                if(enableAfterGrant) library.localBackupEnabled=true
-                anchor.text=localBackupLabel()
-                localBackupAction(anchor)
-            } else {
-                if(enableAfterGrant) library.localBackupEnabled=false
-                anchor.text=localBackupLabel()
-                Toast.makeText(this,"未获得存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
-            }
-        }
-        // Android 8/9 始终使用 requestPermissions(WRITE_EXTERNAL_STORAGE)；拒绝后应用继续运行。
-        if(!current.request(this)) {
-            localPermissionContinuation=null
-            if(enableAfterGrant) library.localBackupEnabled=false
-            anchor.text=localBackupLabel()
-            Toast.makeText(this,"当前设备无法授予存储权限，本地备份保持关闭",Toast.LENGTH_LONG).show()
-        }
-    }
-    private fun backupWithToast(anchor: TextView) {
-        library.backupNow { ok ->
-            anchor.text=localBackupLabel()
-            Toast.makeText(this,if(ok) "本机备份已更新" else "备份失败，请检查存储权限",Toast.LENGTH_SHORT).show()
-        }
-    }
+
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
-        if(requestCode==LocalBackupStorage.REQUEST_MANAGE || requestCode==LocalBackupStorage.REQUEST_APP_SETTINGS) {
-            val next=localPermissionContinuation; localPermissionContinuation=null
-            if(next!=null && !isDestroyed) next()
-            localBackupSettingButton?.text=localBackupLabel()
+        if(resultCode!=RESULT_OK) return
+        val uri=data?.data ?: return
+        when(requestCode) {
+            REQUEST_EXPORT_BACKUP -> exportLibraryBackup(uri)
+            REQUEST_IMPORT_BACKUP -> importLibraryBackup(uri,root)
         }
     }
-    override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode,permissions,grantResults)
-        if(requestCode==LocalBackupStorage.REQUEST_READ || requestCode==LocalBackupStorage.REQUEST_WRITE) {
-            // 只有系统回调后才标记“已询问”；后续若被永久拒绝，可引导到应用详情页。
-            library.localPermissionAsked=true
-            val next=localPermissionContinuation; localPermissionContinuation=null
-            if(next!=null && !isDestroyed) next()
-            localBackupSettingButton?.text=localBackupLabel()
-        }
-    }
+
     private fun base(title: String?=null): LinearLayout {
         root.removeAllViews(); root.setBackgroundColor(bg)
         val container=column(); val horizontal=dp(widthDp()*.05f); val vertical=(resources.displayMetrics.heightPixels*.05f).toInt()
@@ -1506,9 +1445,8 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        lateinit var localBackupButton: TextView
-        localBackupButton=setting(device,localBackupLabel()) { showLocalBackupDialog(localBackupButton) }
-        localBackupSettingButton=localBackupButton
+        lateinit var fileBackup: TextView
+        fileBackup=setting(device,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         lateinit var backup: TextView
         backup=setting(device,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
@@ -1569,7 +1507,7 @@ class MainActivity: Activity() {
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings,autoSkipButton)
-            val right=listOf(themeButton,clockButton,localBackupButton,backup,hidden,statsButton,clearCache,updates,checkButton,license)
+            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,updates,checkButton,license)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
