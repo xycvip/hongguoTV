@@ -238,7 +238,7 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         if(t==q) return 1_000_000
         if(t.startsWith(q)) return 900_000-(t.length-q.length).coerceAtMost(100_000)
         if(t.contains(q)) return 800_000-(t.length-q.length).coerceAtMost(100_000)
-        if(q.contains(t)) return 700_000-(q.length-t.length).coerceAtMost(100_000)
+        if(q.contains(t)) return 250_000-(q.length-t.length).coerceAtMost(100_000)
         // 对非连续匹配按关键词字符覆盖率评分；不再让单个首字匹配的长剧名挤到前面。
         val uniqueQuery=q.toSet()
         val matched=uniqueQuery.count { it in t }
