@@ -917,7 +917,7 @@ class MainActivity: Activity() {
                     scheduleSuggest()
                 }
             })
-            val keyHeight=if(tall) dp(40) else dp(34)
+            val keyHeight=if(tall) dp(34) else dp(30)
             fun azKey(label: String): TextView {
                 val view=button(label) { onAzKey(label) }
                 view.textSize=14f; view.minHeight=keyHeight; view.setPadding(dp(3),dp(4),dp(3),dp(4))
@@ -970,7 +970,7 @@ class MainActivity: Activity() {
                 leftScroll.addView(leftColumn)
                 // 左栏底部搜索历史：内嵌最新 4 条 + 全部历史入口，空历史整块隐藏
                 val history=library.searches()
-                if(tall && history.isNotEmpty()) {
+                if(history.isNotEmpty()) {
                     val block=column()
                     val head=row().apply { setPadding(0,dp(2),0,dp(4)) }
                     head.addView(text("搜索历史",13f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
