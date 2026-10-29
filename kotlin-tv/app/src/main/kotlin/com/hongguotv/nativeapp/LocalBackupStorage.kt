@@ -32,6 +32,7 @@ class LocalBackupStorage(private val context: Context) {
         const val REQUEST_MANAGE = 7101
         const val REQUEST_READ = 7102
         const val REQUEST_WRITE = 7103
+        const val REQUEST_APP_SETTINGS = 7104
         private const val DIR_NAME = "hongguotv"
     }
     val supported: Boolean
