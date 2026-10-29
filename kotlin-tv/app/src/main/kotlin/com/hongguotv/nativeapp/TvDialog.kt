@@ -177,7 +177,7 @@ object TvDialog {
     }
 
     /** 确认弹窗：标题 + 正文 + 取消/确认双按钮。 */
-    fun confirm(activity: Activity, title: String, message: String, action: () -> Unit): AlertDialog {
+    fun confirm(activity: Activity, title: String, message: String, onCancel: (() -> Unit)? = null, action: () -> Unit): AlertDialog {
         val content = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         content.addView(title(activity, title))
         content.addView(body(activity, message))
@@ -193,7 +193,8 @@ object TvDialog {
         content.addView(buttons)
         val dialog = AlertDialog.Builder(activity).setView(card(activity, content)).create()
         styleWindow(activity, dialog) { cancel.requestFocus() }
-        cancel.setOnClickListener { dialog.dismiss() }
+        cancel.setOnClickListener { dialog.dismiss(); onCancel?.invoke() }
+        dialog.setOnCancelListener { onCancel?.invoke() }
         ok.setOnClickListener { dialog.dismiss(); action() }
         return dialog
     }
