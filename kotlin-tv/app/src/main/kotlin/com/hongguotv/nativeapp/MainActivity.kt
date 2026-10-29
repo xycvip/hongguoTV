@@ -540,8 +540,16 @@ class MainActivity: Activity() {
     }
 
     /** 将备份保存到共享存储根目录/HongGuoTV，卸载应用后文件仍可保留。 */
+    private fun restoreBackupAccount(data: BackupData, anchor: View?) {
+        val payload = data.accountState?.takeIf { it.isNotBlank() } ?: return
+        cloudAccount.restoreJson(payload) { success, message ->
+            if (isDestroyed) return@restoreJson
+            tvTools.info(if (success) "账户已恢复" else "账户恢复提示", message, anchor)
+        }
+    }
+
     private fun exportLibraryBackupToPublicFolder(anchor: View?) {
-        val snapshot = runCatching { library.snapshot() }.getOrElse {
+        val snapshot = runCatching { library.snapshot().copy(accountState = cloudAccount.backupJson()) }.getOrElse {
             tvTools.info("备份失败", "无法读取当前本机记录，请稍后重试。", anchor)
             return
         }
@@ -626,7 +634,7 @@ class MainActivity: Activity() {
     }
 
     private fun exportLibraryBackup(uri: Uri) {
-        val snapshot=runCatching { library.snapshot() }.getOrElse {
+        val snapshot=runCatching { library.snapshot().copy(accountState = cloudAccount.backupJson()) }.getOrElse {
             tvTools.info("备份失败","无法读取当前本机记录，请稍后重试。",null)
             return
         }
@@ -677,6 +685,7 @@ class MainActivity: Activity() {
                                 tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                                 showCatalog(); favoriteMonitor.check()
                                 Toast.makeText(this,"备份记录已合并恢复",Toast.LENGTH_LONG).show()
+                                restoreBackupAccount(data, anchor)
                             }.onFailure { tvTools.info("恢复失败","记录未能完整恢复：${it.message ?: "未知错误"}",anchor) }
                         }
                     })
@@ -1792,12 +1801,13 @@ class MainActivity: Activity() {
         fileBackup=setting(device,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         lateinit var backup: TextView
         backup=setting(device,"手机备份与恢复") {
-            runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
+            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState = cloudAccount.backupJson())) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { data,restoreSettings ->
                     favoriteMonitor.stop(); library.restore(data,restoreSettings)
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                     showCatalog(); favoriteMonitor.check()
                     Toast.makeText(this,"记录已合并恢复",Toast.LENGTH_LONG).show()
+                    restoreBackupAccount(data, backup)
                 }
             }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
         }
