@@ -3376,11 +3376,41 @@ class MainActivity: Activity() {
             card.addView(text("验证码", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
             card.addView(codeRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
             card.addView(text(cloudAccount.inlineStatus, if (compactCard) 11f else 12f, muted), lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
-            card.addView(button(if (cloudAccount.inlineBusy) "请稍候…" else "登录", onClick = {
-                accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
-                accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
-                cloudAccount.verifyPhoneCodeInline(accountCodeValue)
-            }), lp(-1, dp(if (compactCard) 40 else 46)))
+            if (cloudAccount.inlineUpSmsPending) {
+                card.addView(text(
+                    "短信发送目标：${cloudAccount.inlineUpSmsChannelMobile}\n短信正文：${cloudAccount.inlineUpSmsContent}",
+                    if (compactCard) 10f else 12f, muted
+                ).apply { setPadding(dp(4), 0, dp(4), dp(4)) }, lp())
+                card.addView(button("打开短信编辑页", onClick = {
+                    val smsUri = Uri.fromParts("smsto", cloudAccount.inlineUpSmsChannelMobile, null)
+                    val smsIntent = Intent(Intent.ACTION_SENDTO, smsUri).putExtra("sms_body", cloudAccount.inlineUpSmsContent)
+                    try {
+                        startActivity(smsIntent)
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        Toast.makeText(this, "没有可用的短信应用", Toast.LENGTH_LONG).show()
+                    }
+                }), lp(-1, dp(if (compactCard) 38 else 44)).apply { bottomMargin = dp(5) })
+                card.addView(button(
+                    if (cloudAccount.inlineBusy) "正在确认短信…" else "我已发送，开始自动确认",
+                    onClick = { cloudAccount.confirmUpSmsSentInline() }
+                ), lp(-1, dp(if (compactCard) 38 else 44)))
+            }
+            card.addView(button(
+                when {
+                    cloudAccount.inlineBusy -> "请稍候…"
+                    cloudAccount.inlineUpSmsPending -> "等待短信确认"
+                    else -> "登录"
+                },
+                onClick = {
+                    if (cloudAccount.inlineUpSmsPending) {
+                        Toast.makeText(this, "请先发送上方指定短信，再点击“我已发送，开始自动确认”", Toast.LENGTH_LONG).show()
+                    } else {
+                        accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
+                        accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
+                        cloudAccount.verifyPhoneCodeInline(accountCodeValue)
+                    }
+                }
+            ), lp(-1, dp(if (compactCard) 40 else 46)))
             if (!compactCard) card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
                 setPadding(0, dp(10), 0, 0)
             }, lp())
