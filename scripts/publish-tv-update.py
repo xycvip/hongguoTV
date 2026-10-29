@@ -17,8 +17,8 @@ size = os.path.getsize(apk_path)
 def changelog():
     # Keep release notes focused on the compatibility fixes in this APK.
     return (
-        "- Android 9 电视没有系统文件保存器时，本地备份改为保存到应用专用目录，并支持从该目录恢复。\\n"
-        "- 更新检查增加缓存规避，并以设备实际安装版本判断是否允许覆盖安装，避免误下载旧包。\\n"
+        "- Android 9 电视没有系统文件保存器时，本地备份改为保存到应用专用目录，并支持从该目录恢复。\n"
+        "- 更新检查增加缓存规避，并以设备实际安装版本判断是否允许覆盖安装，避免误下载旧包。\n"
         "- 版本号改为独立的 MAJOR.MINOR.PATCH-build.构建号，不再依赖上游版本字符串或已发布 Release 记录。"
     )
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
