@@ -3389,22 +3389,16 @@ class MainActivity: Activity() {
                     onClick = { cloudAccount.confirmUpSmsSentInline() }
                 ), lp(-1, dp(if (compactCard) 38 else 44)))
             }
-            card.addView(button(
-                when {
-                    cloudAccount.inlineBusy -> "请稍候…"
-                    cloudAccount.inlineUpSmsPending -> "等待短信确认"
-                    else -> "登录"
-                },
-                onClick = {
-                    if (cloudAccount.inlineUpSmsPending) {
-                        Toast.makeText(this, "请先发送上方指定短信，再点击“我已发送，开始自动确认”", Toast.LENGTH_LONG).show()
-                    } else {
+            if (!cloudAccount.inlineUpSmsPending) {
+                card.addView(button(
+                    if (cloudAccount.inlineBusy) "请稍候…" else "登录",
+                    onClick = {
                         accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
                         accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
                         cloudAccount.verifyPhoneCodeInline(accountCodeValue)
                     }
-                }
-            ), lp(-1, dp(if (compactCard) 36 else 46)))
+                ), lp(-1, dp(if (compactCard) 36 else 46)))
+            }
             if (!compactCard) card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
                 setPadding(0, dp(10), 0, 0)
             }, lp())
