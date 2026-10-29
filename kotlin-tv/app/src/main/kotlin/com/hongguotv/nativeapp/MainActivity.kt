@@ -2126,7 +2126,7 @@ class MainActivity: Activity() {
             val scroll=ScrollView(this).apply {
                 isVerticalScrollBarEnabled=false
                 clipToPadding=false
-                fillViewport=false
+                isFillViewport=false
                 addView(content,ViewGroup.LayoutParams(-1,-2))
             }
             body.addView(scroll,lp(-1,0).apply { weight=1f })
