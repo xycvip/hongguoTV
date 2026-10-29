@@ -291,7 +291,7 @@ class PhoneLogin(private val http: OkHttpClient) {
             ?.let { "$it（错误码 ${data.optInt("error_code")}）" }
 
     companion object {
-        private const val PASSPORT = "https://is.snssdk.com"
+        private const val PASSPORT = "https://api5-normal-lq.fqnovel.com"
         /** login-lab 实测：24 = 登录验证码；1 / 3 是绑定 / 换绑手机号。 */
         const val LOGIN_CODE_TYPE = "24"
         /**
