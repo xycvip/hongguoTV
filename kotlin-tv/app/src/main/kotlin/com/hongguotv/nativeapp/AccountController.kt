@@ -651,8 +651,8 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         generation++
         val token = generation
         inlinePhoneLogin?.cancel()
-        inlineUpSmsNumber = ""
-        inlineUpSmsContent = ""
+        pendingUpSmsNumber = ""
+        pendingUpSmsContent = ""
         inlinePhoneCode = ""
         val login = PhoneLogin(http)
         inlinePhoneLogin = login
@@ -677,14 +677,14 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     }
 
     private var inlinePhoneMasked = ""
-    private var inlineUpSmsNumber = ""
-    private var inlineUpSmsContent = ""
+    private var pendingUpSmsNumber = ""
+    private var pendingUpSmsContent = ""
     private var inlinePhoneCode = ""
     private var accountCountryCode = "+86"
 
-    val inlineUpSmsPending: Boolean get() = inlineUpSmsNumber.isNotBlank() && inlineUpSmsContent.isNotBlank()
-    val inlineUpSmsChannelMobile: String get() = inlineUpSmsNumber
-    val inlineUpSmsContent: String get() = inlineUpSmsContent
+    val inlineUpSmsPending: Boolean get() = pendingUpSmsNumber.isNotBlank() && pendingUpSmsContent.isNotBlank()
+    val inlineUpSmsChannelMobile: String get() = pendingUpSmsNumber
+    val inlineUpSmsContent: String get() = pendingUpSmsContent
 
     fun cycleInlineCountryCode(): String {
         accountCountryCode = when (accountCountryCode) {
@@ -720,15 +720,15 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 busy = false
                 result.fold(
                     { 
-                        inlineUpSmsNumber = ""
-                        inlineUpSmsContent = ""
+                        pendingUpSmsNumber = ""
+                        pendingUpSmsContent = ""
                         inlinePhoneCode = ""
                         acceptAccount(it.first, it.second, inline = true)
                     },
                     { failure ->
                         if (failure is PhoneLogin.UpSmsRequired) {
-                            inlineUpSmsNumber = failure.challenge.channelMobile
-                            inlineUpSmsContent = failure.challenge.smsContent
+                            pendingUpSmsNumber = failure.challenge.channelMobile
+                            pendingUpSmsContent = failure.challenge.smsContent
                             inlinePhoneCode = code
                             status = "需要发送平台指定的验证短信。请打开短信编辑页发送，返回后点击“我已发送”。"
                         } else {
@@ -757,8 +757,8 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 busy = false
                 result.fold(
                     { pair ->
-                        inlineUpSmsNumber = ""
-                        inlineUpSmsContent = ""
+                        pendingUpSmsNumber = ""
+                        pendingUpSmsContent = ""
                         inlinePhoneCode = ""
                         acceptAccount(pair.first, pair.second, inline = true)
                     },
@@ -780,8 +780,8 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         inlinePhoneLogin?.cancel()
         inlinePhoneLogin = null
         inlinePhoneMasked = ""
-        inlineUpSmsNumber = ""
-        inlineUpSmsContent = ""
+        pendingUpSmsNumber = ""
+        pendingUpSmsContent = ""
         inlinePhoneCode = ""
         changed()
     }
