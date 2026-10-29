@@ -62,7 +62,6 @@ class PhoneLogin(private val http: OkHttpClient) {
         expired = false
         pendingMfa = null
         pendingMfaExpiresAt = 0L
-        token = ""
         this.mobile = mobile
         val reply = call(
             "/passport/mobile/send_code/v1/",
@@ -205,7 +204,6 @@ class PhoneLogin(private val http: OkHttpClient) {
     private fun call(
         path: String,
         params: Map<String, String>,
-        includeBaseForm: Boolean = true,
     ): JSONObject {
         if (cancelled) throw Failure("登录已取消")
         val device = LinkedHashMap(VendorConstants.device).apply {
@@ -216,14 +214,12 @@ class PhoneLogin(private val http: OkHttpClient) {
             put("version_name", "7.3.9.32")
         }
         val query = device + mapOf("aid" to "8662", "app_name" to "novelread", "device_platform" to "android")
-        val bodyFields = if (includeBaseForm) {
-            linkedMapOf(
-                "mobile" to xor(wirePhone(mobile)),
-                "account_sdk_source" to "app",
-                "passport_support_flow" to "captcha,verify",
-                "mix_mode" to "1",
-            ).apply { putAll(params) }
-        } else params
+        val bodyFields = linkedMapOf(
+            "mobile" to xor(wirePhone(mobile)),
+            "account_sdk_source" to "app",
+            "passport_support_flow" to "captcha,verify",
+            "mix_mode" to "1",
+        ).apply { putAll(params) }
         val payload = Signer.encode(bodyFields).toByteArray(Charsets.UTF_8)
         val signed = Signer(device = device).sign(PASSPORT + path, query, payload)
         val request = Request.Builder().url(signed.url)
