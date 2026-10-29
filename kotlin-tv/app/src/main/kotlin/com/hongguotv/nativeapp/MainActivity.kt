@@ -2379,12 +2379,10 @@ class MainActivity: Activity() {
         val content=column()
         content.addView(TvDialog.title(this,"弹幕屏蔽词"))
         val list=ListView(this).apply {
-            choiceMode=ListView.CHOICE_MODE_MULTIPLE
             adapter=TvDialog.choiceAdapter(this@MainActivity,words,multiple=true,checkedStates=checked)
             setOnItemClickListener { _,_,index,_ ->
                 // 不依赖 ListView 的临时 choice 状态；以数据数组作为唯一勾选来源。
                 checked[index] = !checked[index]
-                setItemChecked(index, checked[index])
                 (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
             }
         }
@@ -2393,7 +2391,6 @@ class MainActivity: Activity() {
         val clear=TvDialog.capsuleButton(this,"清空") {
             extras.blockedWords=emptySet(); applyBlockedWords(); anchor.text="弹幕屏蔽词  ·  0 个"
             checked.fill(false)
-            list.clearChoices()
             list.post { (list.adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged(); list.invalidateViews(); list.requestLayout() }
         }
         val save=TvDialog.capsuleButton(this,"保存") {
@@ -2409,7 +2406,6 @@ class MainActivity: Activity() {
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
         dialog.show()
         list.post {
-            words.forEachIndexed { index,word -> list.setItemChecked(index,word in extras.blockedWords) }
             list.invalidateViews()
             list.requestFocus()
         }
@@ -2672,7 +2668,6 @@ class MainActivity: Activity() {
         val content=column()
         content.addView(TvDialog.title(this,"全局默认倍速"))
         val list=ListView(this).apply {
-            choiceMode=ListView.CHOICE_MODE_SINGLE
             adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label),checkedStates=checked)
             setOnItemClickListener { _,_,index,_ ->
                 checked.fill(false); checked[index]=true
@@ -2698,7 +2693,6 @@ class MainActivity: Activity() {
         }
         dialog.show()
         list.post {
-            list.setItemChecked(selected.coerceAtLeast(0),true)
             list.setSelection(selected.coerceAtLeast(0))
             list.invalidateViews()
             list.requestFocus()
