@@ -92,7 +92,7 @@ jobs:
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Tests and release lint
-        if: ${{ inputs.skip_tests != true }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintRelease --console=plain
       - name: Build signed APK
         env:
