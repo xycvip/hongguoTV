@@ -694,15 +694,22 @@ class MainActivity: Activity() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
         if(!library.isLoaded || !library.showClock) return
-        val view=text("",20f,white).apply {
+        // 字号、内边距与边距随屏幕宽高变化：手机上收紧，电视上保持清晰但不过大。
+        val screenWidth=widthDp()
+        val screenHeight=heightDp()
+        val clockSize=(screenWidth/24f).coerceIn(14f,22f)
+        val horizontalPadding=(screenWidth*0.012f).toInt().coerceIn(4,16)
+        val verticalPadding=(screenHeight*0.006f).toInt().coerceIn(2,8)
+        val view=text("",clockSize,white).apply {
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
-            setPadding(dp(10),dp(5),dp(10),dp(5))
+            setPadding(dp(horizontalPadding),dp(verticalPadding),dp(horizontalPadding),dp(verticalPadding))
             // 时钟文字直接叠在页面上，不绘制背景或阴影。
         }
-        // 时钟始终置于根布局最上层，放在右上角并避开测试版标识。
-        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) dp(4) else dp(16)
-        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=topMargin; rightMargin=dp(14) })
+        // 按屏幕高度调整顶部留白，并按宽度留出右侧安全距离，避免手机上显得过大或贴边。
+        val topMargin=if(BuildConfig.VERSION_NAME.contains('+')) (screenHeight*0.006f).toInt().coerceIn(2,8) else (screenHeight*0.018f).toInt().coerceIn(6,20)
+        val rightMargin=(screenWidth*0.025f).toInt().coerceIn(8,28)
+        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=dp(topMargin); this.rightMargin=dp(rightMargin) })
         clockView=view
         val tick=object: Runnable {
             override fun run() {
@@ -2081,41 +2088,78 @@ class MainActivity: Activity() {
         val fromUpdates=updated.isNotEmpty()
         // 收藏更新优先，其次随机荐剧池，最后退化到首页 7 天缓存随机抽 3 部，全部为本地数据
         val items=if(fromUpdates) updated else randomRecommender.pick(3).ifEmpty { library.cachedHome(library.contentType)?.items?.shuffled()?.take(3) ?: emptyList() }
+        val compactDialog=widthDp()<600f || heightDp()<500f
         val body=column().apply { setPadding(0,0,0,0) }
         val heading=TvDialog.title(this,if(fromUpdates) "收藏更新，看完再走？" else if(items.isNotEmpty()) "猜你喜欢，再看一会儿？" else "确定要退出红果TV吗？")
-        heading.gravity=Gravity.CENTER; heading.setPadding(0,0,0,dp(14))
+        heading.gravity=Gravity.CENTER
+        heading.textSize=if(compactDialog) 18f else 20f
+        heading.setPadding(0,0,0,dp(if(compactDialog) 8 else 14))
         body.addView(heading,lp(-1,-2))
-        val cardWidth=dp(120)
+
+        val cardWidth=if(compactDialog) dp(((widthDp()-100f)/items.size.coerceAtLeast(1)-12f).toInt().coerceIn(68,120)) else dp(120)
         val posterHeight=(cardWidth/TvStyle.POSTER_ASPECT).toInt()
-        val cards=row()
-        items.forEach { item ->
-            val card=column(); card.setPadding(dp(4),dp(4),dp(4),dp(9)); focusStyle(card)
-            val image=ImageView(this).apply { scaleType=ImageView.ScaleType.FIT_XY; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
-            card.addView(image,lp(-1,posterHeight))
-            val cardTitle=text("",13f).apply { maxLines=2; minLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(6),dp(3),0) }
-            val badge=text("",11f,muted).apply { maxLines=1; minLines=1; minHeight=dp(17); ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),0,0,0) }
-            card.addView(cardTitle,lp(-1,-2)); card.addView(badge,lp(-1,-2))
-            card.contentDescription=item.title
-            loadCover(image,item.cover)
-            cardTitle.text=item.title; badge.text=if(fromUpdates) library.favoriteLabel(item.id) else item.badge
-            card.setOnClickListener { exitDialog?.dismiss(); openDetail(item,false) }
-            card.setOnFocusChangeListener { _,focused -> card.background=TvStyle.card(this,focused); if(focused) loadCover(image,item.cover) }
-            cards.addView(card,lp(cardWidth,-2).apply { rightMargin=dp(12) })
+        val content=column()
+        if(items.isNotEmpty()) {
+            val cards=row().apply { gravity=Gravity.CENTER }
+            items.forEach { item ->
+                val card=column(); card.setPadding(dp(4),dp(4),dp(4),dp(9)); focusStyle(card)
+                val image=ImageView(this).apply { scaleType=ImageView.ScaleType.FIT_XY; importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO }
+                card.addView(image,lp(-1,posterHeight))
+                val cardTitle=text("",if(compactDialog) 11f else 13f).apply { maxLines=2; minLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(6),dp(3),0) }
+                val badge=text("",10f,muted).apply { maxLines=1; minLines=1; minHeight=dp(17); ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),0,0,0) }
+                card.addView(cardTitle,lp(-1,-2)); card.addView(badge,lp(-1,-2))
+                card.contentDescription=item.title
+                loadCover(image,item.cover)
+                cardTitle.text=item.title; badge.text=if(fromUpdates) library.favoriteLabel(item.id) else item.badge
+                card.setOnClickListener { exitDialog?.dismiss(); openDetail(item,false) }
+                card.setOnFocusChangeListener { _,focused -> card.background=TvStyle.card(this,focused); if(focused) loadCover(image,item.cover) }
+                cards.addView(card,lp(cardWidth,-2).apply { rightMargin=dp(if(compactDialog) 4 else 12) })
+            }
+            content.addView(cards,lp(-1,-2))
+        } else {
+            content.addView(ImageView(this).apply { setImageResource(R.drawable.exit_placeholder); importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+                lp(dp(if(compactDialog) 120 else 200),dp(if(compactDialog) 120 else 200)).apply { gravity=Gravity.CENTER_HORIZONTAL; bottomMargin=dp(8) })
         }
-        if(items.isNotEmpty()) body.addView(cards,lp(-2,-2).apply { gravity=Gravity.CENTER_HORIZONTAL })
-        else body.addView(ImageView(this).apply { setImageResource(R.drawable.exit_placeholder); importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO },
-            lp(dp(200),dp(200)).apply { gravity=Gravity.CENTER_HORIZONTAL; bottomMargin=dp(8) })
-        val dlg=AlertDialog.Builder(this).setView(TvDialog.card(this,body)).create()
-        TvDialog.styleWindow(this,dlg)
-        val buttons=row().apply { gravity=Gravity.CENTER_HORIZONTAL; setPadding(0,dp(14),0,0) }
-        val exitButton=TvDialog.capsuleButton(this,"退出不看了") { killOnDestroy=true; library.flush(); dlg.dismiss(); finish() }
-        val stayButton=TvDialog.capsuleButton(this,"再看一会儿") { dlg.dismiss() }
-        buttons.addView(exitButton,lp(-2,-2).apply { rightMargin=dp(12) })
+
+        if(compactDialog) {
+            // 手机/矮屏将推荐内容放进可滚动区域，底部两个操作按钮固定可见。
+            val scroll=ScrollView(this).apply {
+                isVerticalScrollBarEnabled=false
+                clipToPadding=false
+                fillViewport=false
+                addView(content,ViewGroup.LayoutParams(-1,-2))
+            }
+            body.addView(scroll,lp(-1,0).apply { weight=1f })
+        } else body.addView(content,lp(-1,-2))
+
+        val buttons=row().apply { gravity=Gravity.CENTER_HORIZONTAL; setPadding(0,dp(if(compactDialog) 8 else 14),0,0) }
+        val exitButton=TvDialog.capsuleButton(this,"退出不看了") { killOnDestroy=true; library.flush(); exitDialog?.dismiss(); finish() }
+        val stayButton=TvDialog.capsuleButton(this,"再看一会儿") { exitDialog?.dismiss() }
+        if(compactDialog) {
+            exitButton.textSize=13f; stayButton.textSize=13f
+            exitButton.setPadding(dp(10),0,dp(10),0); stayButton.setPadding(dp(10),0,dp(10),0)
+        }
+        buttons.addView(exitButton,lp(-2,-2).apply { rightMargin=dp(if(compactDialog) 6 else 12) })
         buttons.addView(stayButton,lp(-2,-2))
-        body.addView(buttons,lp(-2,-2).apply { gravity=Gravity.CENTER_HORIZONTAL; topMargin=dp(14); bottomMargin=dp(6) })
+        body.addView(buttons,lp(-1,-2).apply { topMargin=dp(if(compactDialog) 6 else 14); bottomMargin=dp(if(compactDialog) 2 else 6) })
+
+        val dlg=AlertDialog.Builder(this).setView(TvDialog.card(this,body)).create()
+        TvDialog.styleWindow(this,dlg,
+            widthFraction=if(compactDialog) 0.94f else 0.55f,
+            maxWidthDp=620,
+            onShown={
+                if(compactDialog) {
+                    val windowWidth=(resources.displayMetrics.widthPixels*0.94f).toInt()
+                    val windowHeight=(resources.displayMetrics.heightPixels*0.88f).toInt()
+                    dlg.window?.setLayout(windowWidth,windowHeight)
+                }
+            })
         exitDialog=dlg
         dlg.show()
-        stayButton.requestFocus()
+        dlg.window?.decorView?.post {
+            // 保持默认焦点在“再看一会儿”，手机上按钮无需滚动到底部才能触达。
+            if(dlg.isShowing) stayButton.requestFocus()
+        }
         dlg.setOnDismissListener { exitDialog=null }
     }
     private fun showGenrePicker() {
