@@ -10,9 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.text.InputType
 import android.util.Base64
-import android.widget.EditText
 import android.widget.Toast
 import com.hongguotv.core.*
 import java.security.KeyStore
@@ -124,7 +122,6 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private var draining = false
     private var dialog: AlertDialog? = null
     private var inlineQrLogin: WebLogin? = null
-    private var inlinePhoneLogin: PhoneLogin? = null
     private var inlineQrDeadline = 0L
     private var inlineQrToken = 0
     val inlineQrBitmap: android.graphics.Bitmap? get() = qrBitmap
@@ -415,13 +412,13 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         val signed = credentials != null
         val choices =
             if (signed) arrayOf("云端继续观看（最近 50 部）", "刷新账号和云端记录", "退出红果账号")
-            else arrayOf("使用红果 App 扫码登录", "手机号 + 验证码登录")
+            else arrayOf("使用红果 App 扫码登录")
         showDialog(
             AlertDialog.Builder(activity)
                 .setTitle(profile?.let { "红果账号 · ${it.nickname}" } ?: "红果账号（测试功能）")
                 .setItems(choices) { _, index ->
                     if (!signed) {
-                        if (index == 0) qrLogin() else phone()
+                        qrLogin()
                     } else
                         when (index) {
                             0 -> showHistory()
@@ -443,84 +440,8 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         )
     }
 
-    private fun input(
-        title: String,
-        numeric: Boolean,
-        error: String? = null,
-        submit: (String) -> Unit,
-    ) {
-        val field =
-            EditText(activity).apply {
-                isSingleLine = true
-                inputType = if (numeric) InputType.TYPE_CLASS_NUMBER else InputType.TYPE_CLASS_PHONE
-            }
-        val builder =
-            AlertDialog.Builder(activity)
-                .setTitle(title)
-                .setView(field)
-                .setNegativeButton("取消", null)
-                .setPositiveButton("确认", null)
-        if (error != null) builder.setMessage(error)
-        showDialog(builder)
-        dialog?.getButton(AlertDialog.BUTTON_POSITIVE)?.setOnClickListener {
-            val value = field.text.toString().trim()
-            if (value.isBlank()) return@setOnClickListener
-            dialog?.dismiss()
-            submit(value)
-        }
-    }
-
-    private fun phone() {
-        input("手机号（确认后发送登录验证码）", false) { raw ->
-            val mobile =
-                runCatching { PhoneLogin.parse(raw) }
-                    .getOrElse {
-                        toast(safeError(it))
-                        return@input
-                    }
-            val login = WebLogin(http)
-            task(
-                { login.send(mobile) },
-                { sent -> code(login, sent.maskedMobile) },
-                { failure ->
-                    showDialog(
-                        AlertDialog.Builder(activity)
-                            .setTitle("短信登录未完成")
-                            .setMessage(safeError(failure))
-                            .setPositiveButton("改用扫码") { _, _ -> qrLogin() }
-                            .setNegativeButton("返回", null)
-                    )
-                },
-            )
-        }
-    }
-
-    private fun code(login: WebLogin, masked: String, error: String? = null) {
-        input("输入发送至 $masked 的验证码", true, error) { value ->
-            if (!value.matches(Regex("[0-9]{4,8}"))) {
-                code(login, masked, "请输入 4—8 位验证码")
-                return@input
-            }
-            task(
-                { validateAccount(login.verify(value)).also { store.save(it.first) } },
-                { (next, account) -> acceptAccount(next, account) },
-                { failure ->
-                    if (failure is PhoneLogin.Failure && !failure.canRetryCode) {
-                        showDialog(
-                            AlertDialog.Builder(activity)
-                                .setTitle("登录未完成")
-                                .setMessage(safeError(failure))
-                                .setPositiveButton("返回账号页") { _, _ -> show() }
-                                .setNeutralButton("改用扫码") { _, _ -> qrLogin() }
-                        )
-                    } else code(login, masked, safeError(failure))
-                },
-            )
-        }
-    }
-
     private fun validateAccount(web: AccountCredentials): Pair<AccountCredentials, CloudProfile> {
-        // Passport 手机登录必须继续使用发码/验码时的同一设备身份；扫码登录没有设备身份时才注册新设备。
+        // QR login has no registered device identity, so initialize one only when needed.
         val next = if (web.deviceId.isNotBlank() && web.installId.isNotBlank()) {
             web
         } else {
@@ -562,7 +483,6 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         generation++
         val token = generation
         inlineQrToken = token
-        inlinePhoneLogin?.cancel()
         val login = WebLogin(http)
         inlineQrLogin = login
         qrBitmap = null
@@ -646,147 +566,12 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         }, 1800L)
     }
 
-    fun sendPhoneCodeInline(rawNumber: String) {
-        if (closed || busy) return
-        val mobile = runCatching {
-            PhoneLogin.parse(rawNumber)
-        }.getOrElse {
-            status = safeError(it)
-            changed()
-            return
-        }
-        generation++
-        val token = generation
-        inlinePhoneLogin?.cancel()
-        pendingUpSmsNumber = ""
-        pendingUpSmsContent = ""
-        inlinePhoneCode = ""
-        val login = PhoneLogin(http)
-        inlinePhoneLogin = login
-        busy = true
-        status = "正在发送验证码…"
-        changed()
-        worker.execute {
-            val result = runCatching { login.send(mobile) }
-            main.post {
-                if (closed || token != generation) return@post
-                busy = false
-                result.fold(
-                    { sent ->
-                        status = "验证码已发送至 ${sent.maskedMobile}，请输入验证码完成登录"
-                        inlinePhoneMasked = sent.maskedMobile
-                        changed()
-                    },
-                    { status = safeError(it); changed() }
-                )
-            }
-        }
-    }
-
-    private var inlinePhoneMasked = ""
-    private var pendingUpSmsNumber = ""
-    private var pendingUpSmsContent = ""
-    private var inlinePhoneCode = ""
-    val inlineUpSmsPending: Boolean get() = pendingUpSmsNumber.isNotBlank() && pendingUpSmsContent.isNotBlank()
-    val inlineUpSmsChannelMobile: String get() = pendingUpSmsNumber
-    val inlineUpSmsContent: String get() = pendingUpSmsContent
-    val inlineCountryCode: String get() = "+86"
-    val inlinePhoneCodeSent: Boolean get() = inlinePhoneMasked.isNotBlank()
-
-    fun verifyPhoneCodeInline(code: String) {
-        val login = inlinePhoneLogin
-        if (closed || busy || login == null || code.isBlank()) return
-        if (!code.matches(Regex("[0-9]{4,8}"))) {
-            status = "请输入 4–8 位数字验证码"
-            changed()
-            return
-        }
-        generation++
-        val token = generation
-        busy = true
-        status = "正在验证并登录…"
-        changed()
-        worker.execute {
-            val result = runCatching { validateAccount(login.verify(code)) }
-            main.post {
-                if (closed || token != generation) return@post
-                busy = false
-                result.fold(
-                    { 
-                        pendingUpSmsNumber = ""
-                        pendingUpSmsContent = ""
-                        inlinePhoneCode = ""
-                        acceptAccount(it.first, it.second, inline = true)
-                    },
-                    { failure ->
-                        if (failure is PhoneLogin.UpSmsRequired) {
-                            pendingUpSmsNumber = failure.challenge.channelMobile
-                            pendingUpSmsContent = failure.challenge.smsContent
-                            inlinePhoneCode = code
-                            status = "需要发送平台指定的验证短信。请打开短信编辑页发送，返回后点击“我已发送”。"
-                        } else {
-                            status = safeError(failure)
-                        }
-                        changed()
-                    }
-                )
-            }
-        }
-    }
-
-    fun confirmUpSmsSentInline() {
-        val login = inlinePhoneLogin
-        val code = inlinePhoneCode
-        if (closed || busy || login == null || !inlineUpSmsPending || code.isBlank()) return
-        generation++
-        val token = generation
-        busy = true
-        status = "正在确认上行短信（最多 90 秒）…"
-        changed()
-        worker.execute {
-            val result = runCatching { validateAccount(login.verifyUpSmsAndLogin(code)) }
-            main.post {
-                if (closed || token != generation) return@post
-                busy = false
-                result.fold(
-                    { pair ->
-                        pendingUpSmsNumber = ""
-                        pendingUpSmsContent = ""
-                        inlinePhoneCode = ""
-                        acceptAccount(pair.first, pair.second, inline = true)
-                    },
-                    { failure ->
-                        if (failure is PhoneLogin.Failure && failure.errorCode in setOf(1, 1066)) {
-                            pendingUpSmsNumber = ""
-                            pendingUpSmsContent = ""
-                            inlinePhoneCode = ""
-                            inlinePhoneMasked = ""
-                            inlinePhoneLogin = null
-                            status = if (failure.errorCode == 1066)
-                                "平台已拒绝本次验证（1066），请重新获取短信验证码，再重新登录。"
-                            else safeError(failure)
-                        } else {
-                            status = safeError(failure)
-                        }
-                        changed()
-                    }
-                )
-            }
-        }
-    }
-
     fun logoutInline() {
         if (busy) return
         logout()
         qrBitmap = null
         inlineQrLogin?.cancel()
         inlineQrLogin = null
-        inlinePhoneLogin?.cancel()
-        inlinePhoneLogin = null
-        inlinePhoneMasked = ""
-        pendingUpSmsNumber = ""
-        pendingUpSmsContent = ""
-        inlinePhoneCode = ""
         changed()
     }
 
