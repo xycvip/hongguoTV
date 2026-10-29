@@ -16,13 +16,14 @@ with open(apk_path, "rb") as apk_file:
 size = os.path.getsize(apk_path)
 
 def changelog():
-    # Keep this release's notes focused on changes included in the current build.
-    return "\\n".join([
-        "- 修复「我的」页面切换时另开窗口的问题：账号页现在与首页、搜索、设置共用同一导航界面，切换更连贯。",
-        "- 登录界面改为页面内居中卡片，不再使用二维码登录弹窗；二维码直接显示在卡片中，减少手机屏幕上二维码被裁切的情况。",
-        "- 新增二维码登录 / 手机号登录切换入口；手机号登录提供区号、手机号、短信验证码和登录操作，刷新页面时尽量保留输入内容。",
-        "- 账号登录状态下在「我的」页面集中展示云端收藏和观看历史，并提供刷新云端数据、退出登录入口。",
-        "- 保留本机内容与原有首页、搜索、播放和设置功能；继续修正账号页布局的 Kotlin 编译问题。"
+    # One concise change per line; use real newlines in release notes and update manifest.
+    return "\n".join([
+        "- 登录入口仅保留二维码登录，移除手机号登录。",
+        "- 优化「红果账户」页面，集中展示历史、收藏和预约状态。",
+        "- 调整手机端二维码卡片尺寸与居中布局，减少页面裁切。",
+        "- 缩小系统时间字号并优化手机、电视端位置。",
+        "- 本地备份新增明文账户凭据恢复；云端观影资料不写入备份，恢复后可刷新同步。",
+        "- 保留原有本机收藏、观看记录、设置及备份合并逻辑。"
     ])
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
