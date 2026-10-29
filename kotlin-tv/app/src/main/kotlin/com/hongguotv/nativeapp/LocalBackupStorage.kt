@@ -48,9 +48,9 @@ class LocalBackupStorage(private val context: Context) {
             !supported -> false
             // Android 10+ 使用 MediaStore；可无权限读取应用自己创建的备份。
             Build.VERSION.SDK_INT >= 29 -> true
-            // Android 8/9 使用公共目录文件，恢复既需要读取权限，也需要写入权限。
-            else -> context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-                context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+            // Android 8/9 的传统公共存储访问按官方用法请求 WRITE_EXTERNAL_STORAGE；
+            // 获得该权限后即可读写公共目录，不再额外要求 READ 权限。
+            else -> context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
         }
     // 设置页打开时也检查权限，不只在用户点击“本地备份与恢复”时检查。
     val needsPermission: Boolean get() = !backupAllowed || !restoreAllowed
@@ -67,16 +67,11 @@ class LocalBackupStorage(private val context: Context) {
                 activity.requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), REQUEST_READ); true
             }
             else -> {
-                // Android 8/9 只请求当前缺失的权限；已授权项不重复申请。
-                val missing = buildList {
-                    if (context.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-                        add(Manifest.permission.READ_EXTERNAL_STORAGE)
-                    if (context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
-                        add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                }
-                if (missing.isEmpty()) true
+                // Android 8/9：仅请求 WRITE_EXTERNAL_STORAGE。该权限用于传统公共目录读写，
+                // 避免 OEM 对 READ/WRITE 同组权限的非标准弹窗处理造成状态不一致。
+                if (context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) true
                 else {
-                    activity.requestPermissions(missing.toTypedArray(), REQUEST_WRITE)
+                    activity.requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQUEST_WRITE)
                     true
                 }
             }
