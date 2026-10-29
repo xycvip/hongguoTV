@@ -561,7 +561,36 @@ class MainActivity: Activity() {
         AlertDialog.Builder(this)
             .setTitle("选择备份文件")
             .setItems(files.map { it.name }.toTypedArray()) { _, which ->
-                if (which in files.indices) importLibraryBackup(Uri.fromFile(files[which]), anchor)
+                if (which !in files.indices) return@setItems
+                val selected = files[which]
+                AlertDialog.Builder(this)
+                    .setTitle(selected.name)
+                    .setItems(arrayOf("恢复此备份", "删除此备份")) { _, action ->
+                        when (action) {
+                            0 -> importLibraryBackup(Uri.fromFile(selected), anchor)
+                            1 -> AlertDialog.Builder(this)
+                                .setTitle("删除备份文件")
+                                .setMessage("确定删除这条本地备份吗？\n\n${selected.name}\n\n删除后无法恢复。")
+                                .setNegativeButton("取消", null)
+                                .setPositiveButton("删除") { _, _ ->
+                                    io.execute {
+                                        val deleted = runCatching { selected.isFile && selected.delete() }.getOrDefault(false)
+                                        main.post {
+                                            if (isDestroyed) return@post
+                                            if (deleted) {
+                                                Toast.makeText(this, "备份已删除", Toast.LENGTH_SHORT).show()
+                                                showLocalBackupFiles(anchor)
+                                            } else {
+                                                tvTools.info("删除失败", "无法删除备份文件，请检查存储权限或文件是否被占用。", anchor)
+                                            }
+                                        }
+                                    }
+                                }
+                                .show()
+                        }
+                    }
+                    .setNegativeButton("返回", null)
+                    .show()
             }
             .setNegativeButton("取消", null)
             .show()
