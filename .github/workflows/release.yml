@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
           # Keep the newest stable published release; delete older release entries only.
           # Git tags and source history are intentionally left untouched.
-          OLD_RELEASE_IDS="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[][] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | reverse | .[1:] | .[].id')"
+          OLD_RELEASE_IDS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -s '[.[][] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | reverse | .[1:] | .[].id')"
           if [[ -z "$OLD_RELEASE_IDS" ]]; then
             echo "Only one stable release exists; nothing to delete."
             exit 0
