@@ -577,6 +577,28 @@ class AccountController(private val activity: Activity, private val play: (Cloud
 
     fun loginByQr() = qrLogin()
 
+    fun backupJson(): String? = credentials?.toJson()
+
+    fun restoreJson(raw: String, callback: (Boolean, String) -> Unit) {
+        worker.execute {
+            val result = runCatching {
+                val saved = AccountCredentials.fromJson(raw)
+                val checked = validateAccount(saved)
+                store.save(checked.first)
+                checked
+            }
+            main.post {
+                if (closed) return@post
+                result.onSuccess { pair ->
+                    acceptAccount(pair.first, pair.second, inline = true)
+                    callback(true, "账户已恢复，正在同步云端数据")
+                }.onFailure { error ->
+                    callback(false, "账户恢复失败或凭据已失效：${safeError(error)}")
+                }
+            }
+        }
+    }
+
     private fun qrLogin() {
         val login = WebLogin(http)
         task(
