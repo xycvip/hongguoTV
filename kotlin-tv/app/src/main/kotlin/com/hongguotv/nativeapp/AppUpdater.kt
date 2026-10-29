@@ -32,7 +32,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
     private val worker = Executors.newSingleThreadExecutor()
     private val repository = AppUpdateRepository()
     private val preferences = activity.getSharedPreferences("app_updates", Activity.MODE_PRIVATE)
-    private val apk = File(activity.cacheDir, "updates/update.apk")
+    private var apk = File(activity.cacheDir, "updates/update.apk")
     private var task: Future<*>? = null
     private var generation = 0
     private var active = false
@@ -189,6 +189,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         updateStatus("正在检查新版…")
         work({ repository.latest() }) { update ->
             available = update.takeIf { it.newerThan(BuildConfig.VERSION_CODE.toLong(), Build.VERSION.SDK_INT) }; ready = false
+            if (available != null) {
+                // 每个版本使用独立文件名和 content URI，避免 Android 14–16 安装器把旧 URI 的 APK 缓存当成新包。
+                apk = File(activity.cacheDir, "updates/HongguoTV-${available!!.versionName}-${available!!.versionCode}.apk")
+            }
             if (available == null) {
                 updateStatus(if (update.versionCode > BuildConfig.VERSION_CODE && update.minSdk > Build.VERSION.SDK_INT) "新版需要 Android API ${update.minSdk}，当前电视继续使用本版" else "已是最新版本 ${BuildConfig.VERSION_NAME}")
                 worker.execute { apk.delete() }
@@ -239,8 +243,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 } else {
                     val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", apk)
                     // Android 14–16 对安装器 Intent 的路由更严格，明确使用安装动作并传递只读 URI 授权。
-                    activity.startActivity(Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("更新安装包", uri) })
+                    activity.startActivity(Intent(Intent.ACTION_INSTALL_PACKAGE)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        .apply { clipData = ClipData.newRawUri("红果TV ${update.versionName} 安装包", uri) })
                 }
             } catch (_: Exception) { permissionRequested = false; updateStatus("电视未提供安装或授权入口，请通过系统文件管理器安装新版") }
         }
