@@ -177,6 +177,7 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             comic?.items?.forEach { add(ContentType.COMIC to it) }
             short?.items?.forEach { add(ContentType.SHORT to it) }
         }
+        fun normalizeTitle(value: String)=value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
         val ranked = candidates.withIndex()
             .sortedWith(Comparator { left, right ->
                 val leftItem=left.value
@@ -184,9 +185,9 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
                 val score=titleMatchScore(rightItem.second.title,keyword).compareTo(titleMatchScore(leftItem.second.title,keyword))
                 if(score!=0) score
                 else {
-                    fun normalizeTitle(value: String)=value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
-                    val sameTitle=normalizeTitle(leftItem.second.title)==normalizeTitle(rightItem.second.title)
-                    if(sameTitle && leftItem.first!=rightItem.first) {
+                    val titleOrder=normalizeTitle(leftItem.second.title).compareTo(normalizeTitle(rightItem.second.title))
+                    if(titleOrder!=0) titleOrder
+                    else if(leftItem.first!=rightItem.first) {
                         if(leftItem.first==ContentType.SHORT) -1 else 1
                     } else left.index.compareTo(right.index)
                 }
