@@ -116,7 +116,7 @@ object TvDialog {
                 // 视图复用时必须显式从 ListView 同步勾选状态，否则焦点移动触发重新绑定后勾选显示会丢失
                 // 勾选只反映实际选择状态，不读取焦点/列表临时选择，避免遥控器移动时出现假勾。
                 view.isChecked = when {
-                    multiple && checkedStates != null -> checkedStates.getOrNull(position) == true
+                    checkedStates != null -> checkedStates.getOrNull(position) == true
                     !multiple && selectedIndex >= 0 -> position == selectedIndex
                     else -> (parent as? android.widget.AbsListView)?.isItemChecked(position) == true
                 }
