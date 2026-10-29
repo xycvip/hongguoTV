@@ -101,10 +101,9 @@ jobs:
           HONGGUOTV_KEY_PASSWORD: ${{ secrets.HONGGUOTV_KEY_PASSWORD }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :app:assembleRelease --console=plain
       - name: Verify APK package name and versionCode
-        env:
-          EXPECTED_VERSION_CODE: ${{ env.HONGGUOTV_VERSION_CODE }}
         run: |
           set -euo pipefail
+          EXPECTED_VERSION_CODE="$HONGGUOTV_VERSION_CODE"
           APK="kotlin-tv/app/build/outputs/apk/release/app-release.apk"
           AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
           BADGING="$("$AAPT" dump badging "$APK")"
