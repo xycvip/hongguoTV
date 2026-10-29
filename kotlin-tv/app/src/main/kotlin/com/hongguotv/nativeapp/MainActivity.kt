@@ -881,16 +881,16 @@ class MainActivity: Activity() {
         if(compactHeader) {
             val navScroll=HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled=false; isFillViewport=false; clipToPadding=false
-                addView(top,HorizontalScrollView.LayoutParams(-2,dp(44)))
+                addView(top,ViewGroup.LayoutParams(-2,dp(44)))
             }
             container.addView(navScroll,lp(-1,dp(46)))
             val statusScroll=HorizontalScrollView(this).apply {
                 isHorizontalScrollBarEnabled=false; isFillViewport=true; clipToPadding=false
-                addView(statusHost,HorizontalScrollView.LayoutParams(-2,dp(35)))
+                addView(statusHost,ViewGroup.LayoutParams(-2,dp(35)))
             }
             container.addView(statusScroll,lp(-1,dp(38)))
         } else container.addView(top)
-        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
+        container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
         if(tab==0) container.post { if(screen=="catalog" && tab==0) runAutomaticApiChecks() }
         if(tab==5) {
             // 设置页：内容可滚动，页脚固定在屏幕底部居中，始终可见；去掉容器下内边距让页脚真正贴底
