@@ -202,6 +202,10 @@ class MainActivity: Activity() {
     private val tabState=mutableMapOf<Int,CatalogState>()
     private val tabFocus=mutableMapOf<Int,String>()
     private val nav=mutableListOf<View>()
+    /** 顶栏只读接口状态；结果保留在重建后的页面中。 */
+    private val apiStatusViews=mutableMapOf<String,TextView>()
+    private val apiStatusResults=mutableMapOf<String,Pair<Int,String>>()
+    private var apiStatusCheckStarted=false
     private val typeButtons=mutableMapOf<ContentType,View>()
     private var homeRefreshControl: TextView?=null
     private val homeShelfLoads=mutableSetOf<ContentType>()
@@ -848,6 +852,22 @@ class MainActivity: Activity() {
             }
             paint(false); item.setOnFocusChangeListener { _,focused -> paint(focused) }; nav+=item
         }
+        // 右侧独立状态区：只读、不可选中，与可操作的主导航通过竖线分隔。
+        if(widthDp()>=900) top.addView(Space(this),lp(0,1).apply { weight=1f })
+        top.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(dp(1),dp(26)).apply { leftMargin=dp(5); rightMargin=dp(5) })
+        apiStatusViews.clear()
+        listOf("首页","搜索","播放","联想").forEach { name ->
+            val chip=text("● $name",10f,muted).apply {
+                setPadding(dp(5),dp(6),dp(5),dp(6))
+                background=rounded(surface)
+                isFocusable=false; isFocusableInTouchMode=false; isClickable=false
+                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                maxLines=1
+            }
+            apiStatusViews[name]=chip
+            top.addView(chip,lp(-2,dp(34)).apply { leftMargin=dp(2) })
+            apiStatusResults[name]?.let { (color,detail) -> setApiStatus(name,color,detail) }
+        }
         container.addView(top)
         container.addView(View(this).apply { setBackgroundColor(TvStyle.outline) },lp(-1,dp(1)).apply { bottomMargin=dp(6) })
         if(tab==5) {
@@ -981,7 +1001,8 @@ class MainActivity: Activity() {
                     head.addView(clearHistory,lp(-2,-2))
                     block.addView(head)
                     // 根据屏幕高度动态决定历史显示条数，剩余记录可从“全部历史”进入。
-                    val visibleHistoryCount=((heightDp()-150f)/48f).toInt().coerceIn(4,12)
+                    // 搜索页只保留少量最近记录；其余统一放进“全部历史”，避免历史栏挤占键盘空间。
+                    val visibleHistoryCount=((heightDp()-250f)/72f).toInt().coerceIn(3,5)
                     val items=history.take(visibleHistoryCount).map { entry ->
                         button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type) }.apply {
                             textSize=13f; minHeight=dp(38); setPadding(dp(8),dp(5),dp(8),dp(5)); gravity=Gravity.CENTER_VERTICAL
@@ -994,7 +1015,7 @@ class MainActivity: Activity() {
                     }
                     historyItems=items
                     clearHistory.nextFocusDownId=items.firstOrNull()?.id ?: clearHistory.id
-                    if(history.size>4) {
+                    if(history.size>visibleHistoryCount) {
                         lateinit var all: TextView
                         all=button("全部历史（${history.size}）›") { showSearchHistory(all) }.apply { textSize=12f; minHeight=dp(34); setPadding(dp(8),dp(4),dp(8),dp(4)) }
                         block.addView(all,lp(-1,-2)); historyItems=items+all
@@ -2685,6 +2706,44 @@ class MainActivity: Activity() {
         tvTools.info("观看统计 · 本机",body,anchor)
     }
 
+    private fun setApiStatus(name: String,color: Int,detail: String) {
+        apiStatusResults[name]=color to detail
+        val chip=apiStatusViews[name] ?: return
+        val label=SpannableString("● $name")
+        label.setSpan(ForegroundColorSpan(color),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        chip.text=label
+        chip.contentDescription="$name：$detail"
+    }
+
+    /** 首页首次显示时串行轻量自检，状态只读显示在导航栏右侧；不因页面重建重复请求。 */
+    private fun runAutomaticApiChecks() {
+        if(apiStatusCheckStarted || !library.isLoaded || isDestroyed) return
+        apiStatusCheckStarted=true
+        val pending=Color.rgb(238,166,64)
+        val ok=Color.rgb(86,196,122)
+        val failed=Color.rgb(235,95,95)
+        val idle=Color.rgb(145,151,163)
+        listOf("首页","搜索","播放","联想").forEach { setApiStatus(it,pending,"检测中") }
+        io.execute {
+            val results=linkedMapOf<String,Pair<Int,String>>()
+            fun probe(name: String,action: ()->String) {
+                runCatching(action).fold(
+                    { detail -> results[name]=ok to detail },
+                    { problem -> results[name]=failed to ((problem.message ?: problem.javaClass.simpleName).take(100)) }
+                )
+            }
+            probe("首页") { "返回 ${repository.home(1,library.contentType).items.size} 条" }
+            probe("搜索") { "返回 ${repository.search("修仙",1,library.contentType).items.size} 条" }
+            val progress=library.history().firstOrNull()
+            if(progress==null) results["播放"]=idle to "暂无观看记录，无法自动验证播放地址"
+            else probe("播放") { "获取 ${repository.stream(progress.episodeId,library.maxQuality).quality} 清晰度" }
+            probe("联想") { "返回 ${repository.suggest("修仙").size} 个词" }
+            main.post {
+                if(!isDestroyed) results.forEach { (name,result) -> setApiStatus(name,result.first,result.second) }
+            }
+        }
+    }
+
     /** 接口自检：用户逐项点击，单次串行请求，失败只提示不重试，避免给站点增加并发压力。
      *  状态圆点内嵌在按钮文字前：灰=未检测，橙=检测中，绿=通，红=不通；3 秒内重复点击直接忽略。 */
     private fun showInterfaceCheck(anchor: TextView) {
@@ -3089,7 +3148,10 @@ class MainActivity: Activity() {
             } else {
                 val waiting=deferredWork; deferredWork=null; waiting?.apply?.invoke()
             }
-            if(screen=="catalog") favoriteMonitor.check()
+            if(screen=="catalog") {
+                favoriteMonitor.check()
+                if(!apiStatusCheckStarted) main.post { runAutomaticApiChecks() }
+            }
             if(screen=="player") syncMediaSession()
         } else libraryLoadError?.let(::showLibraryError)
     }
