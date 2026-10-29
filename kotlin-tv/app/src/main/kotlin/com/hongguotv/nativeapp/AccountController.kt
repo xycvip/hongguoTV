@@ -123,6 +123,14 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private var lastProgress: Pair<CloudProgress, Int>? = null
     private var draining = false
     private var dialog: AlertDialog? = null
+    private var inlineQrLogin: WebLogin? = null
+    private var inlinePhoneLogin: WebLogin? = null
+    private var inlineQrDeadline = 0L
+    private var inlineQrToken = 0
+    val inlineQrBitmap: android.graphics.Bitmap? get() = qrBitmap
+    private var qrBitmap: android.graphics.Bitmap? = null
+    val inlineStatus: String get() = status
+    val inlineBusy: Boolean get() = busy
     var onHistoryChanged: (() -> Unit)? = null
 
     internal fun recommendationCredentials() = credentials?.takeIf { profile != null }
@@ -518,7 +526,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         return next to account
     }
 
-    private fun acceptAccount(next: AccountCredentials, account: CloudProfile) {
+    private fun acceptAccount(next: AccountCredentials, account: CloudProfile, inline: Boolean = false) {
         credentials = next
         profile = account
         history = emptyList()
@@ -536,7 +544,187 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         draining = false
         changed()
         toast("已登录 ${account.nickname}")
-        refresh(true)
+        refresh(!inline)
+    }
+
+    /** Inline account screen APIs: QR and phone login stay inside the shared page, never a dialog. */
+    fun startQrInline() {
+        if (closed || busy) return
+        generation++
+        val token = generation
+        inlineQrToken = token
+        inlinePhoneLogin?.cancel()
+        val login = WebLogin(http)
+        inlineQrLogin = login
+        qrBitmap = null
+        busy = true
+        status = "正在获取二维码…"
+        changed()
+        worker.execute {
+            val result = runCatching { login.qr() }
+            main.post {
+                if (closed || token != generation) return@post
+                result.fold(
+                    { qr ->
+                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(qr.image, 0, qr.image.size)
+                        if (bitmap == null) {
+                            busy = false
+                            status = "二维码无法显示，请刷新重试"
+                            changed()
+                            return@fold
+                        }
+                        qrBitmap = bitmap
+                        inlineQrDeadline = android.os.SystemClock.elapsedRealtime() + qr.expiresIn.coerceAtLeast(1) * 1000L
+                        busy = false
+                        status = "请使用手机红果 App 扫码，并在手机上确认登录"
+                        changed()
+                        scheduleInlineQrPoll(token)
+                    },
+                    {
+                        busy = false
+                        status = safeError(it)
+                        changed()
+                    }
+                )
+            }
+        }
+    }
+
+    private fun scheduleInlineQrPoll(token: Int) {
+        main.postDelayed({
+            if (closed || token != generation || token != inlineQrToken || inlineQrLogin == null) return@postDelayed
+            if (android.os.SystemClock.elapsedRealtime() >= inlineQrDeadline) {
+                qrBitmap = null
+                inlineQrLogin?.cancel()
+                inlineQrLogin = null
+                status = "二维码已过期，请点击刷新二维码"
+                changed()
+                return@postDelayed
+            }
+            val login = inlineQrLogin ?: return@postDelayed
+            worker.execute {
+                val result = runCatching { login.poll() }
+                if (closed || token != generation) return@execute
+                if (result.isFailure) {
+                    val error = result.exceptionOrNull()
+                    main.post {
+                        if (closed || token != generation) return@post
+                        if (error?.message.orEmpty().contains("过期")) {
+                            qrBitmap = null
+                            inlineQrLogin = null
+                            status = "二维码已过期，请点击刷新二维码"
+                            changed()
+                        } else {
+                            scheduleInlineQrPoll(token)
+                        }
+                    }
+                    return@execute
+                }
+                if (result.getOrDefault(false)) {
+                    val credentialsResult = runCatching { validateAccount(login.credentials()) }
+                    main.post {
+                        if (closed || token != generation) return@post
+                        busy = false
+                        inlineQrLogin = null
+                        qrBitmap = null
+                        credentialsResult.fold(
+                            { acceptAccount(it.first, it.second, inline = true) },
+                            { status = safeError(it); changed() }
+                        )
+                    }
+                } else scheduleInlineQrPoll(token)
+            }
+        }, 1800L)
+    }
+
+    fun sendPhoneCodeInline(rawNumber: String) {
+        if (closed || busy) return
+        val mobile = runCatching {
+            val number = rawNumber.trim()
+            if (number.startsWith("+")) PhoneLogin.parse(number)
+            else PhoneLogin.parse(accountCountryCode + " " + number)
+        }.getOrElse {
+            status = safeError(it)
+            changed()
+            return
+        }
+        generation++
+        val token = generation
+        val login = WebLogin(http)
+        inlinePhoneLogin = login
+        busy = true
+        status = "正在发送验证码…"
+        changed()
+        worker.execute {
+            val result = runCatching { login.send(mobile) }
+            main.post {
+                if (closed || token != generation) return@post
+                busy = false
+                result.fold(
+                    { sent ->
+                        status = "验证码已发送至 ${sent.maskedMobile}，请输入验证码完成登录"
+                        inlinePhoneMasked = sent.maskedMobile
+                        changed()
+                    },
+                    { status = safeError(it); changed() }
+                )
+            }
+        }
+    }
+
+    private var inlinePhoneMasked = ""
+    private var accountCountryCode = "+86"
+
+    fun cycleInlineCountryCode(): String {
+        accountCountryCode = when (accountCountryCode) {
+            "+86" -> "+886"
+            "+886" -> "+852"
+            "+852" -> "+1"
+            "+1" -> "+81"
+            else -> "+86"
+        }
+        return accountCountryCode
+    }
+
+    val inlineCountryCode: String get() = accountCountryCode
+    val inlinePhoneCodeSent: Boolean get() = inlinePhoneMasked.isNotBlank()
+
+    fun verifyPhoneCodeInline(code: String) {
+        val login = inlinePhoneLogin
+        if (closed || busy || login == null || code.isBlank()) return
+        if (!code.matches(Regex("[0-9]{4,8}"))) {
+            status = "请输入 4–8 位数字验证码"
+            changed()
+            return
+        }
+        generation++
+        val token = generation
+        busy = true
+        status = "正在验证并登录…"
+        changed()
+        worker.execute {
+            val result = runCatching { validateAccount(login.verify(code)) }
+            main.post {
+                if (closed || token != generation) return@post
+                busy = false
+                result.fold(
+                    { acceptAccount(it.first, it.second, inline = true) },
+                    { status = safeError(it); changed() }
+                )
+            }
+        }
+    }
+
+    fun logoutInline() {
+        if (busy) return
+        logout()
+        qrBitmap = null
+        inlineQrLogin?.cancel()
+        inlineQrLogin = null
+        inlinePhoneLogin?.cancel()
+        inlinePhoneLogin = null
+        inlinePhoneMasked = ""
+        changed()
     }
 
     fun loginByQr() = qrLogin()
