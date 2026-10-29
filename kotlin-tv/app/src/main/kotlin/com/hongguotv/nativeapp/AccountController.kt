@@ -1076,6 +1076,11 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         closed = true
         generation++
         pending = null
+        inlinePhoneLogin?.cancel()
+        inlineQrLogin?.cancel()
+        pendingUpSmsNumber = ""
+        pendingUpSmsContent = ""
+        inlinePhoneCode = ""
         dialog?.dismiss()
         http.dispatcher.cancelAll()
         worker.execute {
