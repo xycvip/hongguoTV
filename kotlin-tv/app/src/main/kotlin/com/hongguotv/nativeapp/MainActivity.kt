@@ -45,6 +45,8 @@ private const val FOOTER_LOADING=1
 private const val FOOTER_END=2
 private const val FOOTER_ERROR=3
 private const val FOOTER_MORE_HOT=4
+private const val REQUEST_EXPORT_BACKUP=7201
+private const val REQUEST_IMPORT_BACKUP=7202
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity: Activity() {
@@ -397,6 +399,108 @@ class MainActivity: Activity() {
             if(!isDestroyed && foreground) { showInitialScreen(); favoriteMonitor.check() }
         }
     }
+
+    /**
+     * 本地备份使用系统文件选择器（SAF），只在用户主动操作时读写用户选定的文件。
+     * 不申请 READ/WRITE_EXTERNAL_STORAGE 或 MANAGE_EXTERNAL_STORAGE 权限，
+     * 也不在启动时弹权限框或自动恢复。
+     */
+    private fun showFileBackupDialog(anchor: View) {
+        tvTools.choose("本地备份与恢复",listOf("导出备份文件","从备份文件恢复"),anchor,{ choice ->
+            when(choice) {
+                0 -> {
+                    val stamp=java.text.SimpleDateFormat("yyyyMMdd-HHmmss",Locale.US).format(java.util.Date())
+                    val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type="application/json"
+                        putExtra(Intent.EXTRA_TITLE,"hongguotv-backup-$stamp.json")
+                    }
+                    runCatching { startActivityForResult(intent,REQUEST_EXPORT_BACKUP) }
+                        .onFailure { tvTools.info("无法导出备份","当前设备没有可用的文件保存器。",anchor) }
+                }
+                1 -> {
+                    val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type="*/*"
+                        putExtra(Intent.EXTRA_MIME_TYPES,arrayOf("application/json","text/json","text/plain"))
+                    }
+                    runCatching { startActivityForResult(intent,REQUEST_IMPORT_BACKUP) }
+                        .onFailure { tvTools.info("无法导入备份","当前设备没有可用的文件选择器。",anchor) }
+                }
+            }
+        })
+    }
+
+    private fun exportLibraryBackup(uri: Uri) {
+        val snapshot=runCatching { library.snapshot() }.getOrElse {
+            tvTools.info("备份失败","无法读取当前本机记录，请稍后重试。",null)
+            return
+        }
+        io.execute {
+            val result=runCatching {
+                val bytes=LibraryBackup.encode(snapshot).toByteArray(Charsets.UTF_8)
+                contentResolver.openOutputStream(uri,"wt")?.use { output -> output.write(bytes); output.flush() }
+                    ?: error("无法打开备份文件")
+            }
+            main.post {
+                if(isDestroyed) return@post
+                result.onSuccess { Toast.makeText(this,"备份文件已导出",Toast.LENGTH_LONG).show() }
+                    .onFailure { Toast.makeText(this,"导出失败：${it.message ?: "无法写入文件"}",Toast.LENGTH_LONG).show() }
+            }
+        }
+    }
+
+    private fun importLibraryBackup(uri: Uri,anchor: View?) {
+        io.execute {
+            val result=runCatching {
+                val input=contentResolver.openInputStream(uri) ?: error("无法读取所选文件")
+                val bytes=input.use { stream ->
+                    val output=java.io.ByteArrayOutputStream()
+                    val buffer=ByteArray(8192)
+                    var total=0
+                    while(true) {
+                        val count=stream.read(buffer)
+                        if(count<0) break
+                        total+=count
+                        require(total<=LibraryBackup.MAX_BYTES) { "备份文件超过 2 MB 限制" }
+                        output.write(buffer,0,count)
+                    }
+                    output.toByteArray()
+                }
+                LibraryBackup.decode(String(bytes,Charsets.UTF_8))
+            }
+            main.post {
+                if(isDestroyed) return@post
+                result.onFailure { Toast.makeText(this,"备份文件无效：${it.message ?: "无法解析"}",Toast.LENGTH_LONG).show() }
+                result.onSuccess { data ->
+                    tvTools.choose("选择恢复方式",listOf("合并记录，保留当前播放设置","合并记录并恢复备份中的播放设置"),anchor,{ choice ->
+                        val restoreSettings=choice==1
+                        val message="备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有数据。"
+                        tvTools.confirm("确认恢复备份",message,anchor) {
+                            runCatching {
+                                favoriteMonitor.stop()
+                                library.restore(data,restoreSettings)
+                                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
+                                showCatalog(); favoriteMonitor.check()
+                                Toast.makeText(this,"备份记录已合并恢复",Toast.LENGTH_LONG).show()
+                            }.onFailure { tvTools.info("恢复失败","记录未能完整恢复：${it.message ?: "未知错误"}",anchor) }
+                        }
+                    })
+                }
+            }
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int,resultCode: Int,data: Intent?) {
+        super.onActivityResult(requestCode,resultCode,data)
+        if(resultCode!=RESULT_OK) return
+        val uri=data?.data ?: return
+        when(requestCode) {
+            REQUEST_EXPORT_BACKUP -> exportLibraryBackup(uri)
+            REQUEST_IMPORT_BACKUP -> importLibraryBackup(uri,root)
+        }
+    }
+
     private fun base(title: String?=null): LinearLayout {
         root.removeAllViews(); root.setBackgroundColor(bg)
         val container=column(); val horizontal=dp(widthDp()*.05f); val vertical=(resources.displayMetrics.heightPixels*.05f).toInt()
@@ -1341,6 +1445,8 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
+        lateinit var fileBackup: TextView
+        fileBackup=setting(device,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         lateinit var backup: TextView
         backup=setting(device,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
@@ -1401,7 +1507,7 @@ class MainActivity: Activity() {
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings,autoSkipButton)
-            val right=listOf(themeButton,clockButton,backup,hidden,statsButton,clearCache,updates,checkButton,license)
+            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,updates,checkButton,license)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
