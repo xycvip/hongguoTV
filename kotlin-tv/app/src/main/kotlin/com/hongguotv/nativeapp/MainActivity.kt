@@ -3225,33 +3225,28 @@ class MainActivity: Activity() {
         accountPhoneInput?.let { accountPhoneValue = it.text?.toString().orEmpty() }
         accountCodeInput?.let { accountCodeValue = it.text?.toString().orEmpty() }
         host.removeAllViews()
-        val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         val mobileLayout = widthDp() < 600f
-        val availableHeightDp =
-            (resources.displayMetrics.heightPixels / resources.displayMetrics.density - 96f).coerceAtLeast(320f)
+        val density = resources.displayMetrics.density
+        val availableWidthDp = ((host.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / density)
+        val availableHeightDp = ((host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(160))) / density)
+            .coerceAtLeast(260f)
         val body = column().apply {
             gravity = Gravity.CENTER
             setPadding(dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12),
                 dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12))
-            minimumHeight = (resources.displayMetrics.heightPixels - dp(140)).coerceAtLeast(dp(250))
         }
-        // On phones, use the smaller of available width and height as the card's preferred square size.
-        // Landscape/very short screens may still use a compact, taller card so controls remain visible.
-        val maxCardWidthDp = (widthDp() - if (mobileLayout) 24f else 48f).coerceAtLeast(0f)
-        val cardWidth = dp(
-            minOf(maxCardWidthDp, if (mobileLayout) availableHeightDp - 12f else 680f)
-        )
+        // Login content is laid out directly in the available area: no ScrollView on phones.
+        // Keep the card square when its contents fit, while allowing exceptional verification content to grow.
+        val maxCardWidthDp = (availableWidthDp - if (mobileLayout) 24f else 48f).coerceAtLeast(0f)
+        val cardWidth = dp(minOf(maxCardWidthDp, if (mobileLayout) availableHeightDp - 20f else 680f))
         val compactCard = mobileLayout
         val card = column().apply {
             background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
-            setPadding(dp(if (compactCard) 14 else 24), dp(if (compactCard) 12 else 22),
-                dp(if (compactCard) 14 else 24), dp(if (compactCard) 12 else 22))
+            setPadding(dp(if (compactCard) 12 else 24), dp(if (compactCard) 10 else 22),
+                dp(if (compactCard) 12 else 24), dp(if (compactCard) 10 else 22))
             elevation = dp(8).toFloat()
+            if (!cloudAccount.signedIn) minimumHeight = cardWidth
         }
-        card.addView(text("H G T V", 11f, accent).apply {
-            letterSpacing = .24f
-            setPadding(0, 0, 0, dp(if (compactCard) 3 else 8))
-        }, lp())
         card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录", if (compactCard) 22f else 26f, white).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, lp())
@@ -3298,7 +3293,7 @@ class MainActivity: Activity() {
             val qr = cloudAccount.inlineQrBitmap
             if (qr != null) {
                 val maxSize = if (compactCard) {
-                    minOf(dp(244), (cardWidth * .38f).toInt(), dp((availableHeightDp * .20f).toInt().coerceAtLeast(100)))
+                    minOf(dp(220), (cardWidth * .50f).toInt(), dp((availableHeightDp * .25f).toInt().coerceAtLeast(100)))
                 } else {
                     minOf(dp(244), dp((resources.displayMetrics.heightPixels / resources.displayMetrics.density * .38f).toInt().coerceAtLeast(170)))
                 }
@@ -3315,7 +3310,7 @@ class MainActivity: Activity() {
                         gravity = Gravity.CENTER
                     }, FrameLayout.LayoutParams(-1, -1))
                 }
-                val placeholderSize = if (compactCard) minOf(dp(136), (cardWidth * .38f).toInt()) else dp(190)
+                val placeholderSize = if (compactCard) minOf(dp(180), (cardWidth * .48f).toInt(), dp((availableHeightDp * .23f).toInt().coerceAtLeast(100))) else dp(190)
                 card.addView(qrPlaceholder, lp(placeholderSize, placeholderSize).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
                     bottomMargin = dp(if (compactCard) 5 else 10)
@@ -3421,8 +3416,15 @@ class MainActivity: Activity() {
         })
         card.addView(modeRow, lp())
         body.addView(card, lp(cardWidth, -2))
-        scroll.addView(body, FrameLayout.LayoutParams(-1, -1))
-        host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        if (cloudAccount.signedIn) {
+            // The signed-in page contains variable-length history/favorites; retain scrolling there only.
+            val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
+            scroll.addView(body, FrameLayout.LayoutParams(-1, -1))
+            host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        } else {
+            // QR/phone login must fit the phone screen without requiring a vertical swipe.
+            host.addView(body, FrameLayout.LayoutParams(-1, -1))
+        }
         if (!cloudAccount.signedIn && accountLoginMode == 0 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
             accountQrAutoStarted = true
             host.post { if (tab == 6 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) cloudAccount.startQrInline() }
