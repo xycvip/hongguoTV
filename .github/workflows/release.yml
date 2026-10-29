@@ -101,6 +101,7 @@ jobs:
           echo "Using monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=kotlin-v${VERSION_NAME}" >> "$GITHUB_ENV"
+      # Push commits marked [skip-tests] build the APK without running tests or lint.
       - name: Tests and release lint
         if: ${{ (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tests]')) && (github.event_name != 'workflow_dispatch' || inputs.skip_tests != true) }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintRelease --console=plain
