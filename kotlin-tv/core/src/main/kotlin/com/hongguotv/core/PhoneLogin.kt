@@ -58,6 +58,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         installId = registered.installId
         cookies.clear()
         cookies.putAll(registered.cookies)
+        token = ""
         expired = false
         pendingMfa = null
         pendingMfaExpiresAt = 0L
