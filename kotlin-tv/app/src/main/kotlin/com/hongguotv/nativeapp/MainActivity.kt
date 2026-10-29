@@ -810,6 +810,8 @@ class MainActivity: Activity() {
     private fun localCatalog()=tab==3 || tab==4 || collection!=null
     private fun localItems(): List<Series> = when(collection) {
         "hot" -> collectionReturn?.items.orEmpty().filterNot { it.id in library.hidden() }
+        "hot-short" -> library.cachedHome(ContentType.SHORT)?.items.orEmpty().filterNot { it.id in library.hidden() }
+        "hot-comic" -> library.cachedHome(ContentType.COMIC)?.items.orEmpty().filterNot { it.id in library.hidden() }
         "later" -> library.later()
         "updates" -> library.favorites().filter { library.favoriteUpdate(it.id)?.hasUpdate == true }
         "resume" -> library.history().filterNot { library.watched(it.series.id) }.map { it.series }
@@ -1436,6 +1438,28 @@ class MainActivity: Activity() {
             body.post { android.util.Log.i("HongguoTV","Home displayed cached=$homeFromCache elapsedMs=${android.os.SystemClock.elapsedRealtime()-started}") }
         }
     }
+    /** Load the other homepage category in the background so both shelves are available without delaying the first screen. */
+    private fun loadHomeShelf(type: ContentType,force: Boolean) {
+        if(type!=ContentType.SHORT && type!=ContentType.COMIC) return
+        if(!force && !library.cachedHome(type)?.items.isNullOrEmpty()) return
+        if(!homeShelfLoads.add(type)) return
+        io.execute {
+            val result=runCatching { repository.home(1,type,null) }
+            main.post {
+                homeShelfLoads.remove(type)
+                if(isDestroyed) return@post
+                result.onSuccess { loaded ->
+                    library.cacheHome(type,loaded.items,loaded.hasMore)
+                    if(screen=="catalog" && tab==0 && collection==null && genre==null) {
+                        homeScreen?.updateShelves(homeShelves(),requestFocus=false)
+                    }
+                }.onFailure { problem ->
+                    android.util.Log.i("HongguoTV","Homepage shelf refresh failed for ${type.label}: ${problem.message}")
+                }
+            }
+        }
+    }
+
     private fun homeShelves(): List<HomeScreen.Shelf> {
         val recent=library.history().filterNot { library.watched(it.series.id) }
         val updates=library.favorites().filter { library.favoriteUpdate(it.id)?.hasUpdate == true }
