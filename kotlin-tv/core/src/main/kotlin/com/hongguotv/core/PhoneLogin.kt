@@ -9,7 +9,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 /**
- * 手机号 + 验证码登录（大陆与境外号码都收）。
+ * 手机号 + 验证码登录（仅支持中国大陆 +86 手机号）。
  * * [send]：先匿名注册一台**新设备**（[DeviceRegister]），再用这台设备的身份发码。 设备注册仅是前置条件；短信登录换取会话尚未完成实机验收。
  * * [verify]：使用同一设备完成官方 Passport 短信登录；遇到上行短信挑战时，从响应读取目标号码和正文，
  *   由界面打开短信编辑页，用户发送后轮询官方验证接口并使用返回票据重试登录。
@@ -31,7 +31,7 @@ class PhoneLogin(private val http: OkHttpClient) {
     class Failure(message: String, val errorCode: Int? = null, val canRetryCode: Boolean = false) :
         Exception(message)
 
-    /** [maskedMobile] 是平台回显的打码号码（如 `+886******23`）。 */
+    /** [maskedMobile] 是平台回显的打码号码。 */
     data class Sent(val maskedMobile: String, val retrySeconds: Int)
 
     @Volatile private var activeCall: okhttp3.Call? = null
@@ -133,9 +133,15 @@ class PhoneLogin(private val http: OkHttpClient) {
                 ),
             )
             val pollCode = errorCode(reply)
-            // 1045 is the platform's "not confirmed yet" response, so it is safe to poll.
-            // Do not treat 1066 as pending: repeated 1066 responses previously caused a
-            // pointless 90-second spinner without producing a verification ticket.
+            // 1045 means "not confirmed yet" and is the only response safe to poll.
+            // 1066 is terminal for this challenge: clear it immediately so a second tap
+            // cannot reuse the expired challenge and spin for another 90 seconds.
+            if (pollCode == 1066) {
+                pendingMfa = null
+                pendingMfaExpiresAt = 0L
+                expired = true
+                throw Failure("平台返回 1066：本次验证会话已失效，请重新获取短信验证码后再试。", 1066)
+            }
             if (pollCode == 1045) {
                 lastDescription = describe(reply, reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
                 val remaining = confirmationDeadline - System.currentTimeMillis()
@@ -331,36 +337,20 @@ class PhoneLogin(private val http: OkHttpClient) {
         private const val PASSPORT = "https://api5-normal-lq.fqnovel.com"
         /** login-lab 实测：24 = 登录验证码；1 / 3 是绑定 / 换绑手机号。 */
         const val LOGIN_CODE_TYPE = "24"
-        /**
-         * 区号 + 本地号码 → 平台认的手机号；不合格时抛 [IllegalArgumentException]，[Throwable.message] 可直接显示。
-         * * 大陆（86）：1 开头 11 位，原样发（实测可用）；
-         * * 境外：`+区号 号码`（区号后一个空格，去掉本地开头的 0），passport 的惯用写法； 长度按 E.164——区号 1–3 位，区号 + 号码合计不超过 15
-         *   位，号码至少 4 位。
-         *
-         * 号码里的空格、横线等非数字字符一律忽略。
-         */
+        /** 仅支持中国大陆手机号：1 开头的 11 位数字。 */
         fun format(countryCode: String, number: String): String {
             val cc = countryCode.filter(Char::isDigit)
-            val digits = number.filter(Char::isDigit).removePrefix("0")
-            if (cc == "86") {
-                require(digits.matches(Regex("1\\d{10}"))) { "大陆手机号是 1 开头的 11 位数字" }
-                return digits
-            }
-            require(cc.matches(Regex("[1-9]\\d{0,2}"))) { "区号是 1–3 位数字" }
-            require(digits.length >= 4 && cc.length + digits.length <= 15) { "号码长度不对：区号加号码最多 15 位" }
-            return "+$cc $digits"
+            require(cc == "86") { "目前仅支持中国大陆 +86 手机号" }
+            val digits = number.filter(Char::isDigit)
+            require(digits.matches(Regex("1\\d{10}"))) { "请输入 1 开头的 11 位大陆手机号" }
+            return digits
         }
 
-        /** 一整串的写法：`13800138000`（大陆），或 `+区号-号码` / `+区号 号码`（如 `+886-0912345678`）。 */
+        /** 只接受大陆 11 位手机号；不再接受境外区号格式。 */
         fun parse(raw: String): String {
             val text = raw.trim()
-            if (!text.startsWith("+")) return format("86", text)
-            val cc = text.drop(1).takeWhile(Char::isDigit)
-            val rest = text.drop(1 + cc.length)
-            require(rest.firstOrNull() == '-' || rest.firstOrNull() == ' ') {
-                "境外号码写成 +区号 号码，如 +886 0912345678"
-            }
-            return format(cc, rest)
+            require(!text.startsWith("+")) { "目前仅支持中国大陆 +86 手机号，请输入 11 位手机号" }
+            return format("86", text)
         }
     }
 }
