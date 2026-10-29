@@ -64,7 +64,13 @@ jobs:
           TODAY_JST="$(TZ=Asia/Tokyo date +'%Y-%m-%d')"
           DAILY_COUNT="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.published_at != null) | [.tag_name, .published_at] | @tsv' | python3 -c 'import datetime,sys; from zoneinfo import ZoneInfo; today=sys.argv[1]; prefix=sys.argv[2]; rows=[line.rstrip("\n").split("\t",1) for line in sys.stdin if "\t" in line]; print(sum(1 for tag,stamp in rows if tag.startswith("kotlin-v"+prefix+".") and datetime.datetime.fromisoformat(stamp.replace("Z","+00:00")).astimezone(ZoneInfo("Asia/Tokyo")).date().isoformat()==today))' "$TODAY_JST" "$DATE_PREFIX")"
           VERSION_NAME="${DATE_PREFIX}.${UPSTREAM_MIDDLE}.${DAILY_COUNT}"
-          echo "HONGGUOTV_VERSION_CODE=$((10100 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+          if (( DAILY_COUNT >= 99 )); then
+            echo "当天发布次数达到版本号容量上限，拒绝生成重复 versionCode。" >&2
+            exit 1
+          fi
+          DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
+          VERSION_CODE="$((10#$DATE_CODE * 100 + DAILY_COUNT + 1))"
+          echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
       - name: Tests and release lint
