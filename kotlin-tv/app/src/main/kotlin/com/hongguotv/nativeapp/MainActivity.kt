@@ -851,32 +851,24 @@ class MainActivity: Activity() {
             if(focusNav) nav[tab].requestFocus()
             return
         }
-        if(tab<=1) {
+        if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
             if(!inlineHomeFilters()) types.addView(text("片库",12f,muted),lp(dp(42),-2))
-            // AI 剧只在排行榜内提供分类入口，不占首页/搜索的内容类型页签
-            if(tab==1) {
-                aggregateButton=addButton(types,"全部",aggregateSearch) { switchAggregateSearch() }
-                    .apply { nextFocusUpId=nav[tab].id }
-            }
             listOf(ContentType.COMIC,ContentType.SHORT).forEach { type ->
-                val selected=(tab!=1 || !aggregateSearch) && library.contentType==type
-                typeButtons[type]=addButton(types,type.label,selected) { switchContentType(type) }
-                    .apply { isSelected=selected; nextFocusUpId=nav[tab].id }
+                typeButtons[type]=addButton(types,type.label,library.contentType==type) { switchContentType(type) }
+                    .apply { isSelected=library.contentType==type; nextFocusUpId=nav[tab].id }
             }
-            if(tab==0) {
-                genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
-                addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
-            }
+            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
+            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
             if(inlineHomeFilters()) {
                 top.addView(Space(this),lp(0,1).apply { weight=1f })
                 typeButtons.values.forEach { view -> (view as TextView).apply { textSize=12f; minHeight=dp(34); setPadding(dp(12),dp(7),dp(12),dp(7)) } }
                 types.setPadding(0,0,0,0); top.addView(types)
             } else {
-                if(tab==0) types.addView(text("长按确认 · 管理片单",12f,muted).apply { setPadding(dp(14),0,0,0) })
+                types.addView(text("长按确认 · 管理片单",12f,muted).apply { setPadding(dp(14),0,0,0) })
                 container.addView(types)
             }
-            nav.forEach { it.nextFocusDownId=(if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.id ?: typeButtons.values.firstOrNull()?.id ?: nav[tab].id }
+            nav.forEach { it.nextFocusDownId=typeButtons[library.contentType]?.id ?: nav[tab].id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -890,17 +882,17 @@ class MainActivity: Activity() {
             }
             // 无联想词时中栏整列消失，结果网格按全宽重新算列数
             fullSearchColumns=if(mode==3) (((widthDp()-(if(roomy) 380f else 300f)-24f)+14f)/118f).toInt().coerceIn(3,gridColumns) else searchColumns
-            val searchRow=row(); val input=EditText(this).apply { id=View.generateViewId(); hint="输入${library.contentType.label}名称，或用字母键拼首拼"; setText(query); textSize=16f; setTextColor(white); setHintTextColor(muted); isSingleLine=true; maxLines=1; filters=arrayOf(android.text.InputFilter.LengthFilter(80)); imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH }
+            val searchRow=row(); val input=EditText(this).apply { id=View.generateViewId(); hint="输入剧名，或用字母键拼首拼"; setText(query); textSize=16f; setTextColor(white); setHintTextColor(muted); isSingleLine=true; maxLines=1; filters=arrayOf(android.text.InputFilter.LengthFilter(80)); imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH }
             searchRow.addView(input,lp(0,dp(45)).apply { weight=1f; rightMargin=dp(10) })
             fun search() { val next=input.text.toString().trim(); if(next.isBlank()) { input.requestFocus(); return }; runSearch(next) }
-            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }; input.nextFocusUpId=typeButtons.getValue(library.contentType).id; searchButton?.nextFocusUpId=input.nextFocusUpId
+            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }; input.nextFocusUpId=nav[tab].id; searchButton?.nextFocusUpId=input.id
+            nav.forEach { it.nextFocusDownId=input.id }
             if(mode==0) {
                 lateinit var recent: TextView
                 recent=addButton(searchRow,"历史") { showSearchHistory(recent) }; recent.nextFocusUpId=input.nextFocusUpId
                 searchActions.addAll(listOf(recent))
             }
-            typeButtons.values.forEach { it.nextFocusDownId=input.id }
-            aggregateButton?.nextFocusDownId=input.id
+            // 搜索页不再显示类型切换栏，导航直接进入搜索输入框
             input.setOnEditorActionListener { _,_,_-> search(); true }; container.addView(searchRow)
             input.addTextChangedListener(object: android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?,start: Int,count: Int,after: Int) {}
@@ -975,7 +967,7 @@ class MainActivity: Activity() {
                     head.addView(clearHistory,lp(-2,-2))
                     block.addView(head)
                     val items=history.take(4).map { entry ->
-                        button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type,aggregate=false) }.apply {
+                        button("${entry.type.label} · ${entry.query}") { runSearch(entry.query,entry.type) }.apply {
                             textSize=13f; minHeight=dp(32); setPadding(dp(10),dp(4),dp(10),dp(4)); gravity=Gravity.CENTER_VERTICAL
                             maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
                         }
@@ -1098,7 +1090,7 @@ class MainActivity: Activity() {
         }
         if(load) {
             if(tab==0) catalogGrid(body,focusNav,focusType,loading=true)
-            else { message(body,"正在加载…"); if(focusType) (if(tab==1 && aggregateSearch) aggregateButton else typeButtons[library.contentType])?.requestFocus() else nav[tab].requestFocus() }
+            else { message(body,"正在加载…"); if(focusType) (if(tab==1) searchInput else typeButtons[library.contentType])?.requestFocus() else nav[tab].requestFocus() }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
             val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
@@ -1226,7 +1218,8 @@ class MainActivity: Activity() {
         nav.forEach {
             it.nextFocusDownId=when {
                 tab==2 -> (if(aiCatalog) aiBack ?: aiGenreButton ?: rankRefresh else aiEntry ?: rankSwitch ?: rankRefresh)?.id ?: recycler.id
-                tab<=1 -> typeButtons[library.contentType]?.id ?: recycler.id
+                tab==1 -> searchInput?.id ?: recycler.id
+                tab==0 -> typeButtons[library.contentType]?.id ?: recycler.id
                 else -> favoriteCheck?.id ?: historyManage?.id ?: recycler.id
             }
         }
@@ -1362,8 +1355,29 @@ class MainActivity: Activity() {
             } else holder.rank.visibility=View.GONE
             holder.title.text=item.title
             val progress=if(tab==4 || collection=="resume") library.progress(item.id) else null
+            val aggregateType=if(tab==1 && aggregateSearch) when {
+                item.badge.startsWith("短剧") -> ContentType.SHORT
+                item.badge.startsWith("漫剧") -> ContentType.COMIC
+                else -> null
+            } else null
             holder.badge.text=if(tab==3) library.favoriteLabel(item.id) else if(ranked) rankPosition?.heat?.ifBlank { "热度暂无" } ?: "热度暂无" else if(progress!=null) if(library.watched(item.id)) "整剧已看完" else "第 ${progress.episodeIndex+1} 集 · ${formatTime(progress.position)}" else item.badge
-            holder.badge.setTextColor(if(ranked || tab==3) accent else muted)
+            if(aggregateType!=null) {
+                val short=aggregateType==ContentType.SHORT
+                holder.badge.setTextColor(if(short) Color.rgb(145,72,20) else Color.rgb(54,79,157))
+                holder.badge.background=GradientDrawable().apply {
+                    cornerRadius=dp(5).toFloat()
+                    setColor(if(short) Color.rgb(255,237,218) else Color.rgb(229,237,255))
+                }
+                holder.badge.setPadding(dp(7),0,dp(7),0)
+                holder.badge.minHeight=dp(22)
+                holder.badge.gravity=Gravity.CENTER_VERTICAL
+                holder.badge.text=holder.badge.text.toString().replace(" · ","  ·  ")
+            } else {
+                holder.badge.background=null
+                holder.badge.setPadding(dp(3),0,0,0)
+                holder.badge.minHeight=dp(19)
+                holder.badge.setTextColor(if(ranked || tab==3) accent else muted)
+            }
             if(tab==3) favoriteBadges[item.id]=holder.badge
             card.setOnClickListener { catalogFocus=item.id; openDetail(item,tab==4 || collection=="resume" || collection=="updates") }
             card.setOnLongClickListener { catalogFocus=item.id; quickActions(item,card); true }
@@ -1711,7 +1725,7 @@ class MainActivity: Activity() {
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
         if(target!=null) target.requestFocus() else nav[tab].requestFocus()
     }
-    private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=aggregateSearch) {
+    private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=true) {
         val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
         (searchInput as? EditText)?.let { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
         aggregateSearch=aggregate
