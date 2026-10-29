@@ -164,12 +164,24 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
     fun searchCombined(keyword: String, page: Int = 1): CatalogPage {
         require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
 
-        // 首屏只请求两种类型各自的第一页，并行取数，避免串行等待或多页请求拖慢搜索。
+        // 准确度优先：漫剧、短剧各自最多取前 3 页；两路都完成后再统一去重、评分和排序。
+        // 单一路线后续分页失败时保留已拿到的结果，避免丢掉整路首屏数据。
+        fun fetchPages(type: ContentType): List<CatalogPage> {
+            val pages=mutableListOf<CatalogPage>()
+            for(nextPage in 1..3) {
+                val result=try { search(keyword,nextPage,type) } catch(problem: Exception) {
+                    if(pages.isEmpty()) throw problem else break
+                }
+                pages+=result
+                if(!result.hasMore) break
+            }
+            return pages
+        }
         val pool=Executors.newFixedThreadPool(2)
-        val comicFuture=pool.submit(Callable { runCatching { search(keyword,1,ContentType.COMIC) } })
-        val shortFuture=pool.submit(Callable { runCatching { search(keyword,1,ContentType.SHORT) } })
-        val comicResult: Result<CatalogPage>
-        val shortResult: Result<CatalogPage>
+        val comicFuture=pool.submit(Callable { runCatching { fetchPages(ContentType.COMIC) } })
+        val shortFuture=pool.submit(Callable { runCatching { fetchPages(ContentType.SHORT) } })
+        val comicResult: Result<List<CatalogPage>>
+        val shortResult: Result<List<CatalogPage>>
         try {
             comicResult=comicFuture.get()
             shortResult=shortFuture.get()
@@ -185,8 +197,8 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             throw IOException("漫剧和短剧搜索均暂不可用（漫剧：${comicResult.exceptionOrNull()?.message ?: "未知错误"}；短剧：${shortResult.exceptionOrNull()?.message ?: "未知错误"}）")
         }
         val candidates=buildList {
-            comic?.items?.forEach { add(ContentType.COMIC to it) }
-            short?.items?.forEach { add(ContentType.SHORT to it) }
+            comic.orEmpty().flatMap { it.items }.forEach { add(ContentType.COMIC to it) }
+            short.orEmpty().flatMap { it.items }.forEach { add(ContentType.SHORT to it) }
         }
         fun normalizeTitle(value: String)=value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
         val ranked=candidates.withIndex()
@@ -203,29 +215,44 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
                     } else left.index.compareTo(right.index)
                 }
             })
-            .map { it.value }
-            // 同一作品可能同时被两个分类接口返回；按标准化剧名合并，排序优先级更高的结果胜出。
-            .distinctBy { (type,series) -> normalizeTitle(series.title).ifBlank { "${type.storedValue}:${series.id}" } }
-            .map { (type,series) ->
-                val detail=series.badge.trim()
-                series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · ${detail}")
-            }
-        return CatalogPage(ranked,false)
+        val seenIds=mutableSetOf<String>()
+        val seenTitles=mutableSetOf<String>()
+        val unique=ranked.map { it.value }.filter { (type,series) ->
+            val title=normalizeTitle(series.title)
+            val newId=seenIds.add(series.id)
+            val newTitle=if(title.isBlank()) true else seenTitles.add(title)
+            newId && newTitle
+        }.map { (type,series) ->
+            val detail=series.badge.trim()
+            series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · ${detail}")
+        }
+        return CatalogPage(unique,false)
     }
 
-    /** Exact normalized titles outrank prefix matches, which outrank ordinary substring matches. */
+    /** Score exact title, prefix, full substring and character coverage in that order. */
     private fun titleMatchScore(title: String, keyword: String): Int {
         fun normalize(value: String) = value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
         val t=normalize(title)
         val q=normalize(keyword)
         if(t.isEmpty() || q.isEmpty()) return 0
-        if(t==q) return 100_000
-        if(t.startsWith(q)) return 90_000-(t.length-q.length).coerceAtMost(10_000)
-        if(t.contains(q)) return 80_000-(t.length-q.length).coerceAtMost(10_000)
-        if(q.contains(t)) return 70_000-(q.length-t.length).coerceAtMost(10_000)
-        var prefix=0
-        while(prefix<t.length && prefix<q.length && t[prefix]==q[prefix]) prefix++
-        return prefix*100
+        if(t==q) return 1_000_000
+        if(t.startsWith(q)) return 900_000-(t.length-q.length).coerceAtMost(100_000)
+        if(t.contains(q)) return 800_000-(t.length-q.length).coerceAtMost(100_000)
+        if(q.contains(t)) return 700_000-(q.length-t.length).coerceAtMost(100_000)
+        // 对非连续匹配按关键词字符覆盖率评分；不再让单个首字匹配的长剧名挤到前面。
+        val uniqueQuery=q.toSet()
+        val matched=uniqueQuery.count { it in t }
+        if(matched==0) return 0
+        val coverage=matched*100_000/uniqueQuery.size
+        var cursor=0
+        var consecutive=0
+        var bestConsecutive=0
+        for(ch in q) {
+            val found=t.indexOf(ch,cursor)
+            if(found>=0) { consecutive++; bestConsecutive=maxOf(bestConsecutive,consecutive); cursor=found+1 }
+            else consecutive=0
+        }
+        return 100_000+coverage+bestConsecutive*100-(t.length.coerceAtMost(10_000))
     }
 
     // 站点搜索页已改为 SPA，数据由 /api/search/result/ 下发（返回 searchList/totalPages/hasMore，10 条一页）。
