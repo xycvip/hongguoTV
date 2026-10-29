@@ -912,13 +912,8 @@ class MainActivity: Activity() {
             }
             genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=homeRefreshControl?.id ?: nav[tab].id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=genreButton?.id ?: homeRefreshControl?.id ?: nav[tab].id }
-            if(inlineHomeFilters()) {
-                top.addView(Space(this),lp(0,1).apply { weight=1f })
-                types.setPadding(0,0,0,0)
-                top.addView(types)
-            } else {
-                container.addView(types)
-            }
+            // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
+            container.addView(types)
             nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: nav[tab].id }
         }
         if(tab==1) {
@@ -1059,9 +1054,14 @@ class MainActivity: Activity() {
                 keyboardScroll.addView(keyboard,lp(-1,-1))
                 leftColumn.addView(keyboardScroll,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
                 contentRow.addView(leftColumn,lp(if(mode==3) dp(if(roomy) 430 else 360) else dp(360),-1))
-                val midScroll=ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipToPadding=false }
+                val midScroll=ScrollView(this).apply {
+                    isVerticalScrollBarEnabled=false
+                    clipToPadding=false
+                    isFillViewport=true
+                }
+                // 让联想列表的纵向容器占满实际可用高度，词条再按空间均分，避免栏内大块空白。
                 val midColumn=column().apply { setPadding(0,dp(2),dp(10),0) }
-                midScroll.addView(midColumn)
+                midScroll.addView(midColumn,ViewGroup.LayoutParams(-1,-1))
                 val rightColumn=column()
                 if(mode==3) {
                     suggestRow=midColumn; suggestVertical=true; suggestScrollRef=midScroll
@@ -1896,12 +1896,15 @@ class MainActivity: Activity() {
         }
         syncSuggestPanel(true)
         // setSingleLine 开启横向滚动模式，marquee 才按全文宽度布局滚得起来；仅 maxLines=1 只会截断省略
-        val suggestItemHeight=if(suggestVertical) dp(((heightDp()-240f)/18f).toInt().coerceIn(32,46)) else dp(((heightDp()-480f)/20f).toInt().coerceIn(26,34))
-        val suggestGap=dp(((heightDp()-480f)/100f).toInt().coerceIn(2,7))
+        val availableSuggestDp=(suggestScrollRef?.height?.takeIf { it>0 }?.div(resources.displayMetrics.density) ?: (heightDp()-240f)).coerceAtLeast(1f)
+        val suggestItemHeight=if(suggestVertical) dp((availableSuggestDp/words.size-2f).toInt().coerceIn(32,46)) else dp(((heightDp()-480f)/20f).toInt().coerceIn(26,34))
+        val suggestGap=dp(if(suggestVertical) ((availableSuggestDp-words.size*32f)/(words.size*2f)).toInt().coerceIn(2,7) else ((heightDp()-480f)/100f).toInt().coerceIn(2,7))
         val views=words.map { word -> button(word) { runSearch(word) }.apply { textSize=14f; minHeight=suggestItemHeight; setSingleLine(true); marqueeRepeatLimit=-1; ellipsize=android.text.TextUtils.TruncateAt.END; setPadding(dp(10),dp(5),dp(10),dp(5)) } }
         views.forEachIndexed { index,view ->
-            if(suggestVertical) container.addView(view,lp(-1,suggestItemHeight).apply { bottomMargin=suggestGap })
-            else container.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; height=suggestItemHeight; rightMargin=suggestGap })
+            if(suggestVertical) {
+                // height=0 + weight 让少量联想词均分整栏；词条过多时 minHeight 保底并由 ScrollView 滚动。
+                container.addView(view,lp(-1,0).apply { weight=1f; bottomMargin=suggestGap })
+            } else container.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; height=suggestItemHeight; rightMargin=suggestGap })
             // 竖排联想：左回键盘离开位置、右/下进结果区（结果首卡优先，否则指向结果网格，避免原地自锁）；横排保持词间左右互连
             view.nextFocusLeftId=if(suggestVertical) (keyboardLastLabel?.let { keyboardKeys[it] } ?: azFirst)?.id ?: historyFirst?.id ?: View.NO_ID else views[if(index==0) 0 else index-1].id
             view.nextFocusRightId=if(suggestVertical) resultFirstCard?.id ?: catalogRecycler?.id ?: view.id else views[if(index==views.size-1) index else index+1].id
