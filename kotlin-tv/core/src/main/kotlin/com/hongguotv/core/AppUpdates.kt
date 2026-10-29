@@ -101,7 +101,7 @@ class AppUpdateRepository : java.io.Closeable {
             chain.proceed(chain.request())
         }.build()
     private fun request(url: String) = Request.Builder().url(url).header("User-Agent", "HongguoTV-Updater")
-        .header("Cache-Control", "no-cache").build()
+        .header("Cache-Control", "no-cache, no-store, max-age=0").header("Pragma", "no-cache").build()
 
     /** Try each mirror in order; return the result from the first that works. */
     private fun <T> tryMirrors(base: String, maxPerMirrorSec: Long, block: (okHttpResponse: okhttp3.Response, url: String) -> T): T {
@@ -131,7 +131,7 @@ class AppUpdateRepository : java.io.Closeable {
     private fun hostOf(url: String) = url.removePrefix("https://").substringBefore("/")
 
     fun latest(): AppUpdate {
-        val base = "${AppUpdate.RELEASES}/latest/download/update.json"
+        val base = "${AppUpdate.RELEASES}/latest/download/update.json?cachebust=${System.currentTimeMillis()}"
         return tryMirrors(base, 12) { response, _ ->
             val bytes = response.body?.byteStream()?.use { input ->
                 val out = ByteArrayOutputStream(); val buffer = ByteArray(4096)
@@ -144,7 +144,8 @@ class AppUpdateRepository : java.io.Closeable {
 
     fun download(update: AppUpdate, file: File, progress: (Int) -> Unit) {
         if (UpdateFiles.verify(file, update)) return
-        val base = update.downloadUrl
+        // Release assets are immutable, but intermediaries can cache redirects; make each request unique.
+        val base = "${update.downloadUrl}?cachebust=${System.currentTimeMillis()}"
         val errors = ArrayList<String>()
         for (wrap in AppUpdate.MIRRORS) {
             val url = wrap(base)
