@@ -182,9 +182,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             }
         }
     }
+    @Suppress("DEPRECATION")
     private fun installedVersionCode(): Long = runCatching {
         val info=activity.packageManager.getPackageInfo(activity.packageName,0)
-        if(Build.VERSION.SDK_INT >= 28) info.longVersionCode else @Suppress("DEPRECATION") info.versionCode.toLong()
+        if(Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
     }.getOrDefault(BuildConfig.VERSION_CODE.toLong())
 
     /** @return true when the request actually started; callers may retry later otherwise. */
