@@ -1011,7 +1011,7 @@ class MainActivity: Activity() {
                     isVerticalScrollBarEnabled=false; clipToPadding=false; isFillViewport=true
                     descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
                 }
-                keyboardScroll.addView(keyboard,ScrollView.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,LinearLayout.LayoutParams.MATCH_PARENT))
+                keyboardScroll.addView(keyboard,lp(-1,-1))
                 leftColumn.addView(keyboardScroll,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
                 contentRow.addView(leftColumn,lp(if(mode==3) dp(if(roomy) 430 else 360) else dp(360),-1))
                 val midScroll=ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipToPadding=false }
