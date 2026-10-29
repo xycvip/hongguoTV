@@ -15,14 +15,12 @@ sha256 = hashlib.sha256(open(apk_path, "rb").read()).hexdigest()
 size = os.path.getsize(apk_path)
 
 def changelog():
-    # Keep release notes limited to the fixes in this APK.
+    # Keep release notes focused on the compatibility fixes in this APK.
     return (
-        "- 修复屏蔽词、播放速度和清晰度弹窗的勾选标记显示，避免与遥控器焦点混淆。\n"
-        "- 修复 Android 9 存储权限申请与拒绝后的处理。\n"
-        "- 修复 Android 16 更新包版本号过低导致无法覆盖安装。\n"
-        "- 时钟显示取消背景和阴影。"
+        "- Android 9 电视没有系统文件保存器时，本地备份改为保存到应用专用目录，并支持从该目录恢复。\\n"
+        "- 更新检查增加缓存规避，并以设备实际安装版本判断是否允许覆盖安装，避免误下载旧包。\\n"
+        "- 版本号改为独立的 MAJOR.MINOR.PATCH-build.构建号，不再依赖上游版本字符串或已发布 Release 记录。"
     )
-
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
 manifest = {
     "schema": 1,
