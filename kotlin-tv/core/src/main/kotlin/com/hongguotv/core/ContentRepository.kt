@@ -178,14 +178,28 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             short?.items?.forEach { add(ContentType.SHORT to it) }
         }
         val ranked = candidates.withIndex()
-            .sortedWith(compareByDescending<IndexedValue<Pair<ContentType,Series>>> { titleMatchScore(it.value.second.title,keyword) }.thenBy { it.index })
+            .sortedWith(Comparator { left, right ->
+                val leftItem=left.value
+                val rightItem=right.value
+                val score=titleMatchScore(rightItem.second.title,keyword).compareTo(titleMatchScore(leftItem.second.title,keyword))
+                if(score!=0) score
+                else {
+                    fun normalizeTitle(value: String)=value.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+                    val sameTitle=normalizeTitle(leftItem.second.title)==normalizeTitle(rightItem.second.title)
+                    if(sameTitle && leftItem.first!=rightItem.first) {
+                        if(leftItem.first==ContentType.SHORT) -1 else 1
+                    } else left.index.compareTo(right.index)
+                }
+            })
             .map { it.value }
-            .distinctBy { it.second.id }
+            // Never collapse a short drama and a comic just because their IDs or titles match.
+            .distinctBy { (type,series) -> "${type.storedValue}:${series.id}" }
             .map { (type,series) ->
                 val detail = series.badge.trim()
-                series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · $detail")
+                series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · ${detail}")
             }
-        return CatalogPage(ranked,(comic?.hasMore==true)||(short?.hasMore==true))
+        // Unified search is a single merged result set: do not expose a second-page footer.
+        return CatalogPage(ranked,false)
     }
 
     /** Exact normalized titles outrank prefix matches, which outrank ordinary substring matches. */
