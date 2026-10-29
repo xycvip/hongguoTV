@@ -2673,78 +2673,23 @@ class MainActivity: Activity() {
         },"当前 ${if(current>0) "$current 秒" else "关闭"}") {}
     }
     private fun showSpeedPicker(anchor: TextView,inPlayer: Boolean=true) {
-        if(speedDialog!=null) return
         val speeds=PlaybackSpeed.options
-        val selected=speeds.indexOf(library.playbackSpeed)
-        val checked=BooleanArray(speeds.size) { it == selected.coerceAtLeast(0) }
-        val content=column()
-        content.addView(TvDialog.title(this,"全局默认倍速"))
-        val list=ListView(this).apply {
-            adapter=TvDialog.choiceAdapter(this@MainActivity,speeds.map(PlaybackSpeed::label),checkedStates=checked)
-            setOnItemClickListener { _,_,index,_ ->
-                checked.fill(false); checked[index]=true
-                (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
-                library.playbackSpeed=speeds[index]
-                if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
-                if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "倍速 " else "默认倍速  ·  ")+PlaybackSpeed.label(library.playbackSpeed)
-                if(inPlayer) updatePlaybackText()
-                speedDialog?.dismiss()
-            }
-        }
-        content.addView(list,lp(-1,0).apply { weight=1f })
-        val buttons=row().apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
-        val cancel=TvDialog.capsuleButton(this,"取消") { speedDialog?.dismiss() }
-        buttons.addView(cancel,lp(-2,-2))
-        content.addView(buttons)
-        val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
-        TvDialog.styleWindow(this,dialog)
-        speedDialog=dialog
-        dialog.setOnDismissListener {
-            speedDialog=null
-            if(anchor.isAttachedToWindow) { anchor.requestFocus(); if(inPlayer) showHud() }
-        }
-        dialog.show()
-        list.post {
-            list.setSelection(selected.coerceAtLeast(0))
-            list.invalidateViews()
-            list.requestFocus()
-        }
+        tvTools.choose("全局默认倍速",speeds.map(PlaybackSpeed::label),anchor,{ index ->
+            library.playbackSpeed=speeds[index]
+            if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
+            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "倍速 " else "默认倍速  ·  ")+PlaybackSpeed.label(library.playbackSpeed)
+            if(inPlayer) updatePlaybackText()
+        })
     }
     private fun showQualityPicker(anchor: TextView,inPlayer: Boolean) {
         val options=PlaybackQuality.options
-        val selected=options.indexOf(library.maxQuality)
-        val checked=BooleanArray(options.size) { it == selected.coerceAtLeast(0) }
-        val content=column()
-        content.addView(TvDialog.title(this,"全局默认清晰度"))
-        var qualityDialog: AlertDialog? = null
-        val list=ListView(this).apply {
-            adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" },checkedStates=checked)
-            setOnItemClickListener { _,_,index,_ ->
-                checked.fill(false); checked[index]=true
-                (adapter as? android.widget.BaseAdapter)?.notifyDataSetChanged()
-                val target=options[index]; val changed=library.maxQuality!=target
-                library.maxQuality=target
-                if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
-                qualityDialog?.dismiss()
-                if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
-            }
-        }
-        content.addView(list,lp(-1,0).apply { weight=1f })
-        val buttons=row().apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
-        val cancel=TvDialog.capsuleButton(this,"取消") { }
-        buttons.addView(cancel,lp(-2,-2))
-        content.addView(buttons)
-        val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
-        qualityDialog = dialog
-        TvDialog.styleWindow(this,dialog)
-        cancel.setOnClickListener { dialog.dismiss() }
-        dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
-        dialog.show()
-        list.post {
-            list.setSelection(selected.coerceAtLeast(0))
-            list.invalidateViews()
-            list.requestFocus()
-        }
+        tvTools.choose("全局默认清晰度",options.map { "${it}P" },anchor,{ index ->
+            val target=options[index]
+            val changed=library.maxQuality!=target
+            library.maxQuality=target
+            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+ "${target}P"
+            if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
+        })
     }
     private fun showEpisodePanel(anchor: View) {
         val data=detail ?: return
