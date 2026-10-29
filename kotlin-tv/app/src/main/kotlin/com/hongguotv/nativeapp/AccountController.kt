@@ -520,8 +520,17 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     }
 
     private fun validateAccount(web: AccountCredentials): Pair<AccountCredentials, CloudProfile> {
-        val device = client.registerDevice() ?: throw java.io.IOException("账号设备初始化失败")
-        val next = web.copy(deviceId = device.deviceId, installId = device.installId)
+        // Passport 手机登录必须继续使用发码/验码时的同一设备身份；扫码登录没有设备身份时才注册新设备。
+        val next = if (web.deviceId.isNotBlank() && web.installId.isNotBlank()) {
+            web
+        } else {
+            val device = client.registerDevice() ?: throw java.io.IOException("账号设备初始化失败")
+            web.copy(
+                deviceId = device.deviceId,
+                installId = device.installId,
+                device = mapOf("device_id" to device.deviceId, "iid" to device.installId),
+            )
+        }
         val account = client.profile(next)
         return next to account
     }
