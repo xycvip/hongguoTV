@@ -98,33 +98,58 @@ object TvDialog {
 
     /** 勾选列表适配器：单选/多选弹窗通用，文字与勾选标记颜色跟随主题。 */
     fun choiceAdapter(activity: Activity, labels: List<String>, multiple: Boolean = false, selectedIndex: Int = -1, checkedStates: BooleanArray? = null): android.widget.ArrayAdapter<String> {
-        val attr = if(multiple) android.R.attr.listChoiceIndicatorMultiple else android.R.attr.listChoiceIndicatorSingle
-        val styled = activity.obtainStyledAttributes(intArrayOf(attr))
-        val checkMark = styled.getDrawable(0)
-        styled.recycle()
+        // 不使用 CheckedTextView/ListView 的原生 checked 状态：部分电视 ROM 会在焦点移动、
+        // setSelection 或视图复用时覆盖 isChecked。勾选图标由数据独立绘制，焦点只改变行背景。
         return object : android.widget.ArrayAdapter<String>(activity, 0, labels) {
             override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = (convertView as? android.widget.CheckedTextView) ?: android.widget.CheckedTextView(activity).apply {
-                    textSize = 16f
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(activity, 16), dp(activity, 12), dp(activity, 16), dp(activity, 12))
-                    checkMarkDrawable = checkMark
-                    checkMarkTintList = android.content.res.ColorStateList.valueOf(TvStyle.accent)
-                }
-                view.text = getItem(position)
-                view.setTextColor(TvStyle.text)
-                // 视图复用时必须显式从 ListView 同步勾选状态，否则焦点移动触发重新绑定后勾选显示会丢失
-                // 勾选只反映实际选择状态，不读取焦点/列表临时选择，避免遥控器移动时出现假勾。
-                view.isChecked = when {
+                val row = (convertView as? LinearLayout)?.takeIf { it.tag == "tv-choice-row" }
+                    ?: LinearLayout(activity).apply {
+                        tag = "tv-choice-row"
+                        orientation = LinearLayout.HORIZONTAL
+                        gravity = Gravity.CENTER_VERTICAL
+                        setPadding(dp(activity, 16), dp(activity, 10), dp(activity, 16), dp(activity, 10))
+                        minimumHeight = dp(activity, 48)
+                        isFocusable = true
+                        isFocusableInTouchMode = false
+                        isClickable = true
+                        descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                        addView(TextView(activity).apply {
+                            tag = "tv-choice-label"
+                            textSize = 16f
+                            setTextColor(TvStyle.text)
+                            gravity = Gravity.CENTER_VERTICAL
+                        }, LinearLayout.LayoutParams(0, -2, 1f))
+                        addView(TextView(activity).apply {
+                            tag = "tv-choice-mark"
+                            textSize = 19f
+                            gravity = Gravity.CENTER
+                            minWidth = dp(activity, 30)
+                            setTextColor(TvStyle.accent)
+                            setTypeface(null, android.graphics.Typeface.BOLD)
+                        }, LinearLayout.LayoutParams(dp(activity, 30), -2))
+                        setOnFocusChangeListener { view, focused ->
+                            view.background = GradientDrawable().apply {
+                                setColor(if (focused) Color.argb(28, 255, 255, 255) else Color.TRANSPARENT)
+                                cornerRadius = dp(activity, 10).toFloat()
+                                setStroke(dp(activity, if (focused) 1 else 0), if (focused) TvStyle.accent else Color.TRANSPARENT)
+                            }
+                        }
+                        background = GradientDrawable().apply {
+                            setColor(Color.TRANSPARENT)
+                            cornerRadius = dp(activity, 10).toFloat()
+                        }
+                    }
+                (row.findViewWithTag<TextView>("tv-choice-label")).text = getItem(position)
+                val checked = when {
                     checkedStates != null -> checkedStates.getOrNull(position) == true
                     !multiple && selectedIndex >= 0 -> position == selectedIndex
                     else -> (parent as? android.widget.AbsListView)?.isItemChecked(position) == true
                 }
-                return view
+                row.findViewWithTag<TextView>("tv-choice-mark").text = if (checked) "✓" else ""
+                return row
             }
         }
     }
-
     /** 列表选择弹窗：统一卡片 + 列表 + 底部按钮。 */
     fun choose(
         activity: Activity,
