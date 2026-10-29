@@ -1140,8 +1140,9 @@ class MainActivity: Activity() {
                     }
             }, { problem ->
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
+                    refreshHomePending=false
                     homeRefreshControl?.text=if(catalog.isNotEmpty()) "当前显示上次内容 · 联网后按确认刷新" else "热门暂时无法加载 · 按确认重试"
-                    homeRefreshControl?.setOnClickListener { showCatalog(true) }
+                    homeRefreshControl?.setOnClickListener { refreshAllHome() }
                     return@work
                 }
                 catalog=emptyList(); hasMore=false; ranking=null; rankSubtitle?.text=if(requestAi) "AI剧分类加载失败" else "榜单加载失败"
