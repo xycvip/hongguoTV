@@ -102,7 +102,8 @@ class PhoneLogin(private val http: OkHttpClient) {
         }
         require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
         var lastDescription = "尚未收到平台确认"
-        repeat(30) {
+        val confirmationDeadline = System.currentTimeMillis() + 90_000L
+        while (System.currentTimeMillis() < confirmationDeadline) {
             if (cancelled || Thread.currentThread().isInterrupted) throw Failure("登录已取消")
             if (System.currentTimeMillis() >= pendingMfaExpiresAt) {
                 pendingMfa = null
@@ -133,8 +134,9 @@ class PhoneLogin(private val http: OkHttpClient) {
             )
             if (errorCode(reply) == 1045) {
                 lastDescription = describe(reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
-                if (it < 29) Thread.sleep(3000L)
-                return@repeat
+                val remaining = confirmationDeadline - System.currentTimeMillis()
+                if (remaining > 0L) Thread.sleep(minOf(3000L, remaining))
+                continue
             }
             if (!isSuccess(reply)) {
                 val data = reply.optJSONObject("data") ?: JSONObject()
