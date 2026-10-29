@@ -3239,7 +3239,7 @@ class MainActivity: Activity() {
         // Landscape/very short screens may still use a compact, taller card so controls remain visible.
         val cardWidth = dp(
             (widthDp() - if (mobileLayout) 24f else 48f)
-                .coerceAtLeast(280f)
+                .coerceAtLeast(if (mobileLayout) 240f else 280f)
                 .coerceAtMost(if (mobileLayout) availableHeightDp - 12f else 680f)
         )
         val compactCard = mobileLayout
