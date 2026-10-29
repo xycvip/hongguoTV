@@ -196,9 +196,9 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
                 val score=titleMatchScore(rightItem.second.title,keyword).compareTo(titleMatchScore(leftItem.second.title,keyword))
                 if(score!=0) score
                 else {
-                    val leftTitle=normalizeTitle(leftItem.second.title)
-                    val rightTitle=normalizeTitle(rightItem.second.title)
-                    if(leftTitle==rightTitle && leftItem.first!=rightItem.first) {
+                    val titleOrder=normalizeTitle(leftItem.second.title).compareTo(normalizeTitle(rightItem.second.title))
+                    if(titleOrder!=0) titleOrder
+                    else if(leftItem.first!=rightItem.first) {
                         if(leftItem.first==ContentType.SHORT) -1 else 1
                     } else left.index.compareTo(right.index)
                 }
