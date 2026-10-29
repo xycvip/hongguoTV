@@ -165,6 +165,9 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
         val comicResult = runCatching { search(keyword,page,ContentType.COMIC) }
         val shortResult = runCatching { search(keyword,page,ContentType.SHORT) }
+        if(comicResult.exceptionOrNull() is SearchSessionExpiredException || shortResult.exceptionOrNull() is SearchSessionExpiredException) {
+            throw SearchSessionExpiredException()
+        }
         val comic = comicResult.getOrNull()
         val short = shortResult.getOrNull()
         if(comic==null && short==null) {
