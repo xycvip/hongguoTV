@@ -1476,9 +1476,9 @@ class MainActivity: Activity() {
             HomeScreen.Shelf("later","稍后看",later.take(10).map { HomeScreen.Entry(it,"稍后看 · 长按管理") },
                 if(later.size>10) { { showCollection("later") } } else null),
             HomeScreen.Shelf("hot-short","热门发现 · 短剧",shortItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
-                if(shortItems.size>10) { { showCollection("hot-short") } } else null),
+                { showCollection("hot-short") }),
             HomeScreen.Shelf("hot-comic","热门发现 · 漫剧",comicItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
-                if(comicItems.size>10) { { showCollection("hot-comic") } } else null))
+                { showCollection("hot-comic") }))
     }
     private fun refreshLibraryCards(changedId: String,removed: Boolean=false) {
         if(screen!="catalog") return
