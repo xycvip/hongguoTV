@@ -120,6 +120,8 @@ class MainActivity: Activity() {
     private var accountQrAutoStarted = false
     private var accountPhoneInput: EditText? = null
     private var accountCodeInput: EditText? = null
+    private var accountPhoneValue = ""
+    private var accountCodeValue = ""
     private lateinit var cloudAccount: AccountController
     private lateinit var library: Library
     private lateinit var tvTools: TvTools
@@ -3220,6 +3222,8 @@ class MainActivity: Activity() {
     /** The account view lives inside the same catalog shell/nav as Home, Search and Settings. */
     private fun renderAccountContent(host: FrameLayout) {
         if (!::cloudAccount.isInitialized || tab != 6 || screen != "catalog") return
+        accountPhoneInput?.let { accountPhoneValue = it.text?.toString().orEmpty() }
+        accountCodeInput?.let { accountCodeValue = it.text?.toString().orEmpty() }
         host.removeAllViews()
         val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         val body = column().apply {
@@ -3316,6 +3320,7 @@ class MainActivity: Activity() {
             phoneRow.addView(country, lp(-2, dp(48)).apply { rightMargin = dp(8) })
             accountPhoneInput = EditText(this).apply {
                 hint = "请输入手机号"
+                setText(accountPhoneValue)
                 textSize = 15f
                 setTextColor(white); setHintTextColor(muted)
                 inputType = android.text.InputType.TYPE_CLASS_PHONE
@@ -3329,6 +3334,7 @@ class MainActivity: Activity() {
             val codeRow = row()
             accountCodeInput = EditText(this).apply {
                 hint = "收到短信后填入验证码"
+                setText(accountCodeValue)
                 textSize = 15f
                 setTextColor(white); setHintTextColor(muted)
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
@@ -3338,13 +3344,16 @@ class MainActivity: Activity() {
             }
             codeRow.addView(accountCodeInput, lp(0, dp(48)).apply { weight = 1f; rightMargin = dp(8) })
             codeRow.addView(button("获取验证码", onClick = {
-                cloudAccount.sendPhoneCodeInline(accountPhoneInput?.text?.toString().orEmpty())
+                accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
+                cloudAccount.sendPhoneCodeInline(accountPhoneValue)
             }), lp(-2, dp(48)))
             card.addView(text("验证码", 12f, muted).apply { setPadding(dp(4), 0, 0, dp(5)) }, lp())
             card.addView(codeRow, lp().apply { bottomMargin = dp(10) })
             card.addView(text(cloudAccount.inlineStatus, 12f, muted), lp().apply { bottomMargin = dp(10) })
             card.addView(button(if (cloudAccount.inlineBusy) "请稍候…" else "登录", onClick = {
-                cloudAccount.verifyPhoneCodeInline(accountCodeInput?.text?.toString().orEmpty())
+                accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
+                accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
+                cloudAccount.verifyPhoneCodeInline(accountCodeValue)
             }), lp(-1, dp(46)))
             card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
                 setPadding(0, dp(10), 0, 0)
