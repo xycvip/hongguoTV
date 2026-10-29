@@ -116,12 +116,8 @@ class MainActivity: Activity() {
     private var homeContentLogged=false
     private var pendingCloudProgress: CloudProgress? = null
     private var accountContentHost: FrameLayout? = null
-    private var accountLoginMode = 0
     private var accountQrAutoStarted = false
-    private var accountPhoneInput: EditText? = null
-    private var accountCodeInput: EditText? = null
-    private var accountPhoneValue = ""
-    private var accountCodeValue = ""
+    private var accountSection = 0 // 0=history, 1=favorites, 2=upcoming reservations, 3=online reservations
     private lateinit var cloudAccount: AccountController
     private lateinit var library: Library
     private lateinit var tvTools: TvTools
@@ -873,7 +869,7 @@ class MainActivity: Activity() {
             if(compactHeader) visibility=View.GONE
         },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
         top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
-        listOf("首页","搜索","排行榜","收藏","最近观看","设置","我的").forEachIndexed { index,label ->
+        listOf("首页","搜索","排行榜","收藏","最近观看","设置","红果账户").forEachIndexed { index,label ->
             val item=addButton(top,label,index==tab || (index==6 && screen=="account")) { switchTab(index) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(index==tab) accent else muted)
@@ -3219,219 +3215,262 @@ class MainActivity: Activity() {
     /** 官方账号页：云端数据独立展示，不覆盖或清空本机收藏、历史。 */
     private fun showAccountPage() { switchTab(6) }
 
-    /** The account view lives inside the same catalog shell/nav as Home, Search and Settings. */
+    /** Account page: compact centered QR sign-in; full-width account dashboard after login. */
     private fun renderAccountContent(host: FrameLayout) {
         if (!::cloudAccount.isInitialized || tab != 6 || screen != "catalog") return
-        accountPhoneInput?.let { accountPhoneValue = it.text?.toString().orEmpty() }
-        accountCodeInput?.let { accountCodeValue = it.text?.toString().orEmpty() }
         host.removeAllViews()
         val mobileLayout = widthDp() < 600f
         val density = resources.displayMetrics.density
-        val availableWidthDp = ((host.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels) / density)
-        val availableHeightDp = ((host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(160))) / density)
-            .coerceAtLeast(260f)
-        val body = column().apply {
-            gravity = Gravity.CENTER
-            setPadding(dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12),
-                dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12))
-        }
-        // Login content is laid out directly in the available area: no ScrollView on phones.
-        // Keep the card square when its contents fit, while allowing exceptional verification content to grow.
-        val maxCardWidthDp = (availableWidthDp - if (mobileLayout) 24f else 48f).coerceAtLeast(0f)
-        val cardWidth = dp(minOf(maxCardWidthDp, if (mobileLayout) availableHeightDp - 20f else 680f))
-        val compactCard = mobileLayout
-        val card = column().apply {
-            background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
-            setPadding(dp(if (compactCard) 12 else 24), dp(if (compactCard) 10 else 22),
-                dp(if (compactCard) 12 else 24), dp(if (compactCard) 10 else 22))
-            elevation = dp(8).toFloat()
-            if (!cloudAccount.signedIn) minimumHeight = cardWidth
-        }
-        card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录", if (compactCard) 22f else 26f, white).apply {
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-        }, lp())
-        if (!compactCard) card.addView(text(
-            if (cloudAccount.signedIn) "同步你的收藏与观看记录"
-            else if (accountLoginMode == 0) "使用手机红果 App 扫码登录，同步你的收藏与观看记录"
-            else "使用手机号登录，同步你的收藏与观看记录",
-            13f, muted
-        ).apply { setPadding(0, dp(4), 0, dp(18)) }, lp())
+        val availableWidthDp = (host.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels).toFloat() / density
+        val availableHeightDp = (host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(130))).toFloat() / density
 
-        if (cloudAccount.signedIn) {
-            card.addView(text("已登录 · ${cloudAccount.historyStatus}", 14f, muted).apply {
-                setPadding(0, 0, 0, dp(12))
-            }, lp())
-            val actions = row()
-            addButton(actions, "刷新云端数据") {
-                cloudAccount.refreshHistory()
-                cloudAccount.refreshFavorites()
-                Toast.makeText(this, "正在刷新云端数据…", Toast.LENGTH_SHORT).show()
+        if (!cloudAccount.signedIn) {
+            val cardWidthDp = minOf(
+                (availableWidthDp - 24f).coerceAtLeast(260f),
+                (availableHeightDp - 28f).coerceAtLeast(260f),
+                if (mobileLayout) 340f else 620f
+            )
+            val cardWidth = dp(cardWidthDp.toInt())
+            val card = column().apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+                background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
+                setPadding(dp(if (mobileLayout) 14 else 26), dp(if (mobileLayout) 14 else 24),
+                    dp(if (mobileLayout) 14 else 26), dp(if (mobileLayout) 14 else 24))
+                elevation = dp(6).toFloat()
+                minimumHeight = cardWidth
             }
-            addButton(actions, "退出登录") { cloudAccount.logoutInline() }
-            card.addView(actions, lp())
-            val fav = cloudAccount.favoriteState()
-            card.addView(text("云端收藏 · ${fav.rows.size}", 17f, white).apply {
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, dp(18), 0, dp(6))
-            }, lp())
-            card.addView(text(fav.message, 12f, muted), lp())
-            fav.rows.take(12).forEach { item ->
-                card.addView(button("★  ${item.series.title}", onClick = { openDetail(item.series, true) }), lp().apply { topMargin = dp(5) })
-            }
-            val history = cloudAccount.historyRows()
-            card.addView(text("观看历史 · ${history.size}", 17f, white).apply {
-                typeface = Typeface.DEFAULT_BOLD
-                setPadding(0, dp(18), 0, dp(6))
-            }, lp())
-            history.take(12).forEach { item ->
-                card.addView(button("▶  ${item.series.title} · 第 ${item.episodeIndex + 1} 集", onClick = {
-                    pendingCloudProgress = item
-                    openDetail(item.series, true)
-                }), lp().apply { topMargin = dp(5) })
-            }
-        } else if (accountLoginMode == 0) {
+            card.addView(text("登录红果账户", if (mobileLayout) 21f else 26f, white).apply {
+                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                gravity = Gravity.CENTER
+            }, lp(-1, -2))
+            card.addView(text("使用手机红果 App 扫码，安全同步收藏与观看记录", if (mobileLayout) 12f else 14f, muted).apply {
+                gravity = Gravity.CENTER
+                setPadding(0, dp(6), 0, dp(if (mobileLayout) 10 else 16))
+            }, lp(-1, -2))
             val qr = cloudAccount.inlineQrBitmap
+            val qrSize = minOf(
+                dp(if (mobileLayout) 142 else 220),
+                (cardWidth * if (mobileLayout) .48f else .50f).toInt(),
+                dp((availableHeightDp * if (mobileLayout) .27f else .34f).toInt().coerceAtLeast(112))
+            )
             if (qr != null) {
-                val maxSize = if (compactCard) {
-                    minOf(dp(220), (cardWidth * .50f).toInt(), dp((availableHeightDp * .25f).toInt().coerceAtLeast(100)))
-                } else {
-                    minOf(dp(244), dp((resources.displayMetrics.heightPixels / resources.displayMetrics.density * .38f).toInt().coerceAtLeast(170)))
-                }
                 card.addView(ImageView(this).apply {
                     setImageBitmap(qr)
                     scaleType = ImageView.ScaleType.FIT_CENTER
                     setBackgroundColor(Color.WHITE)
                     setPadding(dp(5), dp(5), dp(5), dp(5))
-                }, lp(maxSize, maxSize).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(10) })
+                    contentDescription = "红果账户登录二维码"
+                }, lp(qrSize, qrSize).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(if (mobileLayout) 8 else 12)
+                })
             } else {
-                val qrPlaceholder = FrameLayout(this).apply {
+                val placeholder = FrameLayout(this).apply {
                     background = rounded(Color.WHITE)
-                    addView(text(if (cloudAccount.inlineBusy) "正在获取二维码…" else "二维码将在这里显示", 14f, Color.DKGRAY).apply {
+                    addView(text(if (cloudAccount.inlineBusy) "正在获取二维码…" else "二维码暂不可用", 13f, Color.DKGRAY).apply {
                         gravity = Gravity.CENTER
                     }, FrameLayout.LayoutParams(-1, -1))
                 }
-                val placeholderSize = if (compactCard) minOf(dp(180), (cardWidth * .48f).toInt(), dp((availableHeightDp * .23f).toInt().coerceAtLeast(100))) else dp(190)
-                card.addView(qrPlaceholder, lp(placeholderSize, placeholderSize).apply {
+                card.addView(placeholder, lp(qrSize, qrSize).apply {
                     gravity = Gravity.CENTER_HORIZONTAL
-                    bottomMargin = dp(if (compactCard) 5 else 10)
+                    bottomMargin = dp(if (mobileLayout) 8 else 12)
                 })
             }
-            card.addView(text(cloudAccount.inlineStatus, 13f, muted).apply {
+            card.addView(text(cloudAccount.inlineStatus, if (mobileLayout) 11f else 13f, muted).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, 0, 0, dp(if (compactCard) 5 else 12))
-            }, lp())
-            card.addView(button(if (cloudAccount.inlineBusy) "正在处理…" else "刷新二维码", onClick = {
+                maxLines = 2
+                setPadding(0, 0, 0, dp(if (mobileLayout) 8 else 12))
+            }, lp(-1, -2))
+            val refresh = button(if (cloudAccount.inlineBusy) "正在获取…" else "刷新二维码") {
                 accountQrAutoStarted = true
                 cloudAccount.startQrInline()
-            }), lp(-1, dp(if (compactCard) 38 else 44)).apply { bottomMargin = dp(if (compactCard) 5 else 14) })
-        } else {
-            val phoneRow = row().apply { gravity = Gravity.CENTER_VERTICAL }
-            val countryLabel = TextView(this).apply {
-                text = "+86"
-                textSize = 15f
-                setTextColor(white)
-                gravity = Gravity.CENTER
-                background = rounded(Color.rgb(25, 29, 35))
-                setPadding(dp(10), 0, dp(10), 0)
             }
-            phoneRow.addView(countryLabel, lp(-2, dp(if (compactCard) 36 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
-            accountPhoneInput = EditText(this).apply {
-                hint = "请输入手机号"
-                setText(accountPhoneValue)
-                textSize = 15f
-                setTextColor(white); setHintTextColor(muted)
-                inputType = android.text.InputType.TYPE_CLASS_PHONE
-                isSingleLine = true
-                background = rounded(Color.rgb(25, 29, 35))
-                setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
+            refresh.isEnabled = !cloudAccount.inlineBusy
+            card.addView(refresh, lp(-2, dp(if (mobileLayout) 38 else 44)).apply {
+                gravity = Gravity.CENTER_HORIZONTAL
+            })
+            val loginHost = FrameLayout(this)
+            loginHost.addView(card, FrameLayout.LayoutParams(cardWidth, -2, Gravity.CENTER))
+            host.addView(loginHost, FrameLayout.LayoutParams(-1, -1))
+            if (cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
+                accountQrAutoStarted = true
+                host.post { if (tab == 6 && !cloudAccount.signedIn && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) cloudAccount.startQrInline() }
             }
-            phoneRow.addView(accountPhoneInput, lp(0, dp(if (compactCard) 36 else 48)).apply { weight = 1f })
-            card.addView(text("手机号", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
-            card.addView(phoneRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 12) })
-            val codeRow = row()
-            accountCodeInput = EditText(this).apply {
-                hint = "收到短信后填入验证码"
-                setText(accountCodeValue)
-                textSize = 15f
-                setTextColor(white); setHintTextColor(muted)
-                inputType = android.text.InputType.TYPE_CLASS_NUMBER
-                isSingleLine = true
-                background = rounded(Color.rgb(25, 29, 35))
-                setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
-            }
-            codeRow.addView(accountCodeInput, lp(0, dp(if (compactCard) 36 else 48)).apply { weight = 1f; rightMargin = dp(if (compactCard) 5 else 8) })
-            codeRow.addView(button("获取验证码", onClick = {
-                accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
-                cloudAccount.sendPhoneCodeInline(accountPhoneValue)
-            }), lp(-2, dp(if (compactCard) 36 else 48)))
-            card.addView(text("验证码", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
-            card.addView(codeRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
-            card.addView(text(cloudAccount.inlineStatus, if (compactCard) 11f else 12f, muted), lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
-            if (cloudAccount.inlineUpSmsPending) {
-                card.addView(text(
-                    "短信发送目标：${cloudAccount.inlineUpSmsChannelMobile}\n短信正文：${cloudAccount.inlineUpSmsContent}",
-                    if (compactCard) 10f else 12f, muted
-                ).apply { setPadding(dp(4), 0, dp(4), dp(4)) }, lp())
-                card.addView(button("打开短信编辑页", onClick = {
-                    val smsUri = Uri.fromParts("smsto", cloudAccount.inlineUpSmsChannelMobile, null)
-                    val smsIntent = Intent(Intent.ACTION_SENDTO, smsUri).putExtra("sms_body", cloudAccount.inlineUpSmsContent)
-                    try {
-                        startActivity(smsIntent)
-                    } catch (_: android.content.ActivityNotFoundException) {
-                        Toast.makeText(this, "没有可用的短信应用", Toast.LENGTH_LONG).show()
-                    }
-                }), lp(-1, dp(if (compactCard) 38 else 44)).apply { bottomMargin = dp(5) })
-                card.addView(button(
-                    if (cloudAccount.inlineBusy) "正在确认短信…" else "我已发送，开始自动确认",
-                    onClick = { cloudAccount.confirmUpSmsSentInline() }
-                ), lp(-1, dp(if (compactCard) 38 else 44)))
-            }
-            if (!cloudAccount.inlineUpSmsPending) {
-                card.addView(button(
-                    if (cloudAccount.inlineBusy) "请稍候…" else "登录",
-                    onClick = {
-                        accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
-                        accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
-                        cloudAccount.verifyPhoneCodeInline(accountCodeValue)
-                    }
-                ), lp(-1, dp(if (compactCard) 36 else 46)))
-            }
-            if (!compactCard) card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
-                setPadding(0, dp(10), 0, 0)
-            }, lp())
+            return
         }
 
-        val modeRow = row().apply { gravity = Gravity.CENTER; setPadding(0, dp(if (compactCard) 7 else 16), 0, 0) }
-        addButton(modeRow, "二维码登录", accountLoginMode == 0) {
-            accountLoginMode = 0
-            renderAccountContent(host)
-            if (cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !cloudAccount.signedIn) {
-                accountQrAutoStarted = true
-                cloudAccount.startQrInline()
+        // Once signed in, the page is a dashboard rather than a login card.
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        val page = column().apply {
+            setPadding(dp(if (mobileLayout) 12 else 24), dp(if (mobileLayout) 14 else 20),
+                dp(if (mobileLayout) 12 else 24), dp(24))
+        }
+        val profileRow = row().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        val avatarSize = dp(if (mobileLayout) 48 else 60)
+        val avatar = TextView(this).apply {
+            text = cloudAccount.accountLabel.take(1).ifBlank { "红" }
+            textSize = if (mobileLayout) 21f else 26f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(TvStyle.accent)
             }
         }
-        addButton(modeRow, "手机号登录", accountLoginMode == 1) {
-            accountLoginMode = 1
-            renderAccountContent(host)
+        profileRow.addView(avatar, lp(avatarSize, avatarSize).apply { rightMargin = dp(12) })
+        val identity = column()
+        identity.addView(text(cloudAccount.accountLabel, if (mobileLayout) 20f else 25f, white).apply {
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }, lp(-1, -2))
+        identity.addView(text("红果账户 · ${cloudAccount.historyStatus}", 12f, muted).apply {
+            setPadding(0, dp(5), 0, 0)
+            maxLines = 2
+        }, lp(-1, -2))
+        profileRow.addView(identity, lp(0, -2).apply { weight = 1f })
+        page.addView(profileRow, lp(-1, -2))
+
+        val actions = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
+        addButton(actions, "刷新云端数据") {
+            cloudAccount.refreshHistory()
+            cloudAccount.refreshFavorites()
+            cloudAccount.refreshReservations()
+            Toast.makeText(this, "正在刷新云端数据…", Toast.LENGTH_SHORT).show()
         }
-        if (cloudAccount.signedIn) addButton(modeRow, "账号状态", onClick = {
-            Toast.makeText(this, cloudAccount.historyStatus, Toast.LENGTH_LONG).show()
-        })
-        card.addView(modeRow, lp())
-        body.addView(card, lp(cardWidth, -2))
-        if (cloudAccount.signedIn) {
-            // The signed-in page contains variable-length history/favorites; retain scrolling there only.
-            val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
-            scroll.addView(body, FrameLayout.LayoutParams(-1, -1))
-            host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
-        } else {
-            // QR/phone login must fit the phone screen without requiring a vertical swipe.
-            host.addView(body, FrameLayout.LayoutParams(-1, -1))
+        addButton(actions, "退出登录") {
+            accountSection = 0
+            accountQrAutoStarted = false
+            cloudAccount.logoutInline()
         }
-        if (!cloudAccount.signedIn && accountLoginMode == 0 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
-            accountQrAutoStarted = true
-            host.post { if (tab == 6 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) cloudAccount.startQrInline() }
+        page.addView(actions, lp(-1, -2))
+
+        val tabs = row().apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(12))
         }
+        val sections = listOf("观看历史", "账户收藏", "预约中", "已上线")
+        sections.forEachIndexed { index, label ->
+            val item = addButton(tabs, label, accountSection == index) {
+                accountSection = index
+                if (index == 2 || index == 3) cloudAccount.refreshReservations()
+                renderAccountContent(host)
+            }
+            item.setTextColor(if (accountSection == index) accent else muted)
+        }
+        page.addView(tabs, lp(-1, -2))
+        page.addView(View(this).apply { setBackgroundColor(TvStyle.outline) }, lp(-1, dp(1)).apply { bottomMargin = dp(12) })
+
+        fun sectionHeading(title: String, subtitle: String) {
+            page.addView(text(title, if (mobileLayout) 18f else 21f, white).apply {
+                typeface = Typeface.DEFAULT_BOLD
+            }, lp(-1, -2))
+            page.addView(text(subtitle, 12f, muted).apply {
+                setPadding(0, dp(5), 0, dp(10))
+            }, lp(-1, -2))
+        }
+        fun addArtworkRow(cover: String, title: String, subtitle: String, click: () -> Unit) {
+            val itemRow = row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(8), dp(8), dp(10), dp(8))
+                background = rounded(surface, TvStyle.outline)
+                isFocusable = true
+                isFocusableInTouchMode = true
+                setOnFocusChangeListener { view, focused ->
+                    view.background = rounded(if (focused) TvStyle.raised else surface, if (focused) accent else TvStyle.outline)
+                }
+                setOnClickListener { click() }
+            }
+            val posterWidth = dp(if (mobileLayout) 58 else 72)
+            val posterHeight = dp(if (mobileLayout) 78 else 96)
+            val poster = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = rounded(Color.rgb(25, 29, 35))
+                contentDescription = "${title} 封面"
+            }
+            itemRow.addView(poster, lp(posterWidth, posterHeight).apply { rightMargin = dp(12) })
+            loadCover(poster, cover)
+            val words = column().apply { gravity = Gravity.CENTER_VERTICAL }
+            words.addView(text(title.ifBlank { "未知剧集" }, if (mobileLayout) 14f else 17f, white).apply {
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }, lp(-1, -2))
+            words.addView(text(subtitle, 12f, muted).apply {
+                setPadding(0, dp(6), 0, 0)
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.END
+            }, lp(-1, -2))
+            itemRow.addView(words, lp(0, -2).apply { weight = 1f })
+            page.addView(itemRow, lp(-1, -2).apply { bottomMargin = dp(8) })
+        }
+
+        when (accountSection) {
+            0 -> {
+                val history = cloudAccount.historyRows()
+                sectionHeading("观看历史", if (cloudAccount.historyLoading) "正在同步云端记录…" else "最近观看 · ${history.size} 部")
+                if (history.isEmpty()) {
+                    page.addView(text(if (cloudAccount.historyLoading) "正在读取观看记录…" else "暂无云端观看记录", 14f, muted).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(30), 0, dp(30))
+                    }, lp(-1, -2))
+                } else history.forEach { item ->
+                    val episodeText = if (item.episodeCount > 0) "第 ${item.episodeIndex + 1} 集 / 共 ${item.episodeCount} 集" else "第 ${item.episodeIndex + 1} 集"
+                    val progressText = if (item.duration > 0) "$episodeText · ${formatTime(item.position)} / ${formatTime(item.duration)}" else episodeText
+                    addArtworkRow(item.series.cover, item.series.title, progressText) {
+                        pendingCloudProgress = item
+                        openDetail(item.series, true)
+                    }
+                }
+            }
+            1 -> {
+                val fav = cloudAccount.favoriteState()
+                sectionHeading("账户收藏", if (fav.loading) "正在读取收藏…" else "已同步 ${fav.rows.size} 部作品")
+                if (!fav.loaded && !fav.loading) cloudAccount.refreshFavorites()
+                if (fav.rows.isEmpty()) {
+                    page.addView(text(if (fav.loading) "正在读取账户收藏…" else fav.message, 14f, muted).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(30), 0, dp(30))
+                    }, lp(-1, -2))
+                } else fav.rows.forEach { item ->
+                    addArtworkRow(item.series.cover, item.series.title, "红果账户收藏") { openDetail(item.series, true) }
+                }
+            }
+            2, 3 -> {
+                val online = accountSection == 3
+                val state = cloudAccount.reservationState(online)
+                sectionHeading(if (online) "已上线" else "预约中", if (state.loading) "正在同步预约记录…" else state.message)
+                if (!state.loaded && !state.loading) cloudAccount.refreshReservations()
+                if (state.rows.isEmpty()) {
+                    val emptyText = if (state.loading) "正在读取预约记录…" else if (state.loaded) "暂无${if (online) "已上线" else "待上线"}作品" else state.message
+                    page.addView(text(emptyText, 14f, muted).apply {
+                        gravity = Gravity.CENTER
+                        setPadding(0, dp(30), 0, dp(30))
+                    }, lp(-1, -2))
+                } else state.rows.forEach { item ->
+                    val sub = when {
+                        item.publishText.isNotBlank() -> item.publishText
+                        item.publishAt > 0L -> if (online) "已上线" else "预约作品 · 等待上线"
+                        else -> if (online) "已上线" else "预约成功 · 等待上线"
+                    }
+                    addArtworkRow(item.series.cover, item.series.title, sub) {
+                        if (online) openDetail(item.series, true)
+                        else Toast.makeText(this, "该作品尚未上线，可在预约列表查看更新。", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+
+        scroll.addView(page, ViewGroup.LayoutParams(-1, -2))
+        host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
     }
 
     private fun goBack() {
