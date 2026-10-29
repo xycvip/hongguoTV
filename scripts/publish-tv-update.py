@@ -17,7 +17,7 @@ size = os.path.getsize(apk_path)
 def changelog():
     # Keep release notes limited to the fixes in this APK.
     return (
-        "- 修复设置弹窗的实际勾选状态与焦点状态不同步。\n"
+        "- 修复屏蔽词、播放速度和清晰度弹窗的勾选标记显示，避免与遥控器焦点混淆。\n"
         "- 修复 Android 9 存储权限申请与拒绝后的处理。\n"
         "- 修复 Android 16 更新包版本号过低导致无法覆盖安装。\n"
         "- 时钟显示取消背景和阴影。"
