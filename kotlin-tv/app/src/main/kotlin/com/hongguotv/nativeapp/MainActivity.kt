@@ -2706,7 +2706,6 @@ class MainActivity: Activity() {
         content.addView(TvDialog.title(this,"全局默认清晰度"))
         var qualityDialog: AlertDialog? = null
         val list=ListView(this).apply {
-            choiceMode=ListView.CHOICE_MODE_SINGLE
             adapter=TvDialog.choiceAdapter(this@MainActivity,options.map { "${it}P" },checkedStates=checked)
             setOnItemClickListener { _,_,index,_ ->
                 checked.fill(false); checked[index]=true
@@ -2730,7 +2729,6 @@ class MainActivity: Activity() {
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
         dialog.show()
         list.post {
-            list.setItemChecked(selected.coerceAtLeast(0),true)
             list.setSelection(selected.coerceAtLeast(0))
             list.invalidateViews()
             list.requestFocus()
