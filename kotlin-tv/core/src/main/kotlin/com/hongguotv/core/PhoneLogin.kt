@@ -87,7 +87,7 @@ class PhoneLogin(private val http: OkHttpClient) {
             pendingMfaExpiresAt = System.currentTimeMillis() + 10 * 60 * 1000L
             throw UpSmsRequired(it)
         }
-        throw Failure(describe(data) ?: "验证码校验失败", errorCode(reply), errorCode(reply) == 1102)
+        throw Failure(describe(reply, data) ?: "验证码校验失败", errorCode(reply), errorCode(reply) == 1102)
     }
 
     /** 用户从短信编辑页返回并确认已发送后调用；最多 90 秒，每 3 秒查询一次。 */
@@ -137,14 +137,14 @@ class PhoneLogin(private val http: OkHttpClient) {
             // Do not treat 1066 as pending: repeated 1066 responses previously caused a
             // pointless 90-second spinner without producing a verification ticket.
             if (pollCode == 1045) {
-                lastDescription = describe(reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
+                lastDescription = describe(reply, reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
                 val remaining = confirmationDeadline - System.currentTimeMillis()
                 if (remaining > 0L) Thread.sleep(minOf(3000L, remaining))
                 continue
             }
             if (!isSuccess(reply)) {
                 val data = reply.optJSONObject("data") ?: JSONObject()
-                val description = describe(data) ?: "上行短信验证失败"
+                val description = describe(reply, data) ?: "上行短信验证失败"
                 if (description.contains("过期") || description.contains("失效")) {
                     expired = true
                     pendingMfa = null
@@ -157,7 +157,7 @@ class PhoneLogin(private val http: OkHttpClient) {
             val loginReply = smsLogin(code, mfaTicket)
             if (!isSuccess(loginReply)) {
                 val loginData = loginReply.optJSONObject("data") ?: JSONObject()
-                throw Failure(describe(loginData) ?: "验证通过，但账号登录未完成", errorCode(loginReply))
+                throw Failure(describe(loginReply, loginData) ?: "验证通过，但账号登录未完成", errorCode(loginReply))
             }
             pendingMfa = null
             pendingMfaExpiresAt = 0L
@@ -306,11 +306,26 @@ class PhoneLogin(private val http: OkHttpClient) {
         return "+$code " + groups.joinToString(" ")
     }
 
-    private fun describe(data: JSONObject): String? =
-        data
-            .optString("description")
-            .takeIf { it.isNotBlank() }
-            ?.let { "$it（错误码 ${data.optInt("error_code")}）" }
+    /**
+     * Passport 有时把 description/error_code 放在 data 内，有时放在响应顶层。
+     * 统一读取，避免把有用的服务端拒绝原因吞成“上行短信验证失败”。
+     * 不显示原始响应，避免意外暴露票据、手机号或 Cookie。
+     */
+    private fun describe(reply: JSONObject, data: JSONObject): String? {
+        val description = sequenceOf(
+            data.optString("description"),
+            reply.optString("description"),
+            data.optString("message"),
+            reply.optString("message"),
+        ).firstOrNull { it.isNotBlank() && it != "success" } ?: return null
+
+        val code = errorCode(reply)
+        val safeDescription = description
+            .replace(Regex("[0-9]{7,}"), "***")
+            .replace(Regex("[\\r\\n\\t]+"), " ")
+            .take(120)
+        return if (code >= 0) "$safeDescription（错误码 $code）" else safeDescription
+    }
 
     companion object {
         private const val PASSPORT = "https://api5-normal-lq.fqnovel.com"
