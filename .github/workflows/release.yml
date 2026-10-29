@@ -55,32 +55,23 @@ jobs:
             exit 1
           fi
           echo "HONGGUOTV_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          UPSTREAM_GRADLE_URL="https://raw.githubusercontent.com/jycao2/hongguoTV/main/kotlin-tv/app/build.gradle.kts"
-          UPSTREAM_VERSION="$(curl --fail --silent --show-error --location "$UPSTREAM_GRADLE_URL" | sed -nE 's/.*versionName.*"([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' | head -n 1)"
-          if [[ ! "$UPSTREAM_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "无法从上游读取有效版本号：$UPSTREAM_VERSION" >&2
+          # APP_VERSION is maintained independently from upstream version strings.
+          # Each Actions run gets a unique display/build suffix, even when old releases were deleted.
+          APP_VERSION="$(sed -nE 's/^APP_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' kotlin-tv/version.properties | head -n 1)"
+          if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "kotlin-tv/version.properties 中 APP_VERSION 必须为 MAJOR.MINOR.PATCH，例如 1.0.0。" >&2
             exit 1
           fi
-          IFS='.' read -r UPSTREAM_MAJOR UPSTREAM_MIDDLE UPSTREAM_PATCH <<< "$UPSTREAM_VERSION"
-          DATE_PREFIX="$(TZ=Asia/Tokyo date +'%y.%m')"
-          TODAY_JST="$(TZ=Asia/Tokyo date +'%Y-%m-%d')"
-          DAILY_COUNT="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.published_at != null) | [.tag_name, .published_at] | @tsv' | python3 -c 'import datetime,sys; from zoneinfo import ZoneInfo; today=sys.argv[1]; prefix=sys.argv[2]; rows=[line.rstrip("\n").split("\t",1) for line in sys.stdin if "\t" in line]; print(sum(1 for tag,stamp in rows if tag.startswith("kotlin-v"+prefix+".") and datetime.datetime.fromisoformat(stamp.replace("Z","+00:00")).astimezone(ZoneInfo("Asia/Tokyo")).date().isoformat()==today))' "$TODAY_JST" "$DATE_PREFIX")"
-          VERSION_NAME="${DATE_PREFIX}.${UPSTREAM_MIDDLE}.${DAILY_COUNT}"
-          if (( DAILY_COUNT >= 99 )); then
-            echo "当天发布次数达到版本号容量上限，拒绝生成重复 versionCode。" >&2
-            exit 1
-          fi
+          VERSION_NAME="${APP_VERSION}-build.${GITHUB_RUN_NUMBER}"
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
-          # Use the unique workflow run number, not only the number of successful releases.
-          # Failed builds also consume run numbers, so even an APK from a failed build
-          # cannot cause the next build to reuse its versionCode.
+          # Date + unique workflow run number makes versionCode monotonic across daily builds.
           VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
-          # Never publish a versionCode less than or equal to the latest published APK.
-          # This also protects against previously published versions from another build path.
+          # Keep every new APK newer than the newest published APK, including releases
+          # created by an older workflow or from another build path.
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
           if curl --fail --silent --show-error --location \
-              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json?cachebust=$(date +%s)" \
               --output "$LATEST_MANIFEST"; then
             LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
           fi
@@ -92,9 +83,9 @@ jobs:
             exit 1
           fi
           echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          echo "Using verified monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
+          echo "Using monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
-          echo "UPDATE_TAG=kotlin-v${VERSION_NAME}-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "UPDATE_TAG=kotlin-v${VERSION_NAME}" >> "$GITHUB_ENV"
       - name: Tests and release lint
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_tests != true }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintRelease --console=plain
