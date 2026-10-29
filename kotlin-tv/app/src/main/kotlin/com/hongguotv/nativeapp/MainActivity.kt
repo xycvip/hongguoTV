@@ -3256,18 +3256,12 @@ class MainActivity: Activity() {
         card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录", if (compactCard) 22f else 26f, white).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, lp())
-        card.addView(text(
+        if (!compactCard) card.addView(text(
             if (cloudAccount.signedIn) "同步你的收藏与观看记录"
             else if (accountLoginMode == 0) "使用手机红果 App 扫码登录，同步你的收藏与观看记录"
             else "使用手机号登录，同步你的收藏与观看记录",
-            if (compactCard) 11f else 13f, muted
-        ).apply {
-            text = if (compactCard && !cloudAccount.signedIn) {
-                if (accountLoginMode == 0) "扫码后在手机确认登录"
-                else "使用手机号验证登录"
-            } else text
-            setPadding(0, dp(if (compactCard) 2 else 4), 0, dp(if (compactCard) 7 else 18))
-        }, lp())
+            13f, muted
+        ).apply { setPadding(0, dp(4), 0, dp(18)) }, lp())
 
         if (cloudAccount.signedIn) {
             card.addView(text("已登录 · ${cloudAccount.historyStatus}", 14f, muted).apply {
@@ -3343,7 +3337,7 @@ class MainActivity: Activity() {
                 val code = cloudAccount.cycleInlineCountryCode()
                 countryButton.text = "${code}  ▾"
             })
-            phoneRow.addView(countryButton, lp(-2, dp(if (compactCard) 40 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
+            phoneRow.addView(countryButton, lp(-2, dp(if (compactCard) 36 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
             accountPhoneInput = EditText(this).apply {
                 hint = "请输入手机号"
                 setText(accountPhoneValue)
@@ -3354,7 +3348,7 @@ class MainActivity: Activity() {
                 background = rounded(Color.rgb(25, 29, 35))
                 setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
             }
-            phoneRow.addView(accountPhoneInput, lp(0, dp(if (compactCard) 40 else 48)).apply { weight = 1f })
+            phoneRow.addView(accountPhoneInput, lp(0, dp(if (compactCard) 36 else 48)).apply { weight = 1f })
             card.addView(text("手机号", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
             card.addView(phoneRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 12) })
             val codeRow = row()
@@ -3368,11 +3362,11 @@ class MainActivity: Activity() {
                 background = rounded(Color.rgb(25, 29, 35))
                 setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
             }
-            codeRow.addView(accountCodeInput, lp(0, dp(if (compactCard) 40 else 48)).apply { weight = 1f; rightMargin = dp(if (compactCard) 5 else 8) })
+            codeRow.addView(accountCodeInput, lp(0, dp(if (compactCard) 36 else 48)).apply { weight = 1f; rightMargin = dp(if (compactCard) 5 else 8) })
             codeRow.addView(button("获取验证码", onClick = {
                 accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
                 cloudAccount.sendPhoneCodeInline(accountPhoneValue)
-            }), lp(-2, dp(if (compactCard) 40 else 48)))
+            }), lp(-2, dp(if (compactCard) 36 else 48)))
             card.addView(text("验证码", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
             card.addView(codeRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
             card.addView(text(cloudAccount.inlineStatus, if (compactCard) 11f else 12f, muted), lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
@@ -3410,7 +3404,7 @@ class MainActivity: Activity() {
                         cloudAccount.verifyPhoneCodeInline(accountCodeValue)
                     }
                 }
-            ), lp(-1, dp(if (compactCard) 40 else 46)))
+            ), lp(-1, dp(if (compactCard) 36 else 46)))
             if (!compactCard) card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
                 setPadding(0, dp(10), 0, 0)
             }, lp())
