@@ -117,6 +117,7 @@ class MainActivity: Activity() {
     private var pendingCloudProgress: CloudProgress? = null
     private var accountContentHost: FrameLayout? = null
     private var accountLoginMode = 0
+    private var accountQrAutoStarted = false
     private var accountPhoneInput: EditText? = null
     private var accountCodeInput: EditText? = null
     private lateinit var cloudAccount: AccountController
@@ -3302,6 +3303,7 @@ class MainActivity: Activity() {
                 setPadding(0, 0, 0, dp(12))
             }, lp())
             card.addView(button(if (cloudAccount.inlineBusy) "正在处理…" else "刷新二维码", onClick = {
+                accountQrAutoStarted = true
                 cloudAccount.startQrInline()
             }), lp(-1, dp(44)).apply { bottomMargin = dp(14) })
         } else {
@@ -3353,7 +3355,10 @@ class MainActivity: Activity() {
         addButton(modeRow, "二维码登录", accountLoginMode == 0) {
             accountLoginMode = 0
             renderAccountContent(host)
-            if (cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !cloudAccount.signedIn) cloudAccount.startQrInline()
+            if (cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !cloudAccount.signedIn) {
+                accountQrAutoStarted = true
+                cloudAccount.startQrInline()
+            }
         }
         addButton(modeRow, "手机号登录", accountLoginMode == 1) {
             accountLoginMode = 1
@@ -3366,7 +3371,8 @@ class MainActivity: Activity() {
         body.addView(card, lp(cardWidth, -2))
         scroll.addView(body, ScrollView.LayoutParams(-1, -1))
         host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
-        if (!cloudAccount.signedIn && accountLoginMode == 0 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) {
+        if (!cloudAccount.signedIn && accountLoginMode == 0 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
+            accountQrAutoStarted = true
             host.post { if (tab == 6 && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) cloudAccount.startQrInline() }
         }
     }
