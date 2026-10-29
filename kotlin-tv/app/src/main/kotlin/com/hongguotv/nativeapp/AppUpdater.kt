@@ -238,7 +238,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                     activity.startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
                 } else {
                     val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.updates", apk)
-                    activity.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    // Android 14–16 对安装器 Intent 的路由更严格，明确使用安装动作并传递只读 URI 授权。
+                    activity.startActivity(Intent(Intent.ACTION_INSTALL_PACKAGE).setData(uri)
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION).apply { clipData = ClipData.newRawUri("更新安装包", uri) })
                 }
             } catch (_: Exception) { permissionRequested = false; updateStatus("电视未提供安装或授权入口，请通过系统文件管理器安装新版") }

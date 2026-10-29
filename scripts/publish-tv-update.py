@@ -17,9 +17,12 @@ size = os.path.getsize(apk_path)
 def changelog():
     # Keep release notes focused on the compatibility fixes in this APK.
     return (
-        "- Android 9 电视没有系统文件保存器时，本地备份改为保存到应用专用目录，并支持从该目录恢复。\n"
-        "- 更新检查增加缓存规避，并以设备实际安装版本判断是否允许覆盖安装，避免误下载旧包。\n"
-        "- 版本号使用 MAJOR.MINOR.PATCH；同一版本线每次成功发布自动递增补丁号，APK 文件名只保留应用版本号。"
+        "- 搜索结果按标题匹配度排序，并合并漫剧/短剧接口重复返回的同一部作品。\n"
+        "- 搜索页重新调整历史、屏幕键盘、联想与结果区比例；历史移至最左侧，未搜索时展示热搜推荐。\n"
+        "- 首页新增「热门发现 · AI剧」专区，位于短剧、漫剧专区之后，并保留遥控器焦点操作。\n"
+        "- 刷新热门后直接更新首页并恢复刷新按钮焦点，取消「按确认查看」提示；题材内容页按返回键回首页。\n"
+        "- 改进 Android 14–16 应用内更新的安装 Intent，明确调用系统安装动作并授予 APK 只读访问权限。\n"
+        "- 保留原有 Android 9 兼容、包名/版本/签名校验与本机记录；版本号按 MAJOR.MINOR.PATCH 自动递增。"
     )
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
 manifest = {

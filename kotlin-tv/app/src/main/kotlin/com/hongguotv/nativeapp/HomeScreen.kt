@@ -143,9 +143,9 @@ class HomeScreen(
                 line.addView(view,LayoutParams(width,-1).apply { rightMargin=dp(14) }); rowCards+=card; cards[key]=card
             }
             // 热门短剧/漫剧分区把“查看全部”放首位；其他个人内容分区维持原来的末尾入口。
-            if(shelf.key=="hot-short" || shelf.key=="hot-comic") shelf.more?.let { action -> addCard(null,action) }
+            if(shelf.key=="hot-short" || shelf.key=="hot-comic" || shelf.key=="hot-ai") shelf.more?.let { action -> addCard(null,action) }
             shelf.entries.forEach { addCard(it) }
-            if(shelf.key!="hot-short" && shelf.key!="hot-comic") shelf.more?.let { action -> addCard(null,action) }
+            if(shelf.key!="hot-short" && shelf.key!="hot-comic" && shelf.key!="hot-ai") shelf.more?.let { action -> addCard(null,action) }
             contents.addView(block,LayoutParams(-1,-2).apply { bottomMargin=dp(16) }); rows+=Row(shelf.key,block,horizontal,rowCards)
         }
         if(cards.isEmpty()) contents.addView(label("还没有本机记录，热门剧加载后可选择观看。",15f).apply { setPadding(0,dp(16),0,dp(16)) })

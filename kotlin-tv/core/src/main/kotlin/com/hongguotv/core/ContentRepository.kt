@@ -204,8 +204,8 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
                 }
             })
             .map { it.value }
-            // 不跨类型合并同名作品；短剧和漫剧同名时都显示。
-            .distinctBy { (type,series) -> "${type.storedValue}:${series.id}" }
+            // 同一作品可能同时被两个分类接口返回；按标准化剧名合并，排序优先级更高的结果胜出。
+            .distinctBy { (type,series) -> normalizeTitle(series.title).ifBlank { "${type.storedValue}:${series.id}" } }
             .map { (type,series) ->
                 val detail=series.badge.trim()
                 series.copy(badge=if(detail.isBlank()) type.label else "${type.label} · ${detail}")
