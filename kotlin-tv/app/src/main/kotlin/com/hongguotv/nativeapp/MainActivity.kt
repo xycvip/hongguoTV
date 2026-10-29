@@ -3,6 +3,7 @@ package com.hongguotv.nativeapp
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.Manifest
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -18,6 +19,8 @@ import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
+import android.net.Uri
+import android.provider.Settings
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.widget.*
