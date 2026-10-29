@@ -36,8 +36,8 @@ class PhoneLogin(private val http: OkHttpClient) {
 
     @Volatile private var activeCall: okhttp3.Call? = null
     @Volatile private var cancelled = false
+    @Volatile private var token = ""
     private var pendingMfa: UpSmsChallenge? = null
-    private var submittedCode = ""
 
     data class UpSmsChallenge(val channelMobile: String, val smsContent: String, val encryptUid: String, val smsCodeKey: String, val logId: String)
     class UpSmsRequired(val challenge: UpSmsChallenge) :
@@ -59,7 +59,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         cookies.putAll(registered.cookies)
         expired = false
         pendingMfa = null
-        submittedCode = ""
+        token = ""
         this.mobile = mobile
         val reply = call(
             "/passport/mobile/send_code/v1/",
@@ -77,7 +77,6 @@ class PhoneLogin(private val http: OkHttpClient) {
         if (expired) throw Failure("本次登录会话已失效，请重新获取验证码", 1)
         check(deviceId.isNotEmpty()) { "请先发送验证码" }
         require(code.matches(Regex("[0-9]{4,8}"))) { "请输入 4–8 位数字验证码" }
-        submittedCode = code
         val reply = smsLogin(code, "")
         if (isSuccess(reply)) return credentialsOrThrow()
         val data = reply.optJSONObject("data") ?: JSONObject()
@@ -218,6 +217,7 @@ class PhoneLogin(private val http: OkHttpClient) {
         request.header("Accept", "application/json")
         request.header("User-Agent", VendorConstants.APP_UA)
         if (cookies.isNotEmpty()) request.header("Cookie", cookies.entries.joinToString("; ") { (name, value) -> "$name=$value" })
+        if (token.isNotBlank()) request.header("X-Tt-Token", token)
         request.post(payload.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType()))
         val call = http.newCall(request.build())
         activeCall = call
@@ -229,8 +229,8 @@ class PhoneLogin(private val http: OkHttpClient) {
                     val value = pair.substringAfter('=', "").trim()
                     if (name.isNotEmpty() && value.isNotEmpty()) cookies[name] = value
                 }
-                val token = response.header("X-Tt-Token")
-                if (!token.isNullOrBlank()) cookies["x-tt-token"] = token
+                val responseToken = response.header("X-Tt-Token")
+                if (!responseToken.isNullOrBlank()) token = responseToken
                 val text = cloudResponse(response)
                 runCatching { JSONObject(text) }.getOrElse {
                     JSONObject().put("http", response.code).put("raw", text.take(300))
