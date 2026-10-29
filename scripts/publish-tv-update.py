@@ -15,11 +15,12 @@ sha256 = hashlib.sha256(open(apk_path, "rb").read()).hexdigest()
 size = os.path.getsize(apk_path)
 
 def changelog():
-    # Keep release notes limited to changes in this release; the release title already has the version.
+    # Keep release notes limited to the fixes in this APK.
     return (
-        "- 修复设置弹窗勾选状态异常。\n"
-        "- 修复 Android 9 存储权限检查与申请流程。\n"
-        "- 将设置项名称改为“启动时播放推荐”。"
+        "- 修复设置弹窗的实际勾选状态与焦点状态不同步。\n"
+        "- 修复 Android 9 存储权限申请与拒绝后的处理。\n"
+        "- 修复 Android 16 更新包版本号过低导致无法覆盖安装。\n"
+        "- 时钟显示取消背景和阴影。"
     )
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
@@ -41,7 +42,7 @@ sha_path = os.path.join(OUTPUTS, "SHA256SUMS")
 with open(sha_path, "w") as f:
     f.write(f"{sha256}  {APK_NAME}\n")
 
-subprocess.run(["gh", "release", "create", TAG, "--title", f"红果 TV {VERSION_NAME}", "--notes",
+subprocess.run(["gh", "release", "create", TAG, "--target", os.environ["GITHUB_SHA"], "--title", f"红果 TV {VERSION_NAME}", "--notes",
     f"红果 TV {VERSION_NAME}\n\n{notes}", "--latest"], check=True)
 for asset in [apk_path, json_path, sha_path]:
     subprocess.run(["gh", "release", "upload", TAG, asset, "--clobber"], check=True)
