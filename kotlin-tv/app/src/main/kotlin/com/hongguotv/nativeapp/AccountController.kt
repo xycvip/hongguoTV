@@ -124,7 +124,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private var draining = false
     private var dialog: AlertDialog? = null
     private var inlineQrLogin: WebLogin? = null
-    private var inlinePhoneLogin: WebLogin? = null
+    private var inlinePhoneLogin: PhoneLogin? = null
     private var inlineQrDeadline = 0L
     private var inlineQrToken = 0
     val inlineQrBitmap: android.graphics.Bitmap? get() = qrBitmap
@@ -650,7 +650,11 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         }
         generation++
         val token = generation
-        val login = WebLogin(http)
+        inlinePhoneLogin?.cancel()
+        inlineUpSmsNumber = ""
+        inlineUpSmsContent = ""
+        inlinePhoneCode = ""
+        val login = PhoneLogin(http)
         inlinePhoneLogin = login
         busy = true
         status = "正在发送验证码…"
@@ -673,7 +677,14 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     }
 
     private var inlinePhoneMasked = ""
+    private var inlineUpSmsNumber = ""
+    private var inlineUpSmsContent = ""
+    private var inlinePhoneCode = ""
     private var accountCountryCode = "+86"
+
+    val inlineUpSmsPending: Boolean get() = inlineUpSmsNumber.isNotBlank() && inlineUpSmsContent.isNotBlank()
+    val inlineUpSmsChannelMobile: String get() = inlineUpSmsNumber
+    val inlineUpSmsContent: String get() = inlineUpSmsContent
 
     fun cycleInlineCountryCode(): String {
         accountCountryCode = when (accountCountryCode) {
@@ -708,8 +719,53 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 if (closed || token != generation) return@post
                 busy = false
                 result.fold(
-                    { acceptAccount(it.first, it.second, inline = true) },
-                    { status = safeError(it); changed() }
+                    { 
+                        inlineUpSmsNumber = ""
+                        inlineUpSmsContent = ""
+                        inlinePhoneCode = ""
+                        acceptAccount(it.first, it.second, inline = true)
+                    },
+                    { failure ->
+                        if (failure is PhoneLogin.UpSmsRequired) {
+                            inlineUpSmsNumber = failure.challenge.channelMobile
+                            inlineUpSmsContent = failure.challenge.smsContent
+                            inlinePhoneCode = code
+                            status = "需要发送平台指定的验证短信。请打开短信编辑页发送，返回后点击“我已发送”。"
+                        } else {
+                            status = safeError(failure)
+                        }
+                        changed()
+                    }
+                )
+            }
+        }
+    }
+
+    fun confirmUpSmsSentInline() {
+        val login = inlinePhoneLogin
+        val code = inlinePhoneCode
+        if (closed || busy || login == null || !inlineUpSmsPending || code.isBlank()) return
+        generation++
+        val token = generation
+        busy = true
+        status = "正在确认上行短信（最多 90 秒）…"
+        changed()
+        worker.execute {
+            val result = runCatching { validateAccount(login.verifyUpSmsAndLogin(code)) }
+            main.post {
+                if (closed || token != generation) return@post
+                busy = false
+                result.fold(
+                    { pair ->
+                        inlineUpSmsNumber = ""
+                        inlineUpSmsContent = ""
+                        inlinePhoneCode = ""
+                        acceptAccount(pair.first, pair.second, inline = true)
+                    },
+                    { failure ->
+                        status = safeError(failure)
+                        changed()
+                    }
                 )
             }
         }
@@ -724,6 +780,9 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         inlinePhoneLogin?.cancel()
         inlinePhoneLogin = null
         inlinePhoneMasked = ""
+        inlineUpSmsNumber = ""
+        inlineUpSmsContent = ""
+        inlinePhoneCode = ""
         changed()
     }
 
