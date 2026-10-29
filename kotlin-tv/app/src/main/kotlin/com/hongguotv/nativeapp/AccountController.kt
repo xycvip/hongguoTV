@@ -772,6 +772,11 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                         acceptAccount(pair.first, pair.second, inline = true)
                     },
                     { failure ->
+                        if (failure is PhoneLogin.Failure && failure.errorCode == 1) {
+                            pendingUpSmsNumber = ""
+                            pendingUpSmsContent = ""
+                            inlinePhoneCode = ""
+                        }
                         status = safeError(failure)
                         changed()
                     }
