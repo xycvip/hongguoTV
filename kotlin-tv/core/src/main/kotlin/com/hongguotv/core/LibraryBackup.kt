@@ -14,7 +14,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("autoSeason",autoSeason).put("danmaku",danmaku)
         .put("danmakuOpacity",danmakuOpacity).put("danmakuFont",danmakuFont).put("danmakuSpeed",danmakuSpeed).put("danmakuRows",danmakuRows).put("showClock",showClock).put("sourceHidden",sourceHidden)
 }
-data class BackupData(val favorites: List<Series>,val history: List<BackupProgress>,val watched: Set<String>,val searches: List<RecentSearch>,val settings: BackupSettings,val later: List<Series> = emptyList(),val hidden: Set<String> = emptySet(),val favoriteGroups: Map<String,String> = emptyMap(),val thirdSources: List<BackupThirdSource> = emptyList(),val thirdHistory: List<BackupThirdHistory> = emptyList(),val thirdFavorites: List<BackupThirdFavorite> = emptyList())
+data class BackupData(val favorites: List<Series>,val history: List<BackupProgress>,val watched: Set<String>,val searches: List<RecentSearch>,val settings: BackupSettings,val later: List<Series> = emptyList(),val hidden: Set<String> = emptySet(),val favoriteGroups: Map<String,String> = emptyMap(),val thirdSources: List<BackupThirdSource> = emptyList(),val thirdHistory: List<BackupThirdHistory> = emptyList(),val thirdFavorites: List<BackupThirdFavorite> = emptyList(),val accountState: String? = null)
 
 /** 三方片源配置：只保存名称与接口，随主备份一起迁移；恢复时只追加不覆盖。 */
 data class BackupThirdSource(val name: String,val api: String)
@@ -76,7 +76,8 @@ object LibraryBackup {
                 .put("positionMs",fav.positionMs.coerceAtLeast(0)).put("updatedAt",fav.updatedAt.coerceAtLeast(0))
             }))
             .put("watched",JSONArray(data.watched.intersect((data.favorites.map { it.id }+data.history.map { it.series.id }).toSet()).take(500)))
-            .put("searches",JSONArray(SearchHistory.encode(data.searches.map { it.copy(query=cleanText(it.query,80)) }))).put("settings",data.settings.json()).toString()
+            .put("searches",JSONArray(SearchHistory.encode(data.searches.map { it.copy(query=cleanText(it.query,80)) }))).put("settings",data.settings.json())
+            .put("accountState", data.accountState?.takeIf { it.isNotBlank() }?.let { JSONObject(it) } ?: JSONObject.NULL).toString()
         require(result.toByteArray(Charsets.UTF_8).size<=MAX_BYTES) { "备份超过 2 MB 限制" }
         return result
     }
@@ -186,7 +187,12 @@ object LibraryBackup {
                 }.getOrNull()
             }
         }.getOrDefault(emptyList()) else emptyList()
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites)
+        val accountState = if (o.has("accountState") && !o.isNull("accountState")) {
+            val account = o.getJSONObject("accountState")
+            require(account.toString().length <= 20_000) { "账户备份信息过大" }
+            account.toString()
+        } else null
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites,accountState)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {
@@ -217,6 +223,6 @@ object LibraryBackup {
             .groupBy { it.sourceApi to it.videoId }
             .mapNotNull { (_,rows) -> rows.maxByOrNull { it.updatedAt } }
             .sortedByDescending { it.updatedAt }.take(MAX_THIRD_FAVORITES)
-        return BackupData(favorites,history,watched.intersect(retained).take(500).toSet(),(local.searches+incoming.searches).distinct().take(20),if(restoreSettings) incoming.settings else local.settings,(local.later+incoming.later).distinctBy { it.id }.take(100),(local.hidden+incoming.hidden).take(500).toSet(),favoriteGroups,thirdSources,thirdHistory,thirdFavorites)
+        return BackupData(favorites,history,watched.intersect(retained).take(500).toSet(),(local.searches+incoming.searches).distinct().take(20),if(restoreSettings) incoming.settings else local.settings,(local.later+incoming.later).distinctBy { it.id }.take(100),(local.hidden+incoming.hidden).take(500).toSet(),favoriteGroups,thirdSources,thirdHistory,thirdFavorites,incoming.accountState ?: local.accountState)
     }
 }
