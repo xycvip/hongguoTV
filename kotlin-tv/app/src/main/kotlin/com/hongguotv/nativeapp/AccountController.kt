@@ -649,9 +649,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     fun sendPhoneCodeInline(rawNumber: String) {
         if (closed || busy) return
         val mobile = runCatching {
-            val number = rawNumber.trim()
-            if (number.startsWith("+")) PhoneLogin.parse(number)
-            else PhoneLogin.parse(accountCountryCode + " " + number)
+            PhoneLogin.parse(rawNumber)
         }.getOrElse {
             status = safeError(it)
             changed()
@@ -689,24 +687,10 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private var pendingUpSmsNumber = ""
     private var pendingUpSmsContent = ""
     private var inlinePhoneCode = ""
-    private var accountCountryCode = "+86"
-
     val inlineUpSmsPending: Boolean get() = pendingUpSmsNumber.isNotBlank() && pendingUpSmsContent.isNotBlank()
     val inlineUpSmsChannelMobile: String get() = pendingUpSmsNumber
     val inlineUpSmsContent: String get() = pendingUpSmsContent
-
-    fun cycleInlineCountryCode(): String {
-        accountCountryCode = when (accountCountryCode) {
-            "+86" -> "+886"
-            "+886" -> "+852"
-            "+852" -> "+1"
-            "+1" -> "+81"
-            else -> "+86"
-        }
-        return accountCountryCode
-    }
-
-    val inlineCountryCode: String get() = accountCountryCode
+    val inlineCountryCode: String get() = "+86"
     val inlinePhoneCodeSent: Boolean get() = inlinePhoneMasked.isNotBlank()
 
     fun verifyPhoneCodeInline(code: String) {
@@ -772,12 +756,18 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                         acceptAccount(pair.first, pair.second, inline = true)
                     },
                     { failure ->
-                        if (failure is PhoneLogin.Failure && failure.errorCode == 1) {
+                        if (failure is PhoneLogin.Failure && failure.errorCode in setOf(1, 1066)) {
                             pendingUpSmsNumber = ""
                             pendingUpSmsContent = ""
                             inlinePhoneCode = ""
+                            inlinePhoneMasked = ""
+                            inlinePhoneLogin = null
+                            status = if (failure.errorCode == 1066)
+                                "平台已拒绝本次验证（1066），请重新获取短信验证码，再重新登录。"
+                            else safeError(failure)
+                        } else {
+                            status = safeError(failure)
                         }
-                        status = safeError(failure)
                         changed()
                     }
                 )
