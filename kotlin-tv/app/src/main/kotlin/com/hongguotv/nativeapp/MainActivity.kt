@@ -929,7 +929,7 @@ class MainActivity: Activity() {
             val keyboard=column().apply { setPadding(0,dp(2),0,dp(2)) }
             val keyLines=mutableListOf<List<TextView>>()
             val keyViews=linkedMapOf<String,TextView>()
-            listOf("ABCD","EFGH","IJKL","MNOP","QRST","UVWX","YZ","0123","4567","89").forEach { keys ->
+            listOf("ABCD","EFGH","IJKL","MNOP","QRST","UVWX","YZ01","2345","6789").forEach { keys ->
                 val line=row().apply { setPadding(0,0,0,dp(3)); gravity=Gravity.CENTER_VERTICAL }
                 val views=keys.map { key -> azKey(key.toString()).also { line.addView(it,lp(0,-2).apply { weight=1f; rightMargin=dp(4) }); keyViews[key.toString()]=it } }
                 if(views.size<4) {
