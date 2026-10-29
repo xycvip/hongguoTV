@@ -3226,30 +3226,48 @@ class MainActivity: Activity() {
         accountCodeInput?.let { accountCodeValue = it.text?.toString().orEmpty() }
         host.removeAllViews()
         val scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
+        val mobileLayout = widthDp() < 600f
+        val availableHeightDp =
+            (resources.displayMetrics.heightPixels / resources.displayMetrics.density - 96f).coerceAtLeast(320f)
         val body = column().apply {
             gravity = Gravity.CENTER
-            setPadding(dp(10), dp(12), dp(10), dp(12))
+            setPadding(dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12),
+                dp(if (mobileLayout) 6 else 10), dp(if (mobileLayout) 6 else 12))
             minimumHeight = (resources.displayMetrics.heightPixels - dp(140)).coerceAtLeast(dp(250))
         }
-        val cardWidth = dp((widthDp() - 48f).coerceAtLeast(280f).coerceAtMost(680f))
+        // On phones, use the smaller of available width and height as the card's preferred square size.
+        // Landscape/very short screens may still use a compact, taller card so controls remain visible.
+        val cardWidth = dp(
+            (widthDp() - if (mobileLayout) 24f else 48f)
+                .coerceAtLeast(280f)
+                .coerceAtMost(if (mobileLayout) availableHeightDp - 12f else 680f)
+        )
+        val compactCard = mobileLayout
         val card = column().apply {
             background = rounded(Color.rgb(36, 42, 51), Color.rgb(48, 57, 70))
-            setPadding(dp(24), dp(22), dp(24), dp(22))
+            setPadding(dp(if (compactCard) 14 else 24), dp(if (compactCard) 12 else 22),
+                dp(if (compactCard) 14 else 24), dp(if (compactCard) 12 else 22))
             elevation = dp(8).toFloat()
         }
         card.addView(text("H G T V", 11f, accent).apply {
             letterSpacing = .24f
-            setPadding(0, 0, 0, dp(8))
+            setPadding(0, 0, 0, dp(if (compactCard) 3 else 8))
         }, lp())
-        card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录", 26f, white).apply {
+        card.addView(text(if (cloudAccount.signedIn) cloudAccount.accountLabel else "登录", if (compactCard) 22f else 26f, white).apply {
             typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         }, lp())
         card.addView(text(
             if (cloudAccount.signedIn) "同步你的收藏与观看记录"
             else if (accountLoginMode == 0) "使用手机红果 App 扫码登录，同步你的收藏与观看记录"
             else "使用手机号登录，同步你的收藏与观看记录",
-            13f, muted
-        ).apply { setPadding(0, dp(4), 0, dp(18)) }, lp())
+            if (compactCard) 11f else 13f, muted
+        ).apply {
+            text = if (compactCard && !cloudAccount.signedIn) {
+                if (accountLoginMode == 0) "扫码后在手机确认登录"
+                else "使用手机号验证登录"
+            } else text
+            setPadding(0, dp(if (compactCard) 2 else 4), 0, dp(if (compactCard) 7 else 18))
+        }, lp())
 
         if (cloudAccount.signedIn) {
             card.addView(text("已登录 · ${cloudAccount.historyStatus}", 14f, muted).apply {
@@ -3286,7 +3304,11 @@ class MainActivity: Activity() {
         } else if (accountLoginMode == 0) {
             val qr = cloudAccount.inlineQrBitmap
             if (qr != null) {
-                val maxSize = minOf(dp(244), dp((resources.displayMetrics.heightPixels / resources.displayMetrics.density * .38f).toInt().coerceAtLeast(170)))
+                val maxSize = if (compactCard) {
+                    minOf(dp(244), (cardWidth * .38f).toInt(), dp((availableHeightDp * .20f).toInt().coerceAtLeast(100)))
+                } else {
+                    minOf(dp(244), dp((resources.displayMetrics.heightPixels / resources.displayMetrics.density * .38f).toInt().coerceAtLeast(170)))
+                }
                 card.addView(ImageView(this).apply {
                     setImageBitmap(qr)
                     scaleType = ImageView.ScaleType.FIT_CENTER
@@ -3300,16 +3322,20 @@ class MainActivity: Activity() {
                         gravity = Gravity.CENTER
                     }, FrameLayout.LayoutParams(-1, -1))
                 }
-                card.addView(qrPlaceholder, lp(dp(190), dp(190)).apply { gravity = Gravity.CENTER_HORIZONTAL; bottomMargin = dp(10) })
+                val placeholderSize = if (compactCard) minOf(dp(136), (cardWidth * .38f).toInt()) else dp(190)
+                card.addView(qrPlaceholder, lp(placeholderSize, placeholderSize).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = dp(if (compactCard) 5 else 10)
+                })
             }
             card.addView(text(cloudAccount.inlineStatus, 13f, muted).apply {
                 gravity = Gravity.CENTER
-                setPadding(0, 0, 0, dp(12))
+                setPadding(0, 0, 0, dp(if (compactCard) 5 else 12))
             }, lp())
             card.addView(button(if (cloudAccount.inlineBusy) "正在处理…" else "刷新二维码", onClick = {
                 accountQrAutoStarted = true
                 cloudAccount.startQrInline()
-            }), lp(-1, dp(44)).apply { bottomMargin = dp(14) })
+            }), lp(-1, dp(if (compactCard) 38 else 44)).apply { bottomMargin = dp(if (compactCard) 5 else 14) })
         } else {
             val phoneRow = row().apply { gravity = Gravity.CENTER_VERTICAL }
             lateinit var countryButton: TextView
@@ -3317,7 +3343,7 @@ class MainActivity: Activity() {
                 val code = cloudAccount.cycleInlineCountryCode()
                 countryButton.text = "${code}  ▾"
             })
-            phoneRow.addView(countryButton, lp(-2, dp(48)).apply { rightMargin = dp(8) })
+            phoneRow.addView(countryButton, lp(-2, dp(if (compactCard) 40 else 48)).apply { rightMargin = dp(if (compactCard) 5 else 8) })
             accountPhoneInput = EditText(this).apply {
                 hint = "请输入手机号"
                 setText(accountPhoneValue)
@@ -3326,11 +3352,11 @@ class MainActivity: Activity() {
                 inputType = android.text.InputType.TYPE_CLASS_PHONE
                 isSingleLine = true
                 background = rounded(Color.rgb(25, 29, 35))
-                setPadding(dp(16), 0, dp(12), 0)
+                setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
             }
-            phoneRow.addView(accountPhoneInput, lp(0, dp(48)).apply { weight = 1f })
-            card.addView(text("手机号", 12f, muted).apply { setPadding(dp(4), 0, 0, dp(5)) }, lp())
-            card.addView(phoneRow, lp().apply { bottomMargin = dp(12) })
+            phoneRow.addView(accountPhoneInput, lp(0, dp(if (compactCard) 40 else 48)).apply { weight = 1f })
+            card.addView(text("手机号", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
+            card.addView(phoneRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 12) })
             val codeRow = row()
             accountCodeInput = EditText(this).apply {
                 hint = "收到短信后填入验证码"
@@ -3340,27 +3366,27 @@ class MainActivity: Activity() {
                 inputType = android.text.InputType.TYPE_CLASS_NUMBER
                 isSingleLine = true
                 background = rounded(Color.rgb(25, 29, 35))
-                setPadding(dp(16), 0, dp(12), 0)
+                setPadding(dp(if (compactCard) 10 else 16), 0, dp(10), 0)
             }
-            codeRow.addView(accountCodeInput, lp(0, dp(48)).apply { weight = 1f; rightMargin = dp(8) })
+            codeRow.addView(accountCodeInput, lp(0, dp(if (compactCard) 40 else 48)).apply { weight = 1f; rightMargin = dp(if (compactCard) 5 else 8) })
             codeRow.addView(button("获取验证码", onClick = {
                 accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
                 cloudAccount.sendPhoneCodeInline(accountPhoneValue)
-            }), lp(-2, dp(48)))
-            card.addView(text("验证码", 12f, muted).apply { setPadding(dp(4), 0, 0, dp(5)) }, lp())
-            card.addView(codeRow, lp().apply { bottomMargin = dp(10) })
-            card.addView(text(cloudAccount.inlineStatus, 12f, muted), lp().apply { bottomMargin = dp(10) })
+            }), lp(-2, dp(if (compactCard) 40 else 48)))
+            card.addView(text("验证码", if (compactCard) 11f else 12f, muted).apply { setPadding(dp(4), 0, 0, dp(if (compactCard) 2 else 5)) }, lp())
+            card.addView(codeRow, lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
+            card.addView(text(cloudAccount.inlineStatus, if (compactCard) 11f else 12f, muted), lp().apply { bottomMargin = dp(if (compactCard) 5 else 10) })
             card.addView(button(if (cloudAccount.inlineBusy) "请稍候…" else "登录", onClick = {
                 accountPhoneValue = accountPhoneInput?.text?.toString().orEmpty()
                 accountCodeValue = accountCodeInput?.text?.toString().orEmpty()
                 cloudAccount.verifyPhoneCodeInline(accountCodeValue)
-            }), lp(-1, dp(46)))
-            card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
+            }), lp(-1, dp(if (compactCard) 40 else 46)))
+            if (!compactCard) card.addView(text("未注册的手机号可能会自动创建账号；验证码由官方平台发送。", 11f, muted).apply {
                 setPadding(0, dp(10), 0, 0)
             }, lp())
         }
 
-        val modeRow = row().apply { gravity = Gravity.CENTER; setPadding(0, dp(16), 0, 0) }
+        val modeRow = row().apply { gravity = Gravity.CENTER; setPadding(0, dp(if (compactCard) 7 else 16), 0, 0) }
         addButton(modeRow, "二维码登录", accountLoginMode == 0) {
             accountLoginMode = 0
             renderAccountContent(host)
