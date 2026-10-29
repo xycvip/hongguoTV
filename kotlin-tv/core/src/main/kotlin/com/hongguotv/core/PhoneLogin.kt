@@ -133,13 +133,11 @@ class PhoneLogin(private val http: OkHttpClient) {
                 ),
             )
             val pollCode = errorCode(reply)
-            // 1045 means the carrier/platform has not confirmed the SMS yet.
-            // 1066 is also observed immediately after a successful handset send on some
-            // routes; do not destroy the challenge on the first response. Keep polling
-            // within this confirmation window before reporting a final failure.
-            if (pollCode == 1045 || pollCode == 1066) {
-                lastDescription = describe(reply.optJSONObject("data") ?: JSONObject())
-                    ?: if (pollCode == 1066) "平台暂时返回验证状态异常（1066），继续等待确认" else lastDescription
+            // 1045 is the platform's "not confirmed yet" response, so it is safe to poll.
+            // Do not treat 1066 as pending: repeated 1066 responses previously caused a
+            // pointless 90-second spinner without producing a verification ticket.
+            if (pollCode == 1045) {
+                lastDescription = describe(reply.optJSONObject("data") ?: JSONObject()) ?: lastDescription
                 val remaining = confirmationDeadline - System.currentTimeMillis()
                 if (remaining > 0L) Thread.sleep(minOf(3000L, remaining))
                 continue
