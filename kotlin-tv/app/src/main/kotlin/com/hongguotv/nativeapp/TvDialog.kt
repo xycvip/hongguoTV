@@ -97,7 +97,7 @@ object TvDialog {
     }
 
     /** 勾选列表适配器：单选/多选弹窗通用，文字与勾选标记颜色跟随主题。 */
-    fun choiceAdapter(activity: Activity, labels: List<String>, multiple: Boolean = false): android.widget.ArrayAdapter<String> {
+    fun choiceAdapter(activity: Activity, labels: List<String>, multiple: Boolean = false, selectedIndex: Int = -1, checkedStates: BooleanArray? = null): android.widget.ArrayAdapter<String> {
         val attr = if(multiple) android.R.attr.listChoiceIndicatorMultiple else android.R.attr.listChoiceIndicatorSingle
         val styled = activity.obtainStyledAttributes(intArrayOf(attr))
         val checkMark = styled.getDrawable(0)
@@ -114,10 +114,11 @@ object TvDialog {
                 view.text = getItem(position)
                 view.setTextColor(TvStyle.text)
                 // 视图复用时必须显式从 ListView 同步勾选状态，否则焦点移动触发重新绑定后勾选显示会丢失
-                (parent as? android.widget.AbsListView)?.let { listView ->
-                    if (listView.choiceMode != android.widget.AbsListView.CHOICE_MODE_NONE) {
-                        view.isChecked = listView.isItemChecked(position)
-                    }
+                // 勾选只反映实际选择状态，不读取焦点/列表临时选择，避免遥控器移动时出现假勾。
+                view.isChecked = when {
+                    multiple && checkedStates != null -> checkedStates.getOrNull(position) == true
+                    !multiple && selectedIndex >= 0 -> position == selectedIndex
+                    else -> (parent as? android.widget.AbsListView)?.isItemChecked(position) == true
                 }
                 return view
             }
