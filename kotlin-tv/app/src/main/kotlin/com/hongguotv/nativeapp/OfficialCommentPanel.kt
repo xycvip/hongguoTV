@@ -122,6 +122,7 @@ internal class OfficialCommentPanel(
         countLabel.text = "《$title》· 第 $episodeNumber 集评论"
         currentItems = emptyList()
         currentReplies = emptyMap()
+        hasMore = false
         clearDraft()
         input.hint = "说说你的看法……"
         statusLabel.text = "正在加载评论…"
@@ -130,7 +131,7 @@ internal class OfficialCommentPanel(
 
     fun setPage(page: OfficialCommentPage, append: Boolean, replies: Map<String, List<OfficialComment>> = currentReplies) {
         loading = false
-        currentItems = if (append) currentItems + page.items else page.items
+        currentItems = (if (append) currentItems + page.items else page.items).distinctBy { it.id }
         currentReplies = replies
         hasMore = page.hasMore
         statusLabel.text = if (currentItems.isEmpty()) "暂无评论" else "共 ${page.total} 条评论"
