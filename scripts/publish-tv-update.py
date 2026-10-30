@@ -49,11 +49,24 @@ def translate_note(line):
     }
     if normalized in translations:
         return translations[normalized]
+
+    # Recognize important user-facing features even when commit wording varies.
+    if re.search(r"official.{0,20}comment|comment.{0,20}panel|comment.{0,20}feature", normalized):
+        return "新增官方评论功能"
+    if re.search(r"comment.{0,20}repl|repl.{0,20}comment", normalized):
+        return "支持评论回复"
+    if re.search(r"comment.{0,20}lik|lik.{0,20}comment", normalized):
+        return "支持评论点赞"
+    if re.search(r"send.{0,20}comment|post.{0,20}comment", normalized):
+        return "支持发表评论"
+
     # Chinese commit subjects are already suitable for display.
     if re.search(r"[\u4e00-\u9fff]", original):
         return original
-    # Avoid exposing untranslated English commit subjects to users.
-    return "其他功能优化（详情见本次版本提交记录）"
+
+    # Never collapse unrelated English commits into one generic bullet.
+    # Preserve unknown subjects so no feature silently disappears from release notes.
+    return original
 
 
 def translate_notes(notes_text):
