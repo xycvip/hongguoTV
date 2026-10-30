@@ -141,6 +141,9 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     val accountLabel
         get() = profile?.nickname ?: if (signedIn) "红果账号" else "未登录"
 
+    val accountAvatarUrl
+        get() = profile?.avatarUrl.orEmpty()
+
     val historyStatus
         get() = status
 
