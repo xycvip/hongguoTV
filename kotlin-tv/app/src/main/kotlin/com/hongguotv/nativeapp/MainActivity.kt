@@ -68,6 +68,7 @@ class MainActivity: Activity() {
     private var randomDialog: AlertDialog?=null
     private var exitDialog: AlertDialog?=null
     private var killOnDestroy=false
+    private var resettingAllData=false
     private val danmakuRepo=DanmakuRepository(repository.http)
     private val networkCleanup=Executors.newSingleThreadExecutor()
     private val prefetchWorker=Executors.newSingleThreadExecutor()
@@ -1917,6 +1918,8 @@ class MainActivity: Activity() {
             val bytes=cacheBytes()
             main.post { if(!isDestroyed) clearCache.text=cacheLabel(bytes) }
         }
+        lateinit var resetButton: TextView
+        resetButton=setting(device,"重置软件") { showResetOptions(resetButton) }
         lateinit var aboutButton: TextView
         aboutButton=setting(device,"关于软件  ·  v${BuildConfig.VERSION_NAME}") {
             updater.show(aboutButton, aboutMode = true)
@@ -1927,7 +1930,7 @@ class MainActivity: Activity() {
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings)
-            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,aboutButton)
+            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,resetButton,aboutButton)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
@@ -3876,16 +3879,117 @@ class MainActivity: Activity() {
             if(screen=="player") syncMediaSession()
         } else libraryLoadError?.let(::showLibraryError)
     }
+    private fun showResetOptions(anchor: View) {
+        val content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        content.addView(TvDialog.title(this,"重置软件"))
+        content.addView(TvDialog.body(this,"选择一种重置方式。恢复设置不会动你的个人记录；清除所有数据则会让应用回到首次使用状态。"))
+        fun option(title:String,description:String,onClick:()->Unit): LinearLayout =
+            LinearLayout(this).apply {
+                orientation=LinearLayout.VERTICAL
+                isFocusable=true; isClickable=true
+                setPadding(dp(16),dp(13),dp(16),dp(13))
+                background=rounded(surface,TvStyle.outline)
+                setOnFocusChangeListener { _,focused -> background=rounded(if(focused) TvStyle.raised else surface,if(focused) accent else TvStyle.outline) }
+                setOnClickListener { onClick() }
+                addView(text(title,16f).apply { setTypeface(null,Typeface.BOLD); setTextColor(white) })
+                addView(text(description,13f,muted).apply { setPadding(0,dp(5),0,0) })
+            }
+        val settingsOption=option("恢复软件设置","恢复播放、弹幕、界面和遥控器默认值；保留观看记录、收藏、稍后看及片源配置。") {
+            TvDialog.confirm(this,"恢复软件设置","将恢复默认播放与界面设置。观看记录、收藏、稍后看、片源配置和账号信息都会保留。") {
+                library.resetSettings()
+                getSharedPreferences("playback-extras-v1",MODE_PRIVATE).edit().clear().apply()
+                getSharedPreferences("third-sources-v1",MODE_PRIVATE).edit()
+                    .remove("playbackSpeed").remove("resizeMode").remove("skipMarks")
+                    .remove("searchAllSources").remove("probeCache").apply()
+                getSharedPreferences("startup_playback",MODE_PRIVATE).edit().clear().apply()
+                getSharedPreferences("app_updates",MODE_PRIVATE).edit().clear().apply()
+                getSharedPreferences("random_pool",MODE_PRIVATE).edit().clear().apply()
+                TvStyle.apply(library.theme)
+                settingsFocusKey="重置软件"
+                showCatalog()
+                Toast.makeText(this,"软件设置已恢复默认，个人记录已保留",Toast.LENGTH_LONG).show()
+            }.show()
+        }
+        val allOption=option("清除所有数据","清空账号、本机设置、观看记录、收藏、片源和缓存，重新启动后相当于首次使用。") {
+            TvDialog.confirm(this,"清除所有数据","此操作不可撤销！本机登录信息、观看记录、收藏、稍后看、片源配置及所有设置都会被清除。已导出的备份文件不受影响。确定继续吗？") {
+                clearAllLocalData()
+            }.show()
+        }
+        val buttons=LinearLayout(this).apply { gravity=Gravity.END; setPadding(0,dp(14),0,0) }
+        val cancel=TvDialog.capsuleButton(this,"取消") {}
+        buttons.addView(cancel)
+        content.addView(settingsOption,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(10) })
+        content.addView(allOption,LinearLayout.LayoutParams(-1,-2))
+        content.addView(buttons)
+        val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
+        TvDialog.styleWindow(this,dialog,0.72f,720) { settingsOption.requestFocus() }
+        cancel.setOnClickListener { dialog.dismiss() }
+        dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
+        dialog.show()
+        settingsOption.post { if(dialog.isShowing) settingsOption.requestFocus() }
+    }
+
+    private fun clearAllLocalData() {
+        if(resettingAllData) return
+        resettingAllData=true
+        favoriteMonitor.stop()
+        updater.pause()
+        cancelWork(); cancelPrefetch()
+        player?.pause(); releasePlayer()
+        Toast.makeText(this,"正在清除本机数据…",Toast.LENGTH_SHORT).show()
+        io.execute {
+            val drained=runCatching { library.closeAndAwait(20) }.getOrDefault(false)
+            if(!drained) {
+                main.post {
+                    resettingAllData=false
+                    Toast.makeText(this,"本机记录仍在保存，暂未清除。请稍后再试。",Toast.LENGTH_LONG).show()
+                }
+                return@execute
+            }
+            runCatching {
+                databaseList().forEach { deleteDatabase(it) }
+                val appRoot=filesDir.parentFile
+                java.io.File(appRoot,"shared_prefs").listFiles()?.forEach { it.deleteRecursively() }
+                listOf(filesDir,cacheDir,codeCacheDir,noBackupFilesDir,externalCacheDir)
+                    .filterNotNull().forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
+                getExternalFilesDirs(null).filterNotNull().forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
+            }.onFailure { error ->
+                main.post {
+                    resettingAllData=false
+                    Toast.makeText(this,"清理未完成：${error.message ?: "存储访问失败"}",Toast.LENGTH_LONG).show()
+                }
+                return@execute
+            }
+            main.post {
+                val launch=packageManager.getLaunchIntentForPackage(packageName)
+                if(launch==null) {
+                    resettingAllData=false
+                    Toast.makeText(this,"数据已清除，请手动重新打开红果TV",Toast.LENGTH_LONG).show()
+                    finish()
+                    return@post
+                }
+                val pendingFlags=android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                    if(Build.VERSION.SDK_INT>=23) android.app.PendingIntent.FLAG_IMMUTABLE else 0
+                val pending=android.app.PendingIntent.getActivity(this,9917,
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),pendingFlags)
+                val alarm=getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                alarm.set(android.app.AlarmManager.ELAPSED_REALTIME,android.os.SystemClock.elapsedRealtime()+900,pending)
+                killOnDestroy=true
+                finishAffinity()
+            }
+        }
+    }
+
     override fun onPause() {
         updater.pause()
         foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession.deactivate()
         sleepTimer.cancel(); favoriteMonitor.stop(); detailAutoplay=false; requestedAutoplay=false; pausedForLifecycle=true
-        player?.pause(); saveProgress(); library.flush(); super.onPause()
+        player?.pause(); if(!resettingAllData) { saveProgress(); library.flush() }; super.onPause()
     }
     override fun onStop() {
         restoreStoppedPage=true; generation++; cancelWork(); tvTools.close()
-        if(screen=="player") { startPosition=currentPosition(); saveProgress(); releasePlayer() }
-        artwork.cancelPage(clearMemory=true); library.flush(); super.onStop()
+        if(screen=="player") { if(!resettingAllData) { startPosition=currentPosition(); saveProgress() }; releasePlayer() }
+        artwork.cancelPage(clearMemory=true); if(!resettingAllData) library.flush(); super.onStop()
     }
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
@@ -3895,7 +3999,7 @@ class MainActivity: Activity() {
     override fun onDestroy() {
         generation++; cancelWork()
         if(networkRegistered) connectivity.unregisterNetworkCallback(networkCallback)
-        favoriteMonitor.destroy(); tvTools.destroy(); updater.destroy(); saveProgress(); cloudAccount.destroy(); releasePlayer(); library.close()
+        favoriteMonitor.destroy(); tvTools.destroy(); updater.destroy(); if(!resettingAllData) saveProgress(); cloudAccount.destroy(); releasePlayer(); library.close()
         artwork.close(); releaseCatalogViews(); mediaSession.release(); main.removeCallbacksAndMessages(null)
         io.shutdownNow(); prefetchWorker.shutdownNow(); networkCleanup.shutdown()
         Thread({ repository.http.dispatcher.cancelAll(); repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown() },"hongguotv-network-cleanup").start()
