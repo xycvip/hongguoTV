@@ -1295,7 +1295,7 @@ class MainActivity: Activity() {
                     pendingRefreshFocus=null
                     root.post {
                         if(screen=="catalog" && tab==requestTab) {
-                            val target=if(restore.startsWith("rank:")) root.findViewWithTag<View>(restore) else homeRefreshControl
+                            val target=when { restore.startsWith("rank:") -> root.findViewWithTag<View>(restore); restore.startsWith("focus:") -> root.findViewWithTag<View>(restore.removePrefix("focus:")); else -> homeRefreshControl }
                             if(target?.isAttachedToWindow==true) target.requestFocus()
                         }
                     }
