@@ -144,6 +144,10 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     val accountAvatarUrl
         get() = profile?.avatarUrl.orEmpty()
 
+    /** Increments whenever account profile data is fetched, even when the avatar URL is unchanged. */
+    var accountProfileRevision = 0L
+        private set
+
     val historyStatus
         get() = status
 
@@ -462,6 +466,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private fun acceptAccount(next: AccountCredentials, account: CloudProfile, inline: Boolean = false) {
         credentials = next
         profile = account
+        accountProfileRevision++
         history = emptyList()
         historyLoaded = false
         favorites = FavoriteState()
@@ -765,6 +770,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
             { client.profile(account) to client.history(account) },
             { (user, rows) ->
                 profile = user
+                accountProfileRevision++
                 historyLoaded = true
                 history =
                     rows.distinctBy { it.series.id }.sortedByDescending { it.updatedAt }.take(50)
