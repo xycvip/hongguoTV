@@ -3179,7 +3179,7 @@ class MainActivity: Activity() {
         val play=addButton(transport,if(player?.playWhenReady==true) "暂停" else "播放") { togglePlayback() }.also { transportPlay=it }
         addButton(transport,"上一集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
         addButton(transport,"下一集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
-        val commentButton=addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag("player:comments")) }.apply { tag="player:comments" }
+        addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
         lateinit var more: TextView
