@@ -177,4 +177,17 @@ with open(json_path, "r", encoding="utf-8") as manifest_file:
     manifest_text = manifest_file.read() + "\n"
 upload_text(f"{DISTRIBUTION_DIRECTORY}/latest.json", manifest_text,
             f"更新红果TV {VERSION_NAME} 版本信息")
+
+# Keep the directory README in sync with the versioned APK filename and manifest.
+readme_text = f"""# 红果 TV 分发目录
+
+当前版本：**{VERSION_NAME}**
+
+- APK 安装包：[下载 {DISTRIBUTION_APK_NAME}](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME})
+- 应用内更新清单：[latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
+
+APK 文件名带版本号。每次成功发布后，工作流会自动更新本说明、APK 和 latest.json。
+"""
+upload_text(f"{DISTRIBUTION_DIRECTORY}/README.md", readme_text,
+            f"更新红果TV {VERSION_NAME} 下载说明")
 print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}")
