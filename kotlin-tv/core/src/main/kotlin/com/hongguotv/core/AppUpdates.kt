@@ -12,7 +12,8 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk: Int,
-                     val tag: String, val fileName: String, val size: Long, val sha256: String, val notes: String) {
+                     val tag: String, val fileName: String, val size: Long, val sha256: String, val notes: String,
+                     val downloadUrl: String) {
     fun newerThan(installed: Long, sdk: Int) = versionCode > installed && minSdk <= sdk
     companion object {
         const val REPOSITORY = "xycvip/hongguoTV"
@@ -46,18 +47,19 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             require(o.getInt("schema") == 1 && o.getString("packageName") == "com.x.hongguotv") { "更新信息不匹配" }
             val apk = o.getJSONObject("apk")
             val update = AppUpdate(o.getLong("versionCode"), o.getString("versionName"), o.getInt("minSdk"),
-                o.getString("tag"), apk.getString("name"), apk.getLong("size"), apk.getString("sha256").lowercase(), o.optString("notes").take(1500))
+                o.getString("tag"), apk.getString("name"), apk.getLong("size"), apk.getString("sha256").lowercase(), o.optString("notes").take(1500),
+                apk.optString("url", "$DOWNLOAD_REPOSITORY/${apk.getString("name")}"))
             require(update.versionCode in 1..Int.MAX_VALUE.toLong() && update.minSdk in 26..100)
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
             require(update.tag.matches(Regex("kotlin-v[0-9][0-9A-Za-z.+-]{0,80}")))
+            require(update.downloadUrl.startsWith("https://github.com/xycvip/AppDownload/releases/download/hongguotv-v"))
+            require(update.downloadUrl.endsWith("/${update.fileName}"))
             // Keep this in sync with scripts/publish-tv-update.py: HongguoTV-<version>.apk
             require(update.fileName.matches(Regex("HongguoTV-[0-9][0-9A-Za-z.+-]{0,80}\\.apk")))
             require(update.size in 1..MAX_APK_BYTES && update.sha256.matches(Regex("[0-9a-f]{64}")))
             return update
         }
     }
-    /** Original GitHub URL for this APK; [AppUpdateRepository] will wrap it with mirrors. */
-    val downloadUrl get() = "$DOWNLOAD_REPOSITORY/$fileName"
 }
 
 /** Streaming validation also protects a cached APK from partial downloads and stale metadata. */
