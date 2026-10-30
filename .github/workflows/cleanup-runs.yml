@@ -1,0 +1,129 @@
+name: 清理全部历史 Actions 记录
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: cleanup-workflow-runs
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 批量删除历史运行记录
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const currentRunId = context.runId;
+
+            core.info('正在读取仓库全部 Actions 运行记录……');
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRunsForRepo,
+              { owner, repo, per_page: 100 }
+            );
+
+            core.info(`共找到 ${runs.length} 条运行记录；本次清理工作流自身（${currentRunId}）会保留。`);
+
+            const targets = runs.filter(run => run.id !== currentRunId);
+            let deleted = 0;
+            let failed = 0;
+            const active = targets.filter(run => run.status !== 'completed');
+
+            for (const run of active) {
+              try {
+                await github.rest.actions.cancelWorkflowRun({ owner, repo, run_id: run.id });
+                core.info(`已请求取消运行记录：${run.id}`);
+              } catch (error) {
+                core.warning(`取消失败 ${run.id}：${error.message}`);
+              }
+            }
+
+            const deadline = Date.now() + 90_000;
+            let pending = active.map(run => run.id);
+            while (pending.length && Date.now() < deadline) {
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              const stillPending = [];
+              for (const id of pending) {
+                try {
+                  const response = await github.rest.actions.getWorkflowRun({ owner, repo, run_id: id });
+                  if (response.data.status !== 'completed') stillPending.push(id);
+                } catch (error) {
+                  if (error.status !== 404) stillPending.push(id);
+                }
+              }
+              pending = stillPending;
+            }
+
+            const completedTargets = targets.filter(run =>
+              run.status === 'completed' || !pending.includes(run.id)
+            );
+
+            for (const run of completedTargets) {
+              try {
+                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
+                deleted++;
+                core.info(`已删除运行记录：${run.id}（${run.name}）`);
+              } catch (error) {
+                failed++;
+                core.warning(`删除失败 ${run.id}：${error.message}`);
+              }
+            }
+
+            core.info(`清理结束：成功删除 ${deleted} 条，失败 ${failed} 条，仍未结束而跳过 ${pending.length} 条。`);
+            core.notice('本次清理工作流自身的运行记录无法在运行过程中删除，会保留这一条。');
+            if (failed > 0 || pending.length > 0) {
+              core.setFailed('部分运行记录未能删除，请查看上方日志后重新运行清理工作流。');
+            }
+
+            core.info('正在读取仓库全部 Tag……');
+            const tags = await github.paginate(
+              github.rest.repos.listTags,
+              { owner, repo, per_page: 100 }
+            );
+
+            if (tags.length > 1) {
+              const datedTags = [];
+              for (const tag of tags) {
+                try {
+                  const commit = await github.rest.repos.getCommit({ owner, repo, ref: tag.commit.sha });
+                  const date = commit.data.commit.committer?.date ||
+                               commit.data.commit.author?.date ||
+                               '1970-01-01T00:00:00Z';
+                  datedTags.push({ name: tag.name, sha: tag.commit.sha, date });
+                } catch (error) {
+                  core.warning(`无法读取 Tag ${tag.name} 的提交时间：${error.message}`);
+                }
+              }
+
+              datedTags.sort((a, b) => new Date(b.date) - new Date(a.date));
+              if (datedTags.length) {
+                const newest = datedTags[0];
+                core.info(`保留最新 Tag：${newest.name}（${newest.date}）`);
+
+                let tagDeleted = 0;
+                let tagFailed = 0;
+                for (const tag of datedTags.slice(1)) {
+                  try {
+                    await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag.name}` });
+                    tagDeleted++;
+                    core.info(`已删除旧 Tag：${tag.name}`);
+                  } catch (error) {
+                    tagFailed++;
+                    core.warning(`删除 Tag 失败 ${tag.name}：${error.message}`);
+                  }
+                }
+                core.info(`Tag 清理结束：保留 1 个，删除 ${tagDeleted} 个，失败 ${tagFailed} 个。`);
+                if (tagFailed > 0) core.setFailed('部分历史 Tag 未能删除，请查看日志。');
+              } else {
+                core.warning('没有成功读取任何 Tag 的提交时间，未删除 Tag。');
+              }
+            } else {
+              core.info(`仓库当前只有 ${tags.length} 个 Tag，无需清理。`);
+            }
