@@ -3378,13 +3378,11 @@ class MainActivity: Activity() {
             cloudAccount.refreshReservations()
             Toast.makeText(this, "正在刷新云端数据…", Toast.LENGTH_SHORT).show()
         }.apply { tag = "account:refresh" }
-        addButton(actions, "退出登录").apply { tag = "account:logout" }.also { logoutButton ->
-            logoutButton.setOnClickListener {
-                accountSection = 0
-                accountQrAutoStarted = false
-                cloudAccount.logoutInline()
-            }
-        }
+        addButton(actions, "退出登录") {
+            accountSection = 0
+            accountQrAutoStarted = false
+            cloudAccount.logoutInline()
+        }.apply { tag = "account:logout" }
         page.addView(actions, lp(-1, -2))
 
         val tabs = row().apply {
@@ -3427,6 +3425,7 @@ class MainActivity: Activity() {
                 val (series, subtitle, click) = entry
                 val key = "$shelfKey:${series.id}"
                 val card = column().apply {
+                    id = View.generateViewId()
                     tag = key
                     isFocusable = true
                     isFocusableInTouchMode = true
@@ -3527,11 +3526,13 @@ class MainActivity: Activity() {
             ?: "account:tab:$accountSection"
         host.post {
             if (tab != 6 || screen != "catalog" || host.parent == null) return@post
-            val target = host.findViewWithTag<View>(restoreTag)
-                ?: host.findViewWithTag<View>("account:tab:$accountSection")
-                ?: host.findViewWithTag<View>("account:refresh")
-            target?.requestFocus()
-            scroll.post { scroll.scrollTo(0, previousScrollY.coerceAtMost((page.height - scroll.height).coerceAtLeast(0))) }
+            scroll.post {
+                scroll.scrollTo(0, previousScrollY.coerceAtMost((page.height - scroll.height).coerceAtLeast(0)))
+                val target = host.findViewWithTag<View>(restoreTag)
+                    ?: host.findViewWithTag<View>("account:tab:$accountSection")
+                    ?: host.findViewWithTag<View>("account:refresh")
+                target?.requestFocus()
+            }
         }
     }
 
