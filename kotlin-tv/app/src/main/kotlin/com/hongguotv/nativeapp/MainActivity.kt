@@ -276,6 +276,12 @@ class MainActivity: Activity() {
     private lateinit var progressBar: ProgressBar
     private lateinit var controls: LinearLayout
     private var panel=false
+    private var touchTracking=false
+    private var touchStartX=0f
+    private var touchStartY=0f
+    private var touchSeekStart=0L
+    private var touchSeekTarget: Long?=null
+    private var touchSeekGesture=false
     private var transportPlay: TextView?=null
     private var sleepButton: TextView?=null
     private var speedDialog: AlertDialog?=null
@@ -1864,7 +1870,7 @@ class MainActivity: Activity() {
         lateinit var blockedWords: TextView
         blockedWords=setting(playback,"弹幕屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         lateinit var keySettings: TextView
-        keySettings=setting(playback,"遥控器按键  ·  快进 ${extras.seekStepSeconds} 秒") { showKeySettings(keySettings) }
+        keySettings=setting(playback,"遥控器按键自定义") { showKeySettings(keySettings) }
         syncDanmakuRows()
 
         lateinit var themeButton: TextView
@@ -1928,7 +1934,7 @@ class MainActivity: Activity() {
         lateinit var resetButton: TextView
         resetButton=setting(device,"重置软件") { showResetOptions(resetButton) }
         lateinit var aboutButton: TextView
-        aboutButton=setting(device,"关于软件  ·  v${BuildConfig.VERSION_NAME}") {
+        aboutButton=setting(device,"关于软件") {
             updater.show(aboutButton, aboutMode = true)
         }
         // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
@@ -3116,45 +3122,51 @@ class MainActivity: Activity() {
         dialog.show(); buttons.first().requestFocus()
     }
 
-    /** 遥控器按键：就地循环切换取值，避免多层弹窗来回跳焦点。 */
+    /** 仅自定义播放页的上、下、确认和菜单键；左右键固定用于快退/快进。 */
     private fun showKeySettings(anchor: TextView) {
         val content=column()
-        fun sync(anchorText: TextView) { anchorText.text="遥控器按键  ·  快进 ${extras.seekStepSeconds} 秒" }
-        lateinit var step: TextView
-        step=button("快进步长  ·  ${extras.seekStepSeconds} 秒") {
-            val options=PlaybackExtras.SEEK_STEPS
-            extras.seekStepSeconds=options[(options.indexOf(extras.seekStepSeconds)+1)%options.size]
-            step.text="快进步长  ·  ${extras.seekStepSeconds} 秒"; sync(anchor)
-        }
-        lateinit var speed: TextView
-        speed=button("长按快进  ·  ${PlaybackExtras.FAST_SPEEDS.first { it==extras.longPressSpeed }.toInt()}×") {
-            val options=PlaybackExtras.FAST_SPEEDS
-            extras.longPressSpeed=options[(options.indexOf(extras.longPressSpeed)+1)%options.size]
-            speed.text="长按快进  ·  ${extras.longPressSpeed.toInt()}×"
-        }
-        fun menuLabel()=when(extras.menuKeyAction) {
-            PlaybackExtras.MENU_EPISODES -> "选集"
-            PlaybackExtras.MENU_DANMAKU -> "弹幕开关"
-            else -> "播放设置"
-        }
-        lateinit var menu: TextView
-        menu=button("菜单键  ·  ${menuLabel()}") {
-            extras.menuKeyAction=when(extras.menuKeyAction) {
-                PlaybackExtras.MENU_EPISODES -> PlaybackExtras.MENU_DANMAKU
-                PlaybackExtras.MENU_DANMAKU -> PlaybackExtras.MENU_PANEL
-                else -> PlaybackExtras.MENU_EPISODES
+        content.addView(text("选择按键后设置对应功能，四个按键可以绑定相同功能。",13f,muted).apply {
+            setPadding(dp(4),dp(2),dp(4),dp(12))
+        })
+        val values=listOf(
+            PlaybackExtras.REMOTE_PREVIOUS,
+            PlaybackExtras.REMOTE_NEXT,
+            PlaybackExtras.REMOTE_MENU,
+            PlaybackExtras.REMOTE_COMMENTS,
+            PlaybackExtras.REMOTE_PLAY_PAUSE,
+            PlaybackExtras.REMOTE_EPISODES,
+            PlaybackExtras.REMOTE_NONE
+        )
+        val labels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","无")
+        fun labelFor(value: String)=labels.getOrNull(values.indexOf(value)) ?: "无"
+        val rows=mutableListOf<TextView>()
+        fun addKey(title: String, current: ()->String, update: (String)->Unit) {
+            lateinit var row: TextView
+            fun sync() { row.text="$title  ·  ${labelFor(current())}" }
+            row=button("$title  ·  ${labelFor(current())}") {
+                TvDialog.choose(this,"${title}功能",labels,{ index ->
+                    update(values[index])
+                    sync()
+                    anchor.text="遥控器按键自定义"
+                    row.requestFocus()
+                }).show()
             }
-            menu.text="菜单键  ·  ${menuLabel()}"
+            rows+=row
+            content.addView(row,lp(-1,dp(48)).apply { bottomMargin=dp(8) })
         }
-        listOf(step,speed,menu).forEachIndexed { index,view ->
-            content.addView(view,lp(-1,dp(48)).apply { bottomMargin=dp(8) })
-            view.nextFocusDownId=listOf(step,speed,menu).getOrNull(index+1)?.id ?: View.NO_ID
-            view.nextFocusUpId=listOf(step,speed,menu).getOrNull(index-1)?.id ?: View.NO_ID
+        addKey("上方向键",{ extras.remoteUpAction },{ extras.remoteUpAction=it })
+        addKey("下方向键",{ extras.remoteDownAction },{ extras.remoteDownAction=it })
+        addKey("确认键",{ extras.remoteConfirmAction },{ extras.remoteConfirmAction=it })
+        addKey("菜单键",{ extras.remoteMenuAction },{ extras.remoteMenuAction=it })
+        rows.forEachIndexed { index, view ->
+            view.nextFocusDownId=rows.getOrNull(index+1)?.id ?: View.NO_ID
+            view.nextFocusUpId=rows.getOrNull(index-1)?.id ?: View.NO_ID
         }
         val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
         TvDialog.styleWindow(this,dialog)
         dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
-        dialog.show(); step.requestFocus()
+        dialog.show()
+        rows.firstOrNull()?.requestFocus()
     }
     private fun seek(direction: Int,repeat: Int) {
         val p=player ?: return; if(!playbackReady) return
@@ -3393,8 +3405,14 @@ class MainActivity: Activity() {
         }, avatarLoader={ image, url -> artwork.load(image,url,ArtworkLoader.PRIORITY_VISIBLE,dp(34),dp(34)) })
         commentPanel=view
         val screenWidth=resources.displayMetrics.widthPixels
-        val width=(screenWidth*.42f).toInt().coerceAtLeast(dp(320)).coerceAtMost((screenWidth*.62f).toInt().coerceAtLeast(1))
-        root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END))
+        val screenHeight=resources.displayMetrics.heightPixels
+        // 竖屏视频按 9:16 居中显示；评论面板只占右侧留白，绝不压住视频画面。
+        val portraitVideoWidth=(screenHeight*9f/16f).toInt().coerceAtMost(screenWidth)
+        val rightSpace=((screenWidth-portraitVideoWidth)/2).coerceAtLeast(0)
+        val rightMargin=dp(18)
+        val videoGap=dp(24)
+        val width=minOf(dp(520),(rightSpace-rightMargin-videoGap).coerceAtLeast(dp(1)))
+        root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END).apply { this.rightMargin=rightMargin })
         view.translationX=width.toFloat()
         view.animate().translationX(0f).setDuration(220).start()
         view.setEpisode(data.series.title,episodeIndex+1)
@@ -3529,7 +3547,12 @@ class MainActivity: Activity() {
     }
     private fun requireOfficialCommentLogin() {
         closeOfficialComments()
-        cloudAccount.show()
+        TvDialog.confirm(
+            this,
+            "需要登录",
+            "登录红果账号后即可发表评论、回复和点赞。是否现在登录？",
+            action = { cloudAccount.show() }
+        ).show()
     }
     private fun releasePlayer() {
         commentGeneration++
@@ -3985,8 +4008,84 @@ class MainActivity: Activity() {
             else -> if(tab==6) { switchTab(0); nav.getOrNull(0)?.requestFocus() } else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
     }
+    /** 手机触屏：轻触唤起播放信息与进度条，左右滑动按比例快退/快进。 */
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val canHandlePlaybackTouch = screen=="player" &&
+            ::controls.isInitialized && controls.visibility!=View.VISIBLE &&
+            commentPanel==null && episodePanel==null && !playError
+        if(!canHandlePlaybackTouch) {
+            if(event.actionMasked==MotionEvent.ACTION_UP || event.actionMasked==MotionEvent.ACTION_CANCEL) {
+                touchTracking=false
+                touchSeekGesture=false
+                touchSeekTarget=null
+            }
+            return super.dispatchTouchEvent(event)
+        }
+        when(event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchTracking=true
+                touchStartX=event.x
+                touchStartY=event.y
+                touchSeekStart=currentPosition()
+                touchSeekTarget=null
+                touchSeekGesture=false
+            }
+            MotionEvent.ACTION_MOVE -> if(touchTracking) {
+                val dx=event.x-touchStartX
+                val dy=event.y-touchStartY
+                if(!touchSeekGesture && kotlin.math.abs(dx)>dp(24) && kotlin.math.abs(dx)>kotlin.math.abs(dy)*1.2f) {
+                    touchSeekGesture=true
+                }
+                if(touchSeekGesture) {
+                    val duration=player?.duration?.coerceAtLeast(0) ?: 0L
+                    if(duration>0L) {
+                        main.removeCallbacks(seekRunnable)
+                        val maxDelta=minOf(duration,180_000L)
+                        val fraction=(dx/resources.displayMetrics.widthPixels.toFloat().coerceAtLeast(1f)).coerceIn(-1f,1f)
+                        val target=(touchSeekStart+(fraction*maxDelta).toLong())
+                            .coerceIn(0L,(duration-500L).coerceAtLeast(0L))
+                        touchSeekTarget=target
+                        pendingSeek=target
+                        showHud()
+                        updatePlaybackText()
+                        return true
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP -> if(touchTracking) {
+                touchTracking=false
+                if(touchSeekGesture) {
+                    val target=touchSeekTarget ?: pendingSeek
+                    touchSeekGesture=false
+                    touchSeekTarget=null
+                    if(target!=null) seekTo(target) else showHud()
+                    return true
+                }
+                showHud()
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                touchTracking=false
+                touchSeekGesture=false
+                touchSeekTarget=null
+                pendingSeek=null
+            }
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBack()
+    private fun performRemoteAction(action: String) {
+        when(action) {
+            PlaybackExtras.REMOTE_PREVIOUS -> skipEpisode(-1)
+            PlaybackExtras.REMOTE_NEXT -> skipEpisode(1)
+            PlaybackExtras.REMOTE_MENU -> showPanel()
+            PlaybackExtras.REMOTE_COMMENTS -> openOfficialComments(null)
+            PlaybackExtras.REMOTE_PLAY_PAUSE -> togglePlayback()
+            PlaybackExtras.REMOTE_EPISODES -> showEpisodePanel(hud)
+            PlaybackExtras.REMOTE_NONE -> Unit
+        }
+    }
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if(screen=="player") {
             val key=event.keyCode
@@ -4007,23 +4106,31 @@ class MainActivity: Activity() {
                 }
                 return true
             }
-            if(commentPanel!=null) return super.dispatchKeyEvent(event)
+            // 评论列表和播放控制条有自己的焦点/点击行为，不能再被全局快进、暂停逻辑截走。
+            if(commentPanel!=null || (::controls.isInitialized && controls.visibility==View.VISIBLE)) {
+                return super.dispatchKeyEvent(event)
+            }
             if(!panel) {
-                if(key in listOf(KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_MENU)) {
-                    if(key==KeyEvent.KEYCODE_DPAD_RIGHT && event.action==KeyEvent.ACTION_UP) { stopFastForward(); return true }
+                if(key in listOf(KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                    if(key==KeyEvent.KEYCODE_DPAD_RIGHT && event.action==KeyEvent.ACTION_UP) {
+                        stopFastForward()
+                        return true
+                    }
                     if(event.action==KeyEvent.ACTION_DOWN) when(key) {
                         KeyEvent.KEYCODE_DPAD_LEFT -> seek(-1,event.repeatCount)
                         KeyEvent.KEYCODE_DPAD_RIGHT -> if(event.repeatCount==0) seek(1,0) else startFastForward()
-                        KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER -> if(event.repeatCount==0) togglePlayback()
-                        KeyEvent.KEYCODE_DPAD_DOWN -> if(event.repeatCount==0) showEpisodePanel(hud)
-                        KeyEvent.KEYCODE_MENU -> if(event.repeatCount==0) when(extras.menuKeyAction) {
-                            PlaybackExtras.MENU_EPISODES -> showEpisodePanel(hud)
-                            PlaybackExtras.MENU_DANMAKU -> detail?.series?.id?.let { toggleSeriesDanmaku(it) }
-                            else -> showPanel()
-                        }
-                        KeyEvent.KEYCODE_DPAD_UP -> if(event.repeatCount==0) showPanel()
-                        else -> showHud()
                     }
+                    return true
+                }
+                val action=when(key) {
+                    KeyEvent.KEYCODE_DPAD_UP -> extras.remoteUpAction
+                    KeyEvent.KEYCODE_DPAD_DOWN -> extras.remoteDownAction
+                    KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER -> extras.remoteConfirmAction
+                    KeyEvent.KEYCODE_MENU -> extras.remoteMenuAction
+                    else -> null
+                }
+                if(action!=null) {
+                    if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) performRemoteAction(action)
                     return true
                 }
             }

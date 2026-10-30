@@ -44,6 +44,25 @@ class PlaybackExtras(context: Context) {
         get() = prefs.getString(KEY_MENU, MENU_PANEL)?.takeIf { it in listOf(MENU_PANEL, MENU_EPISODES, MENU_DANMAKU) } ?: MENU_PANEL
         set(value) { prefs.edit().putString(KEY_MENU, value).apply() }
 
+    private fun remoteAction(key: String, fallback: String) =
+        prefs.getString(key, fallback)?.takeIf { it in REMOTE_ACTIONS } ?: fallback
+
+    var remoteUpAction: String
+        get() = remoteAction(KEY_REMOTE_UP, REMOTE_MENU)
+        set(value) { prefs.edit().putString(KEY_REMOTE_UP, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
+
+    var remoteDownAction: String
+        get() = remoteAction(KEY_REMOTE_DOWN, REMOTE_EPISODES)
+        set(value) { prefs.edit().putString(KEY_REMOTE_DOWN, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
+
+    var remoteConfirmAction: String
+        get() = remoteAction(KEY_REMOTE_CONFIRM, REMOTE_PLAY_PAUSE)
+        set(value) { prefs.edit().putString(KEY_REMOTE_CONFIRM, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
+
+    var remoteMenuAction: String
+        get() = remoteAction(KEY_REMOTE_MENU, REMOTE_MENU)
+        set(value) { prefs.edit().putString(KEY_REMOTE_MENU, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
+
     companion object {
         private const val PREFS = "playback-extras-v1"
         private const val KEY_BLOCKED = "blockedWords"
@@ -52,6 +71,21 @@ class PlaybackExtras(context: Context) {
         private const val KEY_SEEK_STEP = "seekStepSeconds"
         private const val KEY_FAST_SPEED = "longPressSpeed"
         private const val KEY_MENU = "menuKeyAction"
+        private const val KEY_REMOTE_UP = "remoteUpAction"
+        private const val KEY_REMOTE_DOWN = "remoteDownAction"
+        private const val KEY_REMOTE_CONFIRM = "remoteConfirmAction"
+        private const val KEY_REMOTE_MENU = "remoteMenuAction"
+        const val REMOTE_PREVIOUS = "previous"
+        const val REMOTE_NEXT = "next"
+        const val REMOTE_MENU = "menu"
+        const val REMOTE_COMMENTS = "comments"
+        const val REMOTE_PLAY_PAUSE = "play_pause"
+        const val REMOTE_EPISODES = "episodes"
+        const val REMOTE_NONE = "none"
+        private val REMOTE_ACTIONS = listOf(
+            REMOTE_PREVIOUS, REMOTE_NEXT, REMOTE_MENU, REMOTE_COMMENTS,
+            REMOTE_PLAY_PAUSE, REMOTE_EPISODES, REMOTE_NONE
+        )
         val SEEK_STEPS = listOf(10, 15, 30, 60)
         val FAST_SPEEDS = listOf(2f, 3f, 4f)
         const val MENU_PANEL = "panel"

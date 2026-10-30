@@ -108,7 +108,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         if (updatePending) promptedThisSession = true
         val dp = activity.resources.displayMetrics.density
         val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding((24*dp).toInt(), (12*dp).toInt(), (24*dp).toInt(), 0) }
-        body.addView(TvDialog.title(activity, if (aboutMode) "关于软件 · ${BuildConfig.VERSION_NAME}" else "版本与更新 · ${BuildConfig.VERSION_NAME}"))
+        body.addView(TvDialog.title(activity, if (aboutMode) "关于软件" else "版本与更新 · ${BuildConfig.VERSION_NAME}"))
         statusView = TextView(activity).apply {
             text = status
             textSize = 17f
