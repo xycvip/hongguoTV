@@ -19,7 +19,6 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
         const val RELEASES = "https://github.com/$REPOSITORY/releases"
         const val DOWNLOAD_REPOSITORY = "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV"
         const val LATEST_MANIFEST = "$DOWNLOAD_REPOSITORY/latest.json"
-        const val LATEST_APK = "$DOWNLOAD_REPOSITORY/hongguoTV.apk"
         const val MAX_APK_BYTES = 80L * 1024 * 1024
         /**
          * Public GitHub is often slow or unreachable from mainland China home networks.
@@ -52,13 +51,13 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
             require(update.tag.matches(Regex("kotlin-v[0-9][0-9A-Za-z.+-]{0,80}")))
             // Keep this in sync with scripts/publish-tv-update.py: HongguoTV-<version>.apk
-            require(update.fileName == "hongguoTV.apk")
+            require(update.fileName.matches(Regex("HongguoTV-[0-9][0-9A-Za-z.+-]{0,80}\\.apk")))
             require(update.size in 1..MAX_APK_BYTES && update.sha256.matches(Regex("[0-9a-f]{64}")))
             return update
         }
     }
     /** Original GitHub URL for this APK; [AppUpdateRepository] will wrap it with mirrors. */
-    val downloadUrl get() = LATEST_APK
+    val downloadUrl get() = "$DOWNLOAD_REPOSITORY/$fileName"
 }
 
 /** Streaming validation also protects a cached APK from partial downloads and stale metadata. */
