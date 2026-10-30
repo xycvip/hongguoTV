@@ -1,4 +1,4 @@
-name: Prepare and publish safe custom updates
+name: Review upstream changes for custom
 
 on:
   workflow_run:
@@ -7,170 +7,91 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
+  contents: read
+  actions: read
 
 concurrency:
-  group: prepare-custom-update
+  group: review-upstream-for-custom
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  review:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout custom branch and fetch main
+        uses: actions/checkout@v4
         with:
           ref: custom
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure and fetch
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main custom
-          git checkout -B automation/upstream-update origin/custom
-
-      - name: Merge upstream into isolated candidate
-        run: git merge --no-edit origin/main
-
-      - name: Detect interface changes and protected custom behavior
-        id: classify
+      - name: Compare upstream changes without modifying custom
+        id: compare
         shell: bash
         run: |
           set -euo pipefail
+          git fetch origin main custom
           base="$(git merge-base origin/custom origin/main)"
-          git diff --name-only "$base"..origin/main > /tmp/upstream-files.txt
-          git diff --name-only origin/custom...HEAD > /tmp/merged-files.txt
-          : > api-change-report.md
-          echo "## Playback / search / recommendation interface scan" >> api-change-report.md
-          echo >> api-change-report.md
-          api_files="$(grep -Ei '(^|/)(ThirdCms|ThirdStore|VideoDataSource|Library|.*Api.*|.*Repository.*|.*Source.*|.*Player.*|.*Playback.*|.*Search.*|.*Recommend.*|.*Parser.*|.*Network.*|.*Request.*|.*Response.*)\.(kt|java)$|(^|/)(api|network|repository|datasource|player|playback|search|recommend|parser)/' /tmp/upstream-files.txt || true)"
-          content_files="$(git diff --name-only --diff-filter=ACMRT "$base"..origin/main -- '*.kt' '*.java' || true)"
-          if [ -n "$content_files" ]; then
-            printf '%s\n' "$content_files" | while IFS= read -r f; do
-              if git diff "$base"..origin/main -- "$f" | grep -Eiq '^[+].*(https?://|Authorization|User-Agent|headers?\b|JSONObject|Gson|Moshi|Json|playUrl|parse.*(play|search|recommend)|recommend|search.*(api|url)|episode.*(url|play))'; then echo "$f"; fi
-            done | sort -u > /tmp/api-content-files.txt
-          else
-            : > /tmp/api-content-files.txt
+          if [ -z "$base" ]; then
+            echo "No common ancestor found between custom and main." >&2
+            exit 1
           fi
+
+          git log --oneline --decorate "$base"..origin/main > upstream-commits.txt
+          git diff --name-status "$base"..origin/main > upstream-files.txt
+          git diff --stat "$base"..origin/main > upstream-stat.txt
+          git diff --binary "$base"..origin/main > upstream-changes.patch
+
           {
-            echo "### Filename-based interface candidates"
-            if [ -n "$api_files" ]; then printf '%s\n' "$api_files" | sort -u; else echo "None detected"; fi
+            echo "# 上游更新检查报告"
             echo
-            echo "### Protocol / parsing marker files"
-            if [ -s /tmp/api-content-files.txt ]; then cat /tmp/api-content-files.txt; else echo "None detected"; fi
-          } >> api-change-report.md
+            echo "- 上游分支：origin/main（已同步原作者 main）"
+            echo "- 定制分支：origin/custom（本工作流不会修改）"
+            echo "- 共同基点：$base"
+            echo
+            echo "## 上游新增提交"
+            if [ -s upstream-commits.txt ]; then cat upstream-commits.txt; else echo "无新增提交"; fi
+            echo
+            echo "## 文件变化"
+            if [ -s upstream-files.txt ]; then cat upstream-files.txt; else echo "没有文件变化。"; fi
+            echo
+            echo "## 变化统计"
+            if [ -s upstream-stat.txt ]; then cat upstream-stat.txt; else echo "无差异。"; fi
+            echo
+            echo "## 需要人工评估的定制保护范围"
+            echo "重点检查包名/签名/版本号、更新地址与发布流程、启动播放逻辑、首页和播放界面、备份恢复及账号功能。"
+            echo
+            echo "安全策略：本次只生成差异报告，不执行 merge、cherry-pick、push 或发布，不会改动 custom。"
+          } > upstream-review-report.md
 
-          protected=0
-          reasons=()
-          while IFS= read -r f; do
-            case "$f" in
-              .github/workflows/release.yml|scripts/publish-tv-update.py|kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/AppUpdater.kt)
-                protected=1; reasons+=("$f") ;;
-            esac
-          done < /tmp/upstream-files.txt
-
-          if git diff "$base"..origin/main -- kotlin-tv/app/build.gradle.kts | grep -Eiq '^[+-].*(applicationId|namespace|HONGGUOTV_VERSION|versionName|versionCode|signingConfig|HONGGUOTV_KEYSTORE)'; then
-            protected=1; reasons+=("Gradle package/version/signing configuration")
-          fi
-          if git diff "$base"..origin/main -- kotlin-tv/app/src/main/AndroidManifest.xml | grep -Eiq '^[+-].*(package=|android:versionName|android:versionCode)'; then
-            protected=1; reasons+=("AndroidManifest package/version")
-          fi
-          if git diff "$base"..origin/main -- kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/MainActivity.kt | grep -Eiq '^[+-].*(boot.?autoplay|autoplay|auto.?play|startup|full.?screen|immersive|FLAG_FULLSCREEN|setDecorFitsSystemWindows|keepScreenOn|boot.?play|开机.*播放|全屏)'; then
-            protected=1; reasons+=("MainActivity startup/autoplay/full-screen markers")
-          fi
-
-          if [ -s /tmp/merged-files.txt ]; then echo "HAS_CHANGES=true" >> "$GITHUB_OUTPUT"; else echo "HAS_CHANGES=false" >> "$GITHUB_OUTPUT"; fi
-          if [ "$protected" -eq 0 ]; then
-            echo "AUTO_PUBLISH=true" >> "$GITHUB_OUTPUT"
-            echo "### Decision: eligible for automatic merge and release" >> api-change-report.md
-          else
-            echo "AUTO_PUBLISH=false" >> "$GITHUB_OUTPUT"
-            {
-              echo "### Decision: manual review required"
-              printf '%s\n' "${reasons[@]}"
-            } >> api-change-report.md
-          fi
           {
-            echo "## Auto-update classification"
+            echo "## 上游更新检查"
             echo
-            echo "### Upstream commits"
-            git log --oneline origin/custom..origin/main || true
+            echo "共同基点：$base"
             echo
-            echo "### Merged files"
-            cat /tmp/merged-files.txt
+            echo "### 上游新增提交"
+            if [ -s upstream-commits.txt ]; then cat upstream-commits.txt; else echo "无新增提交"; fi
             echo
-            if [ "$protected" -eq 0 ]; then echo "Decision: auto-publish"; else echo "Decision: manual review"; fi
+            echo "### 文件变化"
+            if [ -s upstream-files.txt ]; then cat upstream-files.txt; else echo "无差异"; fi
+            echo
+            echo "custom 分支未被修改。差异报告和补丁已作为工作流附件保存。"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload interface report
-        if: always()
+          if [ -s upstream-files.txt ]; then
+            echo "HAS_UPDATES=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "HAS_UPDATES=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload upstream review report and patch
         uses: actions/upload-artifact@v4
         with:
-          name: playback-search-recommendation-interface-report
-          if-no-files-found: warn
-          path: api-change-report.md
-
-      - name: Set up Java for manual-review candidate
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK for manual-review candidate
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        uses: android-actions/setup-android@v3
-        with:
-          packages: platform-tools
-
-      - name: Install SDK packages for manual-review candidate
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-
-      - name: Verify manual-review candidate
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintDebug :app:assembleDebug --console=plain
-
-      - name: Automatically merge safe changes into custom
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH == 'true'
-        run: git push origin HEAD:custom
-
-      - name: Automatically publish signed update
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh workflow run release.yml --ref custom -f skip_tests=true
-
-      - name: Publish candidate for manual review
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        run: git push --force origin HEAD:automation/upstream-update
-
-      - name: Open or update review pull request
-        if: steps.classify.outputs.HAS_CHANGES == 'true' && steps.classify.outputs.AUTO_PUBLISH != 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          title="Review upstream updates for custom (protected behavior)"
-          report="$(cat api-change-report.md)"
-          body="$(cat <<EOF
-          ## Manual review required
-
-          The upstream update touches code that may affect custom startup autoplay/full-screen behavior, package/version identity, updater, or release pipeline. The custom branch has not been changed automatically.
-
-          The candidate was built and tested. This does not prove live third-party API behavior.
-
-          ### Playback / search / recommendation scan
-          ${report}
-          EOF
-          )"
-          if gh pr view automation/upstream-update --json number >/dev/null 2>&1; then
-            gh pr edit automation/upstream-update --title "$title" --body "$body"
-          else
-            gh pr create --base custom --head automation/upstream-update --title "$title" --body "$body"
-          fi
+          name: upstream-review-${{ github.run_number }}
+          if-no-files-found: error
+          path: |
+            upstream-review-report.md
+            upstream-commits.txt
+            upstream-files.txt
+            upstream-stat.txt
+            upstream-changes.patch
