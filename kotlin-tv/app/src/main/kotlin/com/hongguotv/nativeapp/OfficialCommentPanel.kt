@@ -24,6 +24,8 @@ internal class OfficialCommentPanel(
 ) : FrameLayout(context) {
     interface Listener {
         fun close()
+        fun previousEpisode()
+        fun nextEpisode()
         fun loadMore()
         fun like(comment: OfficialComment)
         fun reply(comment: OfficialComment)
@@ -80,6 +82,8 @@ internal class OfficialCommentPanel(
             gravity = Gravity.CENTER_VERTICAL
         }
         header.addView(countLabel, LinearLayout.LayoutParams(0, dp(42), 1f))
+        header.addView(action("上一集") { listener.previousEpisode() })
+        header.addView(action("下一集") { listener.nextEpisode() })
         header.addView(action("关闭") { listener.close() })
         page.addView(header)
         page.addView(label("当前播放集的官方评论", 12f, false, mutedColor))
