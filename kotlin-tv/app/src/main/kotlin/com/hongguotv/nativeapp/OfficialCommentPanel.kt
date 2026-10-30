@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -21,6 +22,7 @@ internal class OfficialCommentPanel(
     context: Context,
     private val signedIn: Boolean,
     private val listener: Listener,
+    private val avatarLoader: (ImageView, String) -> Unit = { _, _ -> },
 ) : FrameLayout(context) {
     interface Listener {
         fun close()
@@ -235,6 +237,13 @@ internal class OfficialCommentPanel(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
+        val avatar = ImageView(context).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            background = rounded(surfaceColor, 18)
+            contentDescription = "${comment.author}头像"
+        }
+        if (comment.avatar.startsWith("https://")) avatarLoader(avatar, comment.avatar)
+        authorLine.addView(avatar, LinearLayout.LayoutParams(dp(34), dp(34)).apply { rightMargin = dp(8) })
         authorLine.addView(label(comment.author, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
         if (comment.createdAt > 0) authorLine.addView(label(timeText(comment.createdAt), 11f, false, mutedColor))
         card.addView(authorLine)
