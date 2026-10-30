@@ -118,6 +118,10 @@ class MainActivity: Activity() {
     private var accountContentHost: FrameLayout? = null
     private var renderedAccountAvatarRevision = -1L
     private var accountQrAutoStarted = false
+    private var accountApiCheckStarted = false
+    private var accountApiOnline: Boolean? = null
+    private var accountApiDotView: TextView? = null
+    private var accountApiLabelView: TextView? = null
     private var accountSection = 0 // 0=history, 1=favorites, 2=upcoming reservations, 3=online reservations
     private lateinit var cloudAccount: AccountController
     private lateinit var library: Library
@@ -245,6 +249,8 @@ class MainActivity: Activity() {
     private var searchHotLoading=false
     private var searchHotLoaded=false
     private var refreshHomePending=false
+    /** Keep focus on the refresh control while a page is rebuilt for a refresh request. */
+    private var pendingRefreshFocus: String?=null
     private val pendingSuggest=Runnable { fetchSuggest() }
     private var historyManage: View?=null
     /** 设置页重建后要恢复焦点的设置项标签前缀。 */
@@ -961,7 +967,10 @@ class MainActivity: Activity() {
         }
         if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
-            homeRefreshControl=addButton(types,"刷新") { showCatalog(true) }.apply {
+            homeRefreshControl=addButton(types,"刷新") {
+                pendingRefreshFocus="home"
+                showCatalog(true)
+            }.apply {
                 tag="home:refresh"
                 nextFocusUpId=nav[tab].id
             }
@@ -1144,7 +1153,15 @@ class MainActivity: Activity() {
                     if (rankBoard != board) { rankBoard=board; aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true) }
                 }.apply { nextFocusUpId=nav[tab].id }
             }
-            rankRefresh=addButton(boardRow,"刷新") { page=1; catalogFocus=""; showCatalog(true) }.apply { nextFocusUpId=nav[tab].id }
+            rankRefresh=addButton(boardRow,"刷新") {
+                pendingRefreshFocus="rank"
+                page=1
+                catalogFocus=""
+                showCatalog(true)
+            }.apply {
+                tag="rank:refresh"
+                nextFocusUpId=nav[tab].id
+            }
             container.addView(boardRow)
             val defaultSource="来源：红果${rankBoard.label}热播榜"
             rankSubtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText?.ifBlank { defaultSource } ?: defaultSource,13f,muted).apply { setPadding(0,0,0,dp(8)) }
@@ -1195,7 +1212,11 @@ class MainActivity: Activity() {
         }
         if(load) {
             if(tab==0) catalogGrid(body,focusNav,focusType,loading=true)
-            else { message(body,"正在加载…"); if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else nav[tab].requestFocus() }
+            else {
+                message(body,"正在加载…")
+                if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus()
+                else if(pendingRefreshFocus==null) nav[tab].requestFocus()
+            }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
             val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
@@ -1217,6 +1238,15 @@ class MainActivity: Activity() {
                     val keepNav=nav.any { it.hasFocus() }; val keepType=typeButtons.values.any { it.hasFocus() }
                     if(requestTab==2) rankSubtitle?.text=if(requestAi) "来源：红果AI剧分类" else ranking?.updatedText?.ifBlank { "来源：红果${rankBoard.label}热播榜" } ?: "来源：红果${rankBoard.label}热播榜"
                     body.removeAllViews(); catalogGrid(body,keepNav || focusNav,keepType || focusType)
+                    pendingRefreshFocus?.let { restore ->
+                        pendingRefreshFocus=null
+                        root.post {
+                            if(screen=="catalog" && tab==requestTab) {
+                                val target=if(restore=="rank") rankRefresh else homeRefreshControl
+                                if(target?.isAttachedToWindow==true) target.requestFocus()
+                            }
+                        }
+                    }
                     if(requestTab==0 && requestPage==1 && requestGenre==null && refreshHomePending) {
                         refreshHomePending=false
                         homeRefreshControl?.post { if(screen=="catalog" && tab==0) homeRefreshControl?.requestFocus() }
@@ -1235,6 +1265,15 @@ class MainActivity: Activity() {
                     return@work
                 }
                 catalog=emptyList(); hasMore=false; ranking=null; rankSubtitle?.text=if(requestAi) "AI剧分类加载失败" else "榜单加载失败"
+                pendingRefreshFocus?.let { restore ->
+                    pendingRefreshFocus=null
+                    root.post {
+                        if(screen=="catalog" && tab==requestTab) {
+                            val target=if(restore=="rank") rankRefresh else homeRefreshControl
+                            if(target?.isAttachedToWindow==true) target.requestFocus()
+                        }
+                    }
+                }
                 // 搜索失败时焦点回输入框，避免页面重建后焦点丢失
                 if(requestTab==1 && searchFocusPending) { searchFocusPending=false; searchInput?.requestFocus() }
                 if(problem is SearchSessionExpiredException) {
@@ -1290,7 +1329,12 @@ class MainActivity: Activity() {
         if(displayed.isEmpty()) {
             message(body,if(loading) "正在加载推荐…" else when(tab) { 1 -> if(query.isBlank()) "输入名称关键词，或用字母键拼首拼选择联想词" else if(aggregateSearch) "没有找到相关漫剧或短剧，换个关键词试试" else "没有找到相关${library.contentType.label}，换个关键词试试"; 3 -> if(favoriteGroupFilter!=null) "「$favoriteGroupFilter」分组暂无收藏" else "在剧集详情中选择收藏，喜欢的剧就会出现在这里"; 4 -> "播放过的剧集会自动保存在这里"; else -> "本页没有更多内容" })
             wireSearchPanel(null)
-            if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus() else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus() else nav[tab].requestFocus()
+            if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus()
+            else if(pendingRefreshFocus==null) {
+                if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
+                else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus()
+                else nav[tab].requestFocus()
+            }
             return
         }
         val cols=if(tab==1) searchColumns else gridColumns
@@ -3308,22 +3352,40 @@ class MainActivity: Activity() {
         host.isFocusableInTouchMode = true
         host.requestFocus()
         host.removeAllViews()
+        accountApiDotView = null
+        accountApiLabelView = null
+        if (!cloudAccount.signedIn) {
+            accountApiCheckStarted = false
+            accountApiOnline = null
+        }
         val mobileLayout = widthDp() < 600f
         val density = resources.displayMetrics.density
         val availableWidthDp = (host.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels).toFloat() / density
         val availableHeightDp = (host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(130))).toFloat() / density
 
-        // 登录前后共用同一套账户状态指示器；只有账号凭据校验成功后才显示“已上线”。
+        // 登录后显示真实账号接口连通状态，而不是仅凭本地登录凭据判断在线。
         fun accountStatusIndicator(): LinearLayout = row().apply {
             gravity = Gravity.CENTER
             background = rounded(TvStyle.surface)
             setPadding(dp(9), dp(6), dp(9), dp(6))
             isFocusable = false
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            addView(text("●", 10f, if (cloudAccount.signedIn) Color.rgb(76, 205, 125) else Color.rgb(235, 75, 75)).apply {
+            val dot = text("●", 10f, Color.rgb(70, 150, 255)).apply {
                 setPadding(0, 0, dp(5), 0)
-            }, lp(-2, -2))
-            addView(text(if (cloudAccount.signedIn) "已上线" else "已下线", 12f, white), lp(-2, -2))
+            }
+            val label = text(
+                when (accountApiOnline) {
+                    true -> "已上线"
+                    false -> "已下线"
+                    null -> "检测中"
+                },
+                12f,
+                white
+            )
+            accountApiDotView = dot
+            accountApiLabelView = label
+            addView(dot, lp(-2, -2))
+            addView(label, lp(-2, -2))
         }
 
         if (!cloudAccount.signedIn) {
@@ -3346,7 +3408,6 @@ class MainActivity: Activity() {
                     typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
                     gravity = Gravity.CENTER_VERTICAL
                 }, lp(0, -2).apply { weight = 1f })
-                addView(accountStatusIndicator(), lp(-2, -2))
             }
             card.addView(loginHeading, lp(-1, -2))
             card.addView(text("使用手机红果 App 扫码，安全同步收藏与观看记录", if (mobileLayout) 12f else 14f, muted).apply {
@@ -3492,10 +3553,21 @@ class MainActivity: Activity() {
             maxLines = 2
         }, lp(-1, -2))
         profileRow.addView(identity, lp(0, -2).apply { weight = 1f })
-        // Signed-in accounts are online in this dashboard; keep the indicator aligned to
-        // the far right of the nickname row, matching the compact status chips on Home.
+        // Keep the API connectivity indicator aligned at the far right of the nickname row.
         profileRow.addView(accountStatusIndicator(), lp(-2, -2).apply { leftMargin = dp(8) })
         page.addView(profileRow, lp(-1, -2))
+        if (!accountApiCheckStarted) {
+            accountApiCheckStarted = true
+            accountApiOnline = null
+            cloudAccount.checkConnection { connected, _ ->
+                if (isDestroyed || !cloudAccount.signedIn) return@checkConnection
+                accountApiOnline = connected
+                accountApiDotView?.setTextColor(
+                    if (connected) Color.rgb(76, 205, 125) else Color.rgb(235, 75, 75)
+                )
+                accountApiLabelView?.text = if (connected) "已上线" else "已下线"
+            }
+        }
 
         val actions = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
         addButton(actions, "刷新云端数据") {
