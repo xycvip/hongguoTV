@@ -82,7 +82,15 @@ class OfficialCommentRepository(
             if (!response.isSuccessful) throw IOException("官方评论请求失败（HTTP ${response.code}）")
             val responseBody = response.body ?: throw IOException("官方评论响应为空")
             if (responseBody.contentLength() > MAX_BYTES) throw IOException("官方评论响应过大")
-            val raw = responseBody.bytes()
+            val output = java.io.ByteArrayOutputStream()
+            val input = responseBody.byteStream()
+            val buffer = ByteArray(8192)
+            while (output.size() <= MAX_BYTES) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                output.write(buffer, 0, count)
+            }
+            val raw = output.toByteArray()
             if (raw.size > MAX_BYTES) throw IOException("官方评论响应过大")
             if (raw.isEmpty()) throw IOException("官方评论响应为空")
             val payload = runCatching { JSONObject(String(raw, Charsets.UTF_8)) }
@@ -283,6 +291,11 @@ class OfficialCommentRepository(
         val text = content.optString("text", "").trim()
         if (!validId(id) || text.isBlank()) return null
         val avatar = base.optString("expand_user_avatar").ifBlank { base.optString("user_avatar") }
+        val liked = when (val value = action.opt("user_digg")) {
+            is Boolean -> value
+            is Number -> value.toInt() != 0
+            else -> value?.toString() in setOf("1", "true")
+        }
         return OfficialComment(
             id = id,
             text = text,
@@ -291,7 +304,7 @@ class OfficialCommentRepository(
             createdAt = common.optLong("create_timestamp", 0L),
             likes = stat.optInt("digg_count", 0).coerceAtLeast(0),
             replies = stat.optInt("reply_count", 0).coerceAtLeast(0),
-            liked = action.optBoolean("user_digg", false),
+            liked = liked,
         )
     }
 
