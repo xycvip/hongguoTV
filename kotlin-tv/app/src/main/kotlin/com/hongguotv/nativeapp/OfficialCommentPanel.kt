@@ -76,6 +76,8 @@ internal class OfficialCommentPanel(
     private val replyLoading = mutableSetOf<String>()
     private var replyTarget: OfficialComment? = null
     private var draft = ""
+    /** 连续异步重绘期间暂存焦点，避免展开回复时焦点回到列表顶部。 */
+    private var pendingFocusTag: String? = null
 
     init {
         setBackgroundColor(backgroundColor)
@@ -130,6 +132,7 @@ internal class OfficialCommentPanel(
         replyCursors.clear()
         replyHasMore.clear()
         replyLoading.clear()
+        pendingFocusTag = null
         hasMore = false
         clearDraft()
         setSending(false)
@@ -234,7 +237,8 @@ internal class OfficialCommentPanel(
     }
 
     private fun render() {
-        val focusTag = list.findFocus()?.tag as? String
+        val focusTag = (list.findFocus()?.tag as? String) ?: pendingFocusTag
+        pendingFocusTag = focusTag
         list.removeAllViews()
         if (currentItems.isEmpty() && !loading && statusLabel.text.isNullOrBlank()) {
             statusLabel.text = "暂无评论"
@@ -271,8 +275,8 @@ internal class OfficialCommentPanel(
         }
         list.post {
             val target = focusTag?.let { list.findViewWithTag<View>(it) }
-            if (target != null) target.requestFocus()
-            else if (focusTag == null) firstFocusable(list)?.requestFocus()
+            (target ?: firstFocusable(list))?.requestFocus()
+            if (pendingFocusTag == focusTag) pendingFocusTag = null
         }
     }
 

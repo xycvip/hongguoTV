@@ -1981,9 +1981,15 @@ class MainActivity: Activity() {
             runCatching { LibraryBackup.encode(library.snapshot().copy(accountState = cloudAccount.backupJson(), playbackExtras = extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { data,restoreSettings ->
                     favoriteMonitor.stop(); library.restore(data,restoreSettings)
-                    if(restoreSettings) data.playbackExtras?.let { extras.restoreBackup(it); library.restoreSkipMarks(it.skipMarks) }
+                    if(restoreSettings) {
+                        val restoredExtras = data.playbackExtras ?: BackupPlaybackExtras()
+                        extras.restoreBackup(restoredExtras)
+                        library.restoreSkipMarks(restoredExtras.skipMarks)
+                    }
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
-                    showCatalog(); favoriteMonitor.check()
+                    showCatalog()
+                    cloudAccount.syncLocalFavorites(library.favorites())
+                    favoriteMonitor.check()
                     Toast.makeText(this,"备份记录已恢复",Toast.LENGTH_LONG).show()
                     restoreBackupAccount(data, backup)
                 }
