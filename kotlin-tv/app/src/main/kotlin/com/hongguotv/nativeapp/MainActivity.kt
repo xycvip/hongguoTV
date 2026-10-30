@@ -4405,12 +4405,8 @@ class MainActivity: Activity() {
                         runCatching {
                             alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
                         }.onFailure {
-                            // 精确闹钟受系统限制时，先退回待机唤醒闹钟；若设备仍拒绝，再退回普通闹钟。
-                            runCatching {
-                                alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
-                            }.onFailure {
-                                alarm.set(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
-                            }
+                            // 精确闹钟受系统限制时，退回允许待机唤醒的闹钟。
+                            alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
                         }
                     } else {
                         alarm.setExact(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
