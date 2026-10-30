@@ -3239,6 +3239,11 @@ class MainActivity: Activity() {
         if (!::cloudAccount.isInitialized || tab != 6 || screen != "catalog") return
         val previousFocus = host.findFocus()?.tag?.toString()
         val previousScrollY = (host.getChildAt(0) as? ScrollView)?.scrollY ?: 0
+        // Replacing the account section removes the currently focused tab/card. Keep focus
+        // on the account host during that brief rebuild so Android cannot fall back to Home.
+        host.isFocusable = true
+        host.isFocusableInTouchMode = true
+        host.requestFocus()
         host.removeAllViews()
         val mobileLayout = widthDp() < 600f
         val density = resources.displayMetrics.density
@@ -3438,21 +3443,31 @@ class MainActivity: Activity() {
         }
         fun addArtworkShelf(entries: List<Triple<Series, String, () -> Unit>>, shelfKey: String) {
             if (entries.isEmpty()) return
-            val horizontal = HorizontalScrollView(this).apply {
-                isHorizontalScrollBarEnabled = false
-                clipToPadding = false
-                setPadding(dp(2), dp(2), dp(2), dp(8))
+            // Match the ranking page's multi-row poster grid, with columns derived from
+            // the actual account content width rather than a fixed one-line carousel.
+            val horizontalPaddingDp = if (mobileLayout) 12f else 24f
+            val contentWidthPx = dp((availableWidthDp - horizontalPaddingDp * 2f).toInt())
+                .coerceAtLeast(dp(240))
+            val targetCardWidthDp = if (mobileLayout) 150f else 170f
+            val columns = (contentWidthPx / dp(targetCardWidthDp.toInt()).coerceAtLeast(1))
+                .coerceIn(2, 8)
+            val posterWidth = ((contentWidthPx - dp(8) * (columns - 1)) / columns - dp(8))
+                .coerceAtLeast(dp(72))
+            val posterHeight = (posterWidth / TvStyle.POSTER_ASPECT).toInt()
+            val grid = GridLayout(this).apply {
+                columnCount = columns
+                rowCount = (entries.size + columns - 1) / columns
+                alignmentMode = GridLayout.ALIGN_BOUNDS
+                useDefaultMargins = false
             }
-            val line = row().apply { gravity = Gravity.TOP }
-            val cardWidth = ((resources.displayMetrics.widthPixels * .9f - dp(70)) / 6f)
-                .coerceAtLeast(dp(100).toFloat()).toInt()
-            val posterHeight = ((cardWidth - dp(8)) / TvStyle.POSTER_ASPECT).toInt()
+            val cards = mutableListOf<View>()
             entries.forEachIndexed { index, entry ->
                 val (series, subtitle, click) = entry
-                val key = "$shelfKey:${series.id}"
+                val rowIndex = index / columns
+                val columnIndex = index % columns
                 val card = column().apply {
                     id = View.generateViewId()
-                    tag = key
+                    tag = "$shelfKey:${series.id}"
                     isFocusable = true
                     isFocusableInTouchMode = true
                     setPadding(dp(4), dp(4), dp(4), dp(8))
@@ -3481,12 +3496,29 @@ class MainActivity: Activity() {
                     ellipsize = TextUtils.TruncateAt.END
                     setPadding(dp(3), dp(3), 0, 0)
                 }, lp(-1, -2))
-                line.addView(card, lp(cardWidth, -1).apply { rightMargin = dp(14) })
-                card.nextFocusLeftId = if (index == 0) card.id else View.NO_ID
-                card.nextFocusRightId = if (index == entries.lastIndex) card.id else View.NO_ID
+                val params = GridLayout.LayoutParams(
+                    GridLayout.spec(rowIndex),
+                    GridLayout.spec(columnIndex, 1f)
+                ).apply {
+                    width = 0
+                    height = -2
+                    setMargins(dp(4), dp(4), dp(4), dp(10))
+                }
+                grid.addView(card, params)
+                cards += card
             }
-            horizontal.addView(line)
-            page.addView(horizontal, lp(-1, -2).apply { bottomMargin = dp(8) })
+            cards.forEachIndexed { index, card ->
+                val rowIndex = index / columns
+                val columnIndex = index % columns
+                val rowStart = rowIndex * columns
+                val rowEnd = minOf(rowStart + columns, cards.size) - 1
+                card.nextFocusLeftId = if (columnIndex > 0) cards[index - 1].id else View.NO_ID
+                card.nextFocusRightId = if (index < rowEnd) cards[index + 1].id else View.NO_ID
+                card.nextFocusUpId = if (rowIndex > 0) cards[index - columns].id
+                    else host.findViewWithTag<View>("account:tab:$accountSection")?.id ?: View.NO_ID
+                card.nextFocusDownId = if (index + columns < cards.size) cards[index + columns].id else View.NO_ID
+            }
+            page.addView(grid, lp(-1, -2).apply { bottomMargin = dp(8) })
         }
 
         when (accountSection) {
@@ -3499,8 +3531,9 @@ class MainActivity: Activity() {
                         setPadding(0, dp(30), 0, dp(30))
                     }, lp(-1, -2))
                 } else addArtworkShelf(history.map { item ->
-                    val episodeText = if (item.episodeCount > 0) "第 ${item.episodeIndex + 1} 集 / 共 ${item.episodeCount} 集" else "第 ${item.episodeIndex + 1} 集"
-                    val progressText = if (item.duration > 0) "$episodeText · ${formatTime(item.position)} / ${formatTime(item.duration)}" else episodeText
+                    // Keep the same compact episode + elapsed-time label as Home's
+                    // "最近观看" shelf; omit total episode count and duration denominator.
+                    val progressText = "第 ${item.episodeIndex + 1} 集 · ${formatTime(item.position)}"
                     Triple(item.series, progressText) {
                         pendingCloudProgress = item
                         openDetail(item.series, true)
