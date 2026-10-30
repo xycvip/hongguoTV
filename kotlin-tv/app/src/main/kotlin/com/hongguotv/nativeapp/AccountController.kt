@@ -747,7 +747,6 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         if (busy || closed) return
         busy = true
         val token = generation
-        toast("正在连接红果账号…")
         worker.execute {
             if (closed || token != generation) return@execute
             val result = runCatching(action)

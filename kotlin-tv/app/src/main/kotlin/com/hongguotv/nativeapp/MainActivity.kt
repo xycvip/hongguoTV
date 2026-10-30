@@ -1785,11 +1785,6 @@ class MainActivity: Activity() {
         blockedWords=setting(playback,"弹幕屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         lateinit var keySettings: TextView
         keySettings=setting(playback,"遥控器按键  ·  快进 ${extras.seekStepSeconds} 秒") { showKeySettings(keySettings) }
-        lateinit var autoSkipButton: TextView
-        autoSkipButton=setting(playback,"不兼容片源自动跳过  ·  ${if(extras.autoSkipUnplayable) "开启" else "关闭"}") {
-            extras.autoSkipUnplayable=!extras.autoSkipUnplayable
-            autoSkipButton.text="不兼容片源自动跳过  ·  ${if(extras.autoSkipUnplayable) "开启" else "关闭"}"
-        }
         syncDanmakuRows()
 
         lateinit var themeButton: TextView
@@ -1850,12 +1845,14 @@ class MainActivity: Activity() {
             val bytes=cacheBytes()
             main.post { if(!isDestroyed) clearCache.text=cacheLabel(bytes) }
         }
-        lateinit var updates: TextView
-        updates=setting(device,"版本与更新  ·  ${BuildConfig.VERSION_NAME}") { updater.show(updates) }
-        lateinit var checkButton: TextView
-        checkButton=setting(device,"接口自检  ·  首页 / 搜索 / 播放") { showInterfaceCheck(checkButton) }
-        val license=setting(device,"开源许可") {
-            TvDialog.info(this,"开源许可","本原生版以 GPL-3.0 发布。\n内容协议与加密处理移植自 drpys（22261ad）。\nAndroidX Media3 / OkHttp：Apache-2.0\nKotlin：Apache-2.0\nBouncy Castle：MIT\n完整源码和许可证见 GitHub：jycao2/hongguoTV。").show()
+        lateinit var aboutButton: TextView
+        aboutButton=setting(device,"关于软件  ·  v${BuildConfig.VERSION_NAME}") {
+            AlertDialog.Builder(this)
+                .setTitle("关于软件")
+                .setMessage("红果TV\n版本：${BuildConfig.VERSION_NAME}\n\n本项目基于开源项目及第三方组件开发，感谢相关项目与开发者。")
+                .setPositiveButton("检查更新") { _, _ -> updater.show(aboutButton) }
+                .setNegativeButton("关闭", null)
+                .show()
         }
         // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
         val settingsFooter=text("红果TV  /  ${BuildConfig.VERSION_NAME}    ·    所有数据保存在本机",12f,muted).apply {
@@ -1867,8 +1864,8 @@ class MainActivity: Activity() {
         rechainSettings={
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
-                listOf(blockedWords,keySettings,autoSkipButton)
-            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,updates,checkButton,license)
+                listOf(blockedWords,keySettings)
+            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,aboutButton)
             listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
                 view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
                 // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
@@ -3400,6 +3397,20 @@ class MainActivity: Activity() {
             maxLines = 2
         }, lp(-1, -2))
         profileRow.addView(identity, lp(0, -2).apply { weight = 1f })
+        // Signed-in accounts are online in this dashboard; keep the indicator aligned to
+        // the far right of the nickname row, matching the compact status chips on Home.
+        val onlineStatus = row().apply {
+            gravity = Gravity.CENTER
+            background = rounded(surface)
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            addView(text("●", 10f, Color.rgb(76, 205, 125)).apply {
+                setPadding(0, 0, dp(5), 0)
+            }, lp(-2, -2))
+            addView(text("已上线", 12f, white), lp(-2, -2))
+        }
+        profileRow.addView(onlineStatus, lp(-2, -2).apply { leftMargin = dp(8) })
         page.addView(profileRow, lp(-1, -2))
 
         val actions = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
