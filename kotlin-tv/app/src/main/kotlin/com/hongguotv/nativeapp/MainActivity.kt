@@ -2185,19 +2185,38 @@ class MainActivity: Activity() {
         val anchor = genreButton ?: return
         var selectedType = library.contentType
         var requestId = 0
-        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
+        content.addView(TvDialog.title(this, "选择题材"))
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
         val typeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val grid = GridLayout(this).apply { columnCount = 3; alignmentMode = GridLayout.ALIGN_BOUNDS; useDefaultMargins = false }
         val loading = text("正在读取题材…", 13f, muted)
-        content.addView(typeRow)
-        content.addView(loading, lp(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(8) })
-        content.addView(grid)
+        body.addView(typeRow)
+        body.addView(loading, lp(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        body.addView(grid)
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            isVerticalScrollBarEnabled = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            addView(body, ViewGroup.LayoutParams(-1, -2))
+        }
+        content.addView(scroll, lp(-1, 0).apply { weight = 1f })
+        content.layoutParams = LinearLayout.LayoutParams(
+            -1, (resources.displayMetrics.heightPixels * 0.72f).toInt()
+        )
         lateinit var dialog: AlertDialog
         fun loadGenres(type: ContentType) {
             selectedType = type
             val ticket = ++requestId
             typeRow.removeAllViews()
-            listOf(ContentType.SHORT, ContentType.COMIC, ContentType.AI).forEach { item -> addButton(typeRow, item.label, item == type) { loadGenres(item) } }
+            listOf(ContentType.SHORT, ContentType.COMIC, ContentType.AI).forEach { item ->
+                addButton(typeRow, item.label, item == type) { loadGenres(item) }
+            }
             grid.removeAllViews()
             loading.text = "正在读取${type.label}题材…"
             io.execute {
@@ -2216,17 +2235,33 @@ class MainActivity: Activity() {
                                 dialog.dismiss()
                                 showCatalog(true, focusType = true)
                             }
-                            grid.addView(item, GridLayout.LayoutParams(GridLayout.spec(index / 3), GridLayout.spec(index % 3, 1f)).apply { width = 0; setMargins(dp(4), dp(4), dp(4), dp(4)) })
+                            grid.addView(item, GridLayout.LayoutParams(GridLayout.spec(index / 3), GridLayout.spec(index % 3, 1f)).apply {
+                                width = 0
+                                setMargins(dp(4), dp(4), dp(4), dp(4))
+                            })
                         }
                         grid.getChildAt(0)?.requestFocus()
-                    }.onFailure { loading.text = "题材加载失败，请稍后重试" }
+                    }.onFailure {
+                        loading.text = "题材加载失败，请稍后重试"
+                    }
                 }
             }
         }
-        dialog = AlertDialog.Builder(this).setTitle("选择题材").setView(ScrollView(this).apply { addView(content) }).setNegativeButton("关闭", null).create()
-        TvDialog.styleWindow(this, dialog)
+        val buttons = LinearLayout(this).apply {
+            gravity = Gravity.END
+            setPadding(0, dp(12), 0, 0)
+        }
+        val close = TvDialog.capsuleButton(this, "关闭") { dialog.dismiss() }
+        buttons.addView(close, lp(-2, -2))
+        content.addView(buttons, lp(-1, -2))
+        dialog = AlertDialog.Builder(this).setView(TvDialog.card(this, content)).create()
+        TvDialog.styleWindow(this, dialog, widthFraction = 0.55f, maxWidthDp = 620)
         dialog.setOnDismissListener { if (anchor.isAttachedToWindow) anchor.requestFocus() }
         dialog.show()
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.55f).toInt().coerceAtMost(dp(620)),
+            (resources.displayMetrics.heightPixels * 0.72f).toInt()
+        )
         loadGenres(selectedType)
     }
     private fun manageHistory(series: Series,anchor: View?) {
@@ -3278,6 +3313,19 @@ class MainActivity: Activity() {
         val availableWidthDp = (host.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels).toFloat() / density
         val availableHeightDp = (host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(130))).toFloat() / density
 
+        // 登录前后共用同一套账户状态指示器；只有账号凭据校验成功后才显示“已上线”。
+        fun accountStatusIndicator(): LinearLayout = row().apply {
+            gravity = Gravity.CENTER
+            background = rounded(TvStyle.surface)
+            setPadding(dp(9), dp(6), dp(9), dp(6))
+            isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            addView(text("●", 10f, if (cloudAccount.signedIn) Color.rgb(76, 205, 125) else Color.rgb(235, 75, 75)).apply {
+                setPadding(0, 0, dp(5), 0)
+            }, lp(-2, -2))
+            addView(text(if (cloudAccount.signedIn) "已上线" else "已下线", 12f, white), lp(-2, -2))
+        }
+
         if (!cloudAccount.signedIn) {
             // QR 尺寸同时受实际可用宽度和高度约束；短屏时优先缩小二维码，不让卡片被屏幕裁切。
             val cardWidthDp = minOf(
@@ -3292,19 +3340,19 @@ class MainActivity: Activity() {
                     dp(if (mobileLayout) 14 else 26), dp(if (mobileLayout) 14 else 24))
                 elevation = dp(6).toFloat()
             }
-            card.addView(text("登录红果账户", if (mobileLayout) 21f else 26f, white).apply {
-                typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
-                gravity = Gravity.CENTER
-            }, lp(-1, -2))
+            val loginHeading = row().apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(text("登录红果账户", if (mobileLayout) 21f else 26f, white).apply {
+                    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+                    gravity = Gravity.CENTER_VERTICAL
+                }, lp(0, -2).apply { weight = 1f })
+                addView(accountStatusIndicator(), lp(-2, -2))
+            }
+            card.addView(loginHeading, lp(-1, -2))
             card.addView(text("使用手机红果 App 扫码，安全同步收藏与观看记录", if (mobileLayout) 12f else 14f, muted).apply {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(6), 0, dp(if (mobileLayout) 10 else 16))
             }, lp(-1, -2))
-            card.addView(row().apply {
-                gravity = Gravity.CENTER
-                addView(text("●", 10f, Color.rgb(235, 75, 75)).apply { setPadding(0, 0, dp(5), 0) }, lp(-2, -2))
-                addView(text("已下线", 12f, white), lp(-2, -2))
-            }, lp(-1, -2).apply { bottomMargin = dp(8) })
             val qr = cloudAccount.inlineQrBitmap
             val horizontalPaddingDp = if (mobileLayout) 12f else 26f
             val qrWidthLimitDp = (cardWidthDp - horizontalPaddingDp * 2f - 12f).coerceAtLeast(88f)
@@ -3349,13 +3397,19 @@ class MainActivity: Activity() {
             }.apply {
                 isFocusable = true
                 isFocusableInTouchMode = true
-                nextFocusUpId = nav.getOrNull(6)?.id ?: View.NO_ID
+                val accountNavigation = nav.getOrNull(6)
+                nextFocusUpId = accountNavigation?.id ?: View.NO_ID
                 nextFocusDownId = id
+                nextFocusLeftId = id
+                nextFocusRightId = id
+                accountNavigation?.nextFocusDownId = id
             }
             refresh.isEnabled = !cloudAccount.inlineBusy
             card.addView(refresh, lp(-2, dp(if (mobileLayout) 38 else 44)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             })
+            // 部分电视 ROM 不会自动把焦点落到滚动容器中的唯一操作按钮，显式恢复焦点链。
+            refresh.post { if (refresh.isAttachedToWindow && !cloudAccount.inlineBusy) refresh.requestFocus() }
             val loginHost = FrameLayout(this).apply {
                 minimumHeight = host.height.coerceAtLeast(dp(240))
             }
@@ -3440,18 +3494,7 @@ class MainActivity: Activity() {
         profileRow.addView(identity, lp(0, -2).apply { weight = 1f })
         // Signed-in accounts are online in this dashboard; keep the indicator aligned to
         // the far right of the nickname row, matching the compact status chips on Home.
-        val onlineStatus = row().apply {
-            gravity = Gravity.CENTER
-            background = rounded(surface)
-            setPadding(dp(9), dp(6), dp(9), dp(6))
-            isFocusable = false
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            addView(text("●", 10f, if (cloudAccount.signedIn) Color.rgb(76, 205, 125) else Color.rgb(235, 75, 75)).apply {
-                setPadding(0, 0, dp(5), 0)
-            }, lp(-2, -2))
-            addView(text(if (cloudAccount.signedIn) "已上线" else "已下线", 12f, white), lp(-2, -2))
-        }
-        profileRow.addView(onlineStatus, lp(-2, -2).apply { leftMargin = dp(8) })
+        profileRow.addView(accountStatusIndicator(), lp(-2, -2).apply { leftMargin = dp(8) })
         page.addView(profileRow, lp(-1, -2))
 
         val actions = row().apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
