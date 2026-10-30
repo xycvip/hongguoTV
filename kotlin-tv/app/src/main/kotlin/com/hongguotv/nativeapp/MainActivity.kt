@@ -420,7 +420,7 @@ class MainActivity: Activity() {
                         if(screen=="catalog" && page==1) {
                             homeScreen?.updateShelves(homeShelves(),requestFocus=false)
                             homeRefreshControl?.text="刷新"
-                            homeRefreshControl?.setOnClickListener { refreshAllHome() }
+                            homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
                         }
                     }
                     android.util.Log.i("HongguoTV","Startup background home refresh completed items=${resultPage.items.size}")
@@ -1256,7 +1256,7 @@ class MainActivity: Activity() {
                         pendingRefreshFocus=null
                         root.post {
                             if(screen=="catalog" && tab==requestTab) {
-                                val target=if(restore.startsWith("rank:")) root.findViewWithTag<View>(restore) else homeRefreshControl
+                                val target=when { restore.startsWith("rank:") -> root.findViewWithTag<View>(restore); restore.startsWith("focus:") -> root.findViewWithTag<View>(restore.removePrefix("focus:")); else -> homeRefreshControl }
                                 if(target?.isAttachedToWindow==true) target.requestFocus()
                             }
                         }
@@ -1275,7 +1275,19 @@ class MainActivity: Activity() {
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
                     refreshHomePending=false
                     homeRefreshControl?.text="刷新"
-                    homeRefreshControl?.setOnClickListener { refreshAllHome() }
+                    homeRefreshControl?.setOnClickListener {
+                        pendingRefreshFocus="home"
+                        refreshAllHome()
+                    }
+                    pendingRefreshFocus?.let { restore ->
+                        pendingRefreshFocus=null
+                        root.post {
+                            if(screen=="catalog" && tab==requestTab) {
+                                val target=if(restore.startsWith("focus:")) root.findViewWithTag<View>(restore.removePrefix("focus:")) else homeRefreshControl
+                                if(target?.isAttachedToWindow==true) target.requestFocus()
+                            }
+                        }
+                    }
                     return@work
                 }
                 catalog=emptyList(); hasMore=false; ranking=null; rankSubtitle?.text=if(requestAi) "AI剧分类加载失败" else "榜单加载失败"
@@ -1322,8 +1334,13 @@ class MainActivity: Activity() {
         if(tab==0 && genre!=null) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text("题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-            genreClear=addButton(bar,"全部题材") { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true) }
-                .apply { nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: nav[tab].id }
+            genreClear=addButton(bar,"全部题材") {
+                pendingRefreshFocus="focus:home:genre-clear"
+                genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true)
+            }.apply {
+                tag="home:genre-clear"
+                nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: nav[tab].id
+            }
             body.addView(bar)
             typeButtons.values.forEach { it.nextFocusDownId=genreClear!!.id }
             genreButton?.nextFocusDownId=genreClear!!.id
@@ -1331,8 +1348,13 @@ class MainActivity: Activity() {
         if(tab==2 && aiCatalog && aiGenre!=null) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text("题材 · ${aiGenre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-            genreClear=addButton(bar,"全部题材") { aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true) }
-                .apply { nextFocusUpId=aiGenreButton?.id ?: nav[tab].id }
+            genreClear=addButton(bar,"全部题材") {
+                pendingRefreshFocus="rank:ai:genre-clear"
+                aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
+            }.apply {
+                tag="rank:ai:genre-clear"
+                nextFocusUpId=aiGenreButton?.id ?: nav[tab].id
+            }
             body.addView(bar)
             aiGenreButton?.nextFocusDownId=genreClear!!.id
         }
