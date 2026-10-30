@@ -4397,7 +4397,7 @@ class MainActivity: Activity() {
                     resettingAllData=false
                     Toast.makeText(this,"本机记录仍在保存，暂未清除。请稍后再试。",Toast.LENGTH_LONG).show()
                 }
-                return@execute
+                return@Thread
             }
             runCatching {
                 // 先停止所有后台请求和任务，避免它们在清理完成后又把缓存写回来。
@@ -4422,7 +4422,7 @@ class MainActivity: Activity() {
                     resettingAllData=false
                     Toast.makeText(this,"清理未完成：${error.message ?: "存储访问失败"}",Toast.LENGTH_LONG).show()
                 }
-                return@execute
+                return@Thread
             }
             main.post {
                 val launch=packageManager.getLaunchIntentForPackage(packageName)
