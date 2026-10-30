@@ -3346,7 +3346,8 @@ class MainActivity: Activity() {
             setPadding(0, 0, 0, dp(12))
         }
         val avatarSize = dp(if (mobileLayout) 48 else 60)
-        val avatar = TextView(this).apply {
+        // 默认保留昵称首字作为兜底；头像 URL 加载成功后覆盖显示真实头像。
+        val avatarFallback = TextView(this).apply {
             text = cloudAccount.accountLabel.take(1).ifBlank { "红" }
             textSize = if (mobileLayout) 21f else 26f
             setTextColor(Color.WHITE)
@@ -3356,6 +3357,22 @@ class MainActivity: Activity() {
                 shape = GradientDrawable.OVAL
                 setColor(TvStyle.accent)
             }
+        }
+        val avatar = FrameLayout(this).apply {
+            clipToOutline = true
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(TvStyle.accent)
+            }
+            addView(avatarFallback, FrameLayout.LayoutParams(-1, -1))
+            val image = ImageView(this@MainActivity).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                clipToOutline = true
+                background = GradientDrawable().apply { shape = GradientDrawable.OVAL }
+                contentDescription = "红果账户头像"
+            }
+            addView(image, FrameLayout.LayoutParams(-1, -1))
+            if (cloudAccount.accountAvatarUrl.isNotBlank()) loadCover(image, cloudAccount.accountAvatarUrl)
         }
         profileRow.addView(avatar, lp(avatarSize, avatarSize).apply { rightMargin = dp(12) })
         val identity = column()
