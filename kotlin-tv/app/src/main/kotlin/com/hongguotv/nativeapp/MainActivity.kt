@@ -202,7 +202,7 @@ class MainActivity: Activity() {
     private var catalogFocus=""
     private data class CatalogState(val page: Int,val items: List<Series>,val hasMore: Boolean,val ranking: ComicRanking?,val board: RankBoard?=null,val genre: Genre?=null,val aiCatalog: Boolean=false,val aiGenre: Genre?=null)
     private var ranking: ComicRanking?=null
-    private var rankBoard=RankBoard.COMIC
+    private var rankBoard=RankBoard.REAL
     // 榜单按枚举顺序循环切换，新增榜单只需在 RankBoard 里加一项
     private fun nextRankBoard()=RankBoard.entries[(rankBoard.ordinal+1)%RankBoard.entries.size]
     private var rankSwitch: View?=null
@@ -419,6 +419,39 @@ class MainActivity: Activity() {
     private var startupPreviewEpisodeId: String?=null
     private var startupPreviewPlayedMs=0L
     private var startupPreviewLastTickAt=0L
+    /** 开机推荐最多等待 8 秒让内容开始实际播放；开始播放后不再受超时限制。 */
+    private var startupRecommendationExpired=false
+    private val startupRecommendationTimeout=Runnable {
+        // 只在等待播放内容期间超时；开始播放后 pending 会被清除，推荐可正常持续播放。
+        if(bootAutoPlaybackPending) leaveStartupRecommendation()
+    }
+    private fun markStartupRecommendationPlaying() {
+        if(!startupAutoPlaybackActive || !bootAutoPlaybackPending) return
+        bootAutoPlaybackPending=false
+        main.removeCallbacks(startupRecommendationTimeout)
+        android.util.Log.i("HongguoTV","Startup recommendation playback started; 8-second wait limit cleared")
+    }
+    private fun leaveStartupRecommendation() {
+        if(!bootAutoPlaybackPending && !startupAutoPlaybackActive) return
+        startupRecommendationExpired=true
+        main.removeCallbacks(startupRecommendationTimeout)
+        bootAutoPlaybackPending=false
+        startupAutoPlaybackActive=false
+        startupPreviewEpisodeId=null
+        startupPreviewPlayedMs=0L
+        startupPreviewLastTickAt=0L
+        initialCatalogPending=false
+        pendingDetail=null
+        detail=null
+        directPlayback=false
+        cancelWork()
+        cancelRecovery()
+        cancelPrefetch()
+        player?.pause()
+        releasePlayer()
+        hideBootSplash()
+        showCatalog(load=true)
+    }
     private fun refreshHomeDataInBackground() {
         if(startupHomeRefreshStarted || isDestroyed || !library.isLoaded) return
         startupHomeRefreshStarted=true
@@ -448,12 +481,20 @@ class MainActivity: Activity() {
     private fun launchRandomPlayback() {
         if(launchRandomPlaybackStarted || isDestroyed || !library.isLoaded || !foreground) return
         launchRandomPlaybackStarted=true
+        startupRecommendationExpired=false
         refreshHomeDataInBackground()
         bootAutoPlaybackPending=true
         initialCatalogPending=false
+        main.removeCallbacks(startupRecommendationTimeout)
+        main.postDelayed(startupRecommendationTimeout,8000L)
         fun playRandomOrFallback() {
-            if(isDestroyed) return
-            if(!foreground) { launchRandomPlaybackStarted=false; initialCatalogPending=true; return }
+            if(isDestroyed || startupRecommendationExpired || !bootAutoPlaybackPending) return
+            if(!foreground) {
+                main.removeCallbacks(startupRecommendationTimeout)
+                launchRandomPlaybackStarted=false
+                initialCatalogPending=true
+                return
+            }
             val picked=randomRecommender.pick(1).firstOrNull()
                 ?: library.cachedHome(library.contentType)?.items?.shuffled()?.firstOrNull()
             if(picked!=null) {
@@ -461,6 +502,7 @@ class MainActivity: Activity() {
                 openDetail(picked,resume=true,autoplay=true)
             } else {
                 startupAutoPlaybackActive=false
+                main.removeCallbacks(startupRecommendationTimeout)
                 bootAutoPlaybackPending=false
                 showCatalog(load=true)
                 Toast.makeText(this,"暂时无法获取随机推荐，请检查网络后重试",Toast.LENGTH_LONG).show()
@@ -582,7 +624,7 @@ class MainActivity: Activity() {
     }
 
     private fun exportLibraryBackupToPublicFolder(anchor: View?) {
-        val snapshot = runCatching { library.snapshot().copy(accountState = cloudAccount.backupJson()) }.getOrElse {
+        val snapshot = runCatching { library.snapshot().copy(accountState = cloudAccount.backupJson(), playbackExtras = extras.backupSnapshot(library.skipMarksSnapshot())) }.getOrElse {
             tvTools.info("备份失败", "无法读取当前本机记录，请稍后重试。", anchor)
             return
         }
@@ -628,42 +670,34 @@ class MainActivity: Activity() {
             )
             return
         }
-        AlertDialog.Builder(this)
-            .setTitle("选择备份文件")
-            .setItems(files.map { it.name }.toTypedArray()) { _, which ->
-                if (which !in files.indices) return@setItems
-                val selected = files[which]
-                AlertDialog.Builder(this)
-                    .setTitle(selected.name)
-                    .setItems(arrayOf("恢复此备份", "删除此备份")) { _, action ->
-                        when (action) {
-                            0 -> importLibraryBackup(Uri.fromFile(selected), anchor)
-                            1 -> AlertDialog.Builder(this)
-                                .setTitle("删除备份文件")
-                                .setMessage("确定删除这条本地备份吗？\n\n${selected.name}\n\n删除后无法恢复。")
-                                .setNegativeButton("取消", null)
-                                .setPositiveButton("删除") { _, _ ->
-                                    io.execute {
-                                        val deleted = runCatching { selected.isFile && selected.delete() }.getOrDefault(false)
-                                        main.post {
-                                            if (isDestroyed) return@post
-                                            if (deleted) {
-                                                Toast.makeText(this, "备份已删除", Toast.LENGTH_SHORT).show()
-                                                showLocalBackupFiles(anchor)
-                                            } else {
-                                                tvTools.info("删除失败", "无法删除备份文件，请检查存储权限或文件是否被占用。", anchor)
-                                            }
-                                        }
+        tvTools.choose("选择备份文件", files.map { it.name }, anchor, { which ->
+            val selected = files.getOrNull(which)
+            if (selected != null) {
+                tvTools.choose(selected.name, listOf("恢复此备份", "删除此备份"), anchor, { action ->
+                    when (action) {
+                        0 -> importLibraryBackup(Uri.fromFile(selected), anchor)
+                        1 -> tvTools.confirm(
+                            "删除备份文件",
+                            "确定删除这条本地备份吗？\n\n${selected.name}\n\n删除后无法恢复。",
+                            anchor
+                        ) {
+                            io.execute {
+                                val deleted = runCatching { selected.isFile && selected.delete() }.getOrDefault(false)
+                                main.post {
+                                    if (isDestroyed) return@post
+                                    if (deleted) {
+                                        Toast.makeText(this, "备份已删除", Toast.LENGTH_SHORT).show()
+                                        showLocalBackupFiles(anchor)
+                                    } else {
+                                        tvTools.info("删除失败", "无法删除备份文件，请检查存储权限或文件是否被占用。", anchor)
                                     }
                                 }
-                                .show()
+                            }
                         }
                     }
-                    .setNegativeButton("返回", null)
-                    .show()
+                })
             }
-            .setNegativeButton("取消", null)
-            .show()
+        })
     }
 
     private fun exportLibraryBackup(uri: Uri) {
@@ -708,21 +742,44 @@ class MainActivity: Activity() {
                 if(isDestroyed) return@post
                 result.onFailure { Toast.makeText(this,"备份文件无效：${it.message ?: "无法解析"}",Toast.LENGTH_LONG).show() }
                 result.onSuccess { data ->
-                    tvTools.choose("选择恢复方式",listOf("合并记录，保留当前播放设置","合并记录并恢复备份中的播放设置"),anchor,{ choice ->
-                        val restoreSettings=choice==1
-                        val accountNote = if (data.accountState.isNullOrBlank()) "\n备份中没有账户登录信息。" else "\n备份包含明文红果账户凭据，恢复时会尝试登录并刷新云端数据；云端观影资料本身不在备份中。"
-                        val message="备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有数据。${accountNote}"
-                        tvTools.confirm("确认恢复备份",message,anchor) {
-                            runCatching {
-                                favoriteMonitor.stop()
-                                library.restore(data,restoreSettings)
-                                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
-                                showCatalog(); favoriteMonitor.check()
-                                Toast.makeText(this,"备份记录已合并恢复",Toast.LENGTH_LONG).show()
-                                restoreBackupAccount(data, anchor)
-                            }.onFailure { tvTools.info("恢复失败","记录未能完整恢复：${it.message ?: "未知错误"}",anchor) }
+                    tvTools.choose(
+                        "选择恢复方式",
+                        listOf(
+                            "合并记录并重置播放偏好设置",
+                            "合并记录并保留当前播放偏好设置",
+                            "合并记录并恢复备份中的播放偏好设置"
+                        ),
+                        anchor,
+                        { choice ->
+                            val resetPlayback = choice == 0
+                            val restoreSettings = choice == 2
+                            val accountNote = if (data.accountState.isNullOrBlank()) "\n备份中没有账户登录信息。" else "\n备份包含明文红果账户凭据，恢复时会尝试登录并刷新云端数据；云端观影资料本身不在备份中。"
+                            val preferenceNote = when (choice) {
+                                0 -> "\n本机播放偏好设置将恢复默认值。"
+                                1 -> "\n本机当前播放偏好设置将保持不变。"
+                                else -> "\n将恢复备份中的播放偏好设置。"
+                            }
+                            val message = "备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有个人数据。${preferenceNote}${accountNote}"
+                            tvTools.confirm("确认恢复备份", message, anchor) {
+                                runCatching {
+                                    favoriteMonitor.stop()
+                                    library.restore(data, restoreSettings)
+                                    if (resetPlayback) {
+                                        resetPlaybackPreferences()
+                                        TvStyle.apply(library.theme)
+                                    }
+                                    if (restoreSettings) data.playbackExtras?.let {
+                                        extras.restoreBackup(it)
+                                        library.restoreSkipMarks(it.skipMarks)
+                                    }
+                                    tabState.clear(); tabFocus.clear(); catalogFocus = ""; page = 1
+                                    showCatalog(); favoriteMonitor.check()
+                                    Toast.makeText(this, "备份记录已合并恢复", Toast.LENGTH_LONG).show()
+                                    restoreBackupAccount(data, anchor)
+                                }.onFailure { tvTools.info("恢复失败", "记录未能完整恢复：${it.message ?: "未知错误"}", anchor) }
+                            }
                         }
-                    })
+                    )
                 }
             }
         }
@@ -1806,11 +1863,23 @@ class MainActivity: Activity() {
         heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
         heading(device,"片单与设备","保管记录，保持应用更新")
         lateinit var startupAutoplayButton: TextView
-        startupAutoplayButton=setting(playback,"启动时播放推荐  ·  ${if(startupAutoplayEnabled()) "开启" else "关闭"}") {
+        fun paintStartupAutoplayButton(focused: Boolean=startupAutoplayButton.hasFocus()) {
+            val enabled=startupAutoplayEnabled()
+            startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "✓ 开启" else "关闭"}"
+            startupAutoplayButton.isSelected=enabled
+            startupAutoplayButton.background=rounded(
+                if(focused) TvStyle.raised else if(enabled) TvStyle.selectedSurface else bg,
+                if(focused || enabled) accent else Color.TRANSPARENT
+            )
+        }
+        fun syncStartupAutoplayButton() = paintStartupAutoplayButton()
+        startupAutoplayButton=setting(playback,"启动时播放推荐") {
             val enabled=!startupAutoplayEnabled()
             getSharedPreferences("startup_playback",MODE_PRIVATE).edit().putBoolean("autoplay_recommendation",enabled).apply()
-            startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
+            syncStartupAutoplayButton()
         }
+        startupAutoplayButton.setOnFocusChangeListener { _,focused -> paintStartupAutoplayButton(focused) }
+        paintStartupAutoplayButton(false)
         lateinit var qualityButton: TextView
         qualityButton=setting(playback,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
         lateinit var defaultSpeed: TextView
@@ -1890,9 +1959,10 @@ class MainActivity: Activity() {
         fileBackup=setting(device,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         lateinit var backup: TextView
         backup=setting(device,"手机备份与恢复") {
-            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState = cloudAccount.backupJson())) }.onSuccess { encoded ->
+            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState = cloudAccount.backupJson(), playbackExtras = extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { data,restoreSettings ->
                     favoriteMonitor.stop(); library.restore(data,restoreSettings)
+                    if(restoreSettings) data.playbackExtras?.let { extras.restoreBackup(it); library.restoreSkipMarks(it.skipMarks) }
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                     showCatalog(); favoriteMonitor.check()
                     Toast.makeText(this,"记录已合并恢复",Toast.LENGTH_LONG).show()
@@ -1940,7 +2010,7 @@ class MainActivity: Activity() {
         // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
         // 设置页不再显示底部版本号及说明文字。
         rechainSettings={
-            val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
+            val left=listOf(startupAutoplayButton,qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
                 listOf(blockedWords,keySettings)
             val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,resetButton,aboutButton)
@@ -1951,14 +2021,16 @@ class MainActivity: Activity() {
             } }
             left.forEachIndexed { i,v -> v.nextFocusLeftId=v.id; v.nextFocusRightId=right.getOrNull(i)?.id ?: v.id }
             right.forEachIndexed { i,v -> v.nextFocusLeftId=left.getOrNull(i)?.id ?: v.id; v.nextFocusRightId=v.id }
-            nav.forEach { it.nextFocusDownId=qualityButton.id }
+            nav.forEach { it.nextFocusDownId=startupAutoplayButton.id }
         }
         rechainSettings()
 
         // 页面重建（如切换片源显隐）后按标签恢复焦点，避免跳回顶部导航
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
-        if(target!=null) target.requestFocus() else nav[tab].requestFocus()
+        if(target!=null) target.requestFocus()
+        else if(tab==5) startupAutoplayButton.requestFocus()
+        else nav[tab].requestFocus()
     }
     private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=true) {
         val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
@@ -2370,6 +2442,7 @@ class MainActivity: Activity() {
         })
     }
     private fun openDetail(series: Series,resume: Boolean=false,autoplay: Boolean=true) {
+        val startupAttempt=bootAutoPlaybackPending
         pendingDetail=series; detailAutoplay=autoplay
         invalidatePage(); releaseCatalogViews(); screen="detail"; directPlayback=resume; detail=null; synopsisExpanded=false
         val body=base(series.title)
@@ -2379,6 +2452,7 @@ class MainActivity: Activity() {
             body.setBackgroundColor(Color.BLACK)
         } else message(body,"正在加载剧集…")
         work({ repository.detail(series.id) }, { result ->
+            if(startupAttempt && startupRecommendationExpired) return@work
             detail=result; library.observeFavorite(series.id,result.episodes.size,System.currentTimeMillis(),acknowledge=true)
             val progress=library.progress(series.id)
             val cloud = pendingCloudProgress?.takeIf { it.series.id == series.id }
@@ -2387,6 +2461,7 @@ class MainActivity: Activity() {
             episodeIndex=target.index; group=episodeIndex/20
             if(resume) playEpisode(target.index,target.position,autoplay=detailAutoplay) else showDetail(false)
         }, { problem ->
+            if(startupAttempt && startupRecommendationExpired) return@work
             if(startupAutoPlaybackActive) failStartupRecommendation()
             else error(body,problem) { openDetail(series,resume,detailAutoplay) }
         })
@@ -2618,7 +2693,7 @@ class MainActivity: Activity() {
             playbackTitle=text("",23f).apply { maxLines=1; ellipsize=TextUtils.TruncateAt.END; setTypeface(null,Typeface.BOLD) }; hud.addView(playbackTitle)
             playbackText=text("",15f,muted).apply { setPadding(0,dp(10),0,dp(9)) }; hud.addView(playbackText)
             progressBar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply { max=1000; progressTintList=android.content.res.ColorStateList.valueOf(accent); progressBackgroundTintList=android.content.res.ColorStateList.valueOf(surface) }; hud.addView(progressBar,lp(-1,dp(4)))
-            hud.addView(text("确认 暂停/播放    左右 快退/快进    长按右键 3× 快进    ↓ 选集    ↑ 更多    返回 收起 / 退出",13f,muted).apply { setPadding(0,dp(12),0,0) })
+            hud.addView(text("确认 播放/暂停    ↑ 上一集    ↓ 下一集    左右 快退/快进    菜单 播放菜单    返回 收起 / 退出",13f,muted).apply { setPadding(0,dp(12),0,0) })
             controls=column().apply { setPadding(0,dp(12),0,0); visibility=View.GONE }; hud.addView(controls)
             root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
         }
@@ -2667,12 +2742,18 @@ class MainActivity: Activity() {
                     if(active() && firstFrame) {
                         firstFrame=false
                         hideBootSplash()
-                        bootAutoPlaybackPending=false
+                        markStartupRecommendationPlaying()
                         // 不在首帧后立即保存：开机推荐必须累计真实播放 30 秒，才允许写入观看历史。
                         android.util.Log.i("HongguoTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
                     }
                 }
-                override fun onIsPlayingChanged(playing: Boolean) { if(active()) { if(hud.visibility==View.VISIBLE) showHud(); syncMediaSession() } }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    if(active()) {
+                        if(playing && playbackReady) markStartupRecommendationPlaying()
+                        if(hud.visibility==View.VISIBLE) showHud()
+                        syncMediaSession()
+                    }
+                }
                 override fun onPlaybackParametersChanged(parameters: PlaybackParameters) { if(active()) syncMediaSession() }
                 override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) { if(active()) { syncMediaSession(); danmakuView?.seekTo(newPosition.positionMs) } }
                 override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
@@ -2731,6 +2812,8 @@ class MainActivity: Activity() {
         retryPending=true; main.postDelayed(retryRunnable,delay)
     }
     private fun failStartupRecommendation() {
+        main.removeCallbacks(startupRecommendationTimeout)
+        startupRecommendationExpired=true
         startupAutoPlaybackActive=false
         bootAutoPlaybackPending=false
         startupPreviewEpisodeId=null
@@ -3573,8 +3656,12 @@ class MainActivity: Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun returnToDetail(forceDetail: Boolean=false) {
+        main.removeCallbacks(startupRecommendationTimeout)
         sleepTimer.cancel(); sleepStopped=false; startupAutoPlaybackActive=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
-        if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
+        if(directPlayback && !forceDetail) {
+            showCatalog()
+            if(tab==6) nav.getOrNull(6)?.post { if(tab==6 && screen=="catalog") nav.getOrNull(6)?.requestFocus() }
+        } else { directPlayback=false; showDetail(true) }
     }
 
     /** 官方账号页：云端数据独立展示，不覆盖或清空本机收藏、历史。 */
@@ -3999,13 +4086,14 @@ class MainActivity: Activity() {
     }
 
     private fun goBack() {
+        if(bootAutoPlaybackPending || startupAutoPlaybackActive) { leaveStartupRecommendation(); return }
         if(!library.isLoaded) { finish(); return }
         if(screen=="player" && commentPanel!=null) { closeOfficialComments(); return }
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
-            "detail" -> showCatalog()
-            "account" -> showCatalog()
-            else -> if(tab==6) { switchTab(0); nav.getOrNull(0)?.requestFocus() } else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
+            "detail" -> { showCatalog(); if(tab==6) nav.getOrNull(6)?.requestFocus() }
+            "account" -> { showCatalog(); if(tab==6) nav.getOrNull(6)?.requestFocus() }
+            else -> if(tab==6) nav.getOrNull(6)?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
     }
     /** 手机触屏：轻触唤起播放信息与进度条，左右滑动按比例快退/快进。 */
@@ -4059,6 +4147,10 @@ class MainActivity: Activity() {
                     touchSeekGesture=false
                     touchSeekTarget=null
                     if(target!=null) seekTo(target) else showHud()
+                    return true
+                }
+                if(kotlin.math.abs(event.x-touchStartX)<=dp(24) && kotlin.math.abs(event.y-touchStartY)<=dp(24)) {
+                    showPanel()
                     return true
                 }
                 showHud()
@@ -4168,6 +4260,15 @@ class MainActivity: Activity() {
             if(screen=="player") syncMediaSession()
         } else libraryLoadError?.let(::showLibraryError)
     }
+    private fun resetPlaybackPreferences() {
+        // 只重置「播放偏好」分组，不动片单类型、系统风格、系统时间和片源入口等设备偏好。
+        library.resetPlaybackPreferences()
+        getSharedPreferences("playback-extras-v1", MODE_PRIVATE).edit().clear().apply()
+        getSharedPreferences("third-sources-v1", MODE_PRIVATE).edit()
+            .remove("playbackSpeed").remove("resizeMode").remove("skipMarks").apply()
+        getSharedPreferences("startup_playback", MODE_PRIVATE).edit().clear().apply()
+    }
+
     private fun showResetOptions(anchor: View) {
         val content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         content.addView(TvDialog.title(this,"重置软件"))
@@ -4260,14 +4361,25 @@ class MainActivity: Activity() {
                     finish()
                     return@post
                 }
-                val pendingFlags=android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                    if(Build.VERSION.SDK_INT>=23) android.app.PendingIntent.FLAG_IMMUTABLE else 0
-                val pending=android.app.PendingIntent.getActivity(this,9917,
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),pendingFlags)
-                val alarm=getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                alarm.set(android.app.AlarmManager.ELAPSED_REALTIME,android.os.SystemClock.elapsedRealtime()+900,pending)
-                killOnDestroy=true
-                finishAffinity()
+                runCatching {
+                    val flags=android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                        if(Build.VERSION.SDK_INT>=23) android.app.PendingIntent.FLAG_IMMUTABLE else 0
+                    val pending=android.app.PendingIntent.getActivity(this,9917,
+                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),flags)
+                    val alarm=getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                    val triggerAt=android.os.SystemClock.elapsedRealtime()+1200L
+                    if(Build.VERSION.SDK_INT>=23) {
+                        alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                    } else {
+                        alarm.setExact(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                    }
+                    // 等旧 Activity 完整销毁后再由系统拉起新进程，避免旧实例关闭共享资源时影响新实例。
+                    killOnDestroy=true
+                    finishAffinity()
+                }.onFailure { error ->
+                    resettingAllData=false
+                    Toast.makeText(this,"数据已清除，但自动重启失败：${error.message ?: "请手动打开"}",Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

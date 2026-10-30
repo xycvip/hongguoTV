@@ -424,10 +424,11 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     fun progress(id: String): CloudProgress? =
         if (credentials != null) history.firstOrNull { it.series.id == id } else null
 
-    private fun showDialog(builder: AlertDialog.Builder) {
+    private fun showDialog(next: AlertDialog) {
         dialog?.dismiss()
-        dialog = builder.create()
-        dialog?.show()
+        dialog = next
+        next.setOnDismissListener { if (dialog === next) dialog = null }
+        next.show()
     }
 
     fun show() {
@@ -440,31 +441,29 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         val choices =
             if (signed) arrayOf("云端继续观看（最近 50 部）", "刷新账号和云端记录", "退出红果账号")
             else arrayOf("使用红果 App 扫码登录")
-        showDialog(
-            AlertDialog.Builder(activity)
-                .setTitle(profile?.let { "红果账号 · ${it.nickname}" } ?: "红果账号（测试功能）")
-                .setItems(choices) { _, index ->
-                    if (!signed) {
-                        qrLogin()
-                    } else
-                        when (index) {
-                            0 -> showHistory()
-                            1 -> refresh(true)
-                            2 -> logout()
-                        }
+        val next = TvDialog.choose(
+            activity,
+            profile?.let { "红果账户 · ${it.nickname}" } ?: "红果账户",
+            choices.toList(),
+            { index ->
+                if (!signed) qrLogin()
+                else when (index) {
+                    0 -> showHistory()
+                    1 -> refresh(true)
+                    2 -> logout()
                 }
-                .setNeutralButton("同步状态") { _, _ ->
-                    showDialog(
-                        AlertDialog.Builder(activity)
-                            .setTitle("账号同步状态")
-                            .setMessage(
-                                "$status\n\n登录后，电视播放的进度会自动上传。手机记录可从「云端继续观看」打开。平台接口可能变化，首次使用请对照手机核对集数和时间。\n本机历史与云端记录分别保留；退出登录会停止上传。"
-                            )
-                            .setPositiveButton("关闭", null)
-                    )
-                }
-                .setNegativeButton("关闭", null)
+            },
+            extra = "同步状态",
+            onExtra = {
+                dialog?.dismiss()
+                TvDialog.info(
+                    activity,
+                    "账号同步状态",
+                    "$status\n\n登录后，电视播放的进度会自动上传。手机记录可从「云端继续观看」打开。平台接口可能变化，首次使用请对照手机核对集数和时间。\n本机历史与云端记录分别保留；退出登录会停止上传。"
+                ).show()
+            }
         )
+        showDialog(next)
     }
 
     private fun validateAccount(web: AccountCredentials): Pair<AccountCredentials, CloudProfile> {
@@ -649,26 +648,25 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                                 gravity = android.view.Gravity.CENTER_HORIZONTAL
                             }
                     }
-                val panel =
-                    android.widget.LinearLayout(activity).apply {
-                        orientation = android.widget.LinearLayout.VERTICAL
-                        setPadding(24, 16, 24, 16)
-                        addView(image)
-                        addView(
-                            android.widget.TextView(activity).apply {
-                                text = "用手机红果 App：我的 → 右上角菜单 → 扫一扫\n扫码后请在手机确认登录"
-                                textSize = 18f
-                                gravity = android.view.Gravity.CENTER
-                                setPadding(0, 12, 0, 0)
-                            }
-                        )
-                    }
-                showDialog(
-                    AlertDialog.Builder(activity)
-                        .setTitle("红果官方扫码登录")
-                        .setView(panel)
-                        .setNegativeButton("取消", null)
-                )
+                val density = activity.resources.displayMetrics.density
+                val panel = android.widget.LinearLayout(activity).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    gravity = android.view.Gravity.CENTER_HORIZONTAL
+                    addView(TvDialog.title(activity, "红果官方扫码登录"))
+                    addView(image, android.widget.LinearLayout.LayoutParams(size, size).apply {
+                        gravity = android.view.Gravity.CENTER_HORIZONTAL
+                        bottomMargin = (12 * density).toInt()
+                    })
+                    addView(TvDialog.body(activity, "用手机红果 App：我的 → 右上角菜单 → 扫一扫\n扫码后请在手机确认登录。"))
+                }
+                val actions = android.widget.LinearLayout(activity).apply { gravity = android.view.Gravity.END }
+                val cancelButton = TvDialog.capsuleButton(activity, "取消") {}
+                actions.addView(cancelButton)
+                panel.addView(actions)
+                val qrDialog = AlertDialog.Builder(activity).setView(TvDialog.card(activity, panel)).create()
+                TvDialog.styleWindow(activity, qrDialog, 0.62f, 620) { cancelButton.requestFocus() }
+                showDialog(qrDialog)
+                cancelButton.setOnClickListener { qrDialog.dismiss() }
                 val current = dialog ?: return@task
                 val token = generation
                 val deadline =
@@ -679,6 +677,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 current.setOnDismissListener {
                     cancelled = true
                     login.cancel()
+                    if (dialog === current) dialog = null
                     if (token == generation) {
                         busy = false
                         status = "已取消扫码登录"
@@ -691,6 +690,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                     current.setOnDismissListener(null)
                     login.cancel()
                     if (token == generation) busy = false
+                    if (dialog === current) dialog = null
                     current.dismiss()
                 }
                 fun poll() {
@@ -698,13 +698,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                     if (android.os.SystemClock.elapsedRealtime() >= deadline) {
                         closeQr()
                         status = "二维码已过期，请重新扫码"
-                        showDialog(
-                            AlertDialog.Builder(activity)
-                                .setTitle("二维码已过期")
-                                .setMessage("请刷新二维码，再用手机红果 App 扫码确认。")
-                                .setPositiveButton("刷新二维码") { _, _ -> qrLogin() }
-                                .setNegativeButton("取消", null)
-                        )
+                        showDialog(TvDialog.confirm(activity, "二维码已过期", "请刷新二维码，再用手机红果 App 扫码确认。", action = { qrLogin() }))
                         return
                     }
                     worker.execute {
@@ -726,15 +720,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                                             { acceptAccount(it.first, it.second) },
                                             { failure ->
                                                 showDialog(
-                                                    AlertDialog.Builder(activity)
-                                                        .setTitle("登录状态保存失败")
-                                                        .setMessage(safeError(failure))
-                                                        .setPositiveButton("重新扫码") { _, _ ->
-                                                            qrLogin()
-                                                        }
-                                                        .setNegativeButton("返回账号页") { _, _ ->
-                                                            show()
-                                                        }
+                                                    TvDialog.confirm(activity, "登录状态保存失败", safeError(failure), action = { qrLogin() })
                                                 )
                                             },
                                         )
@@ -744,11 +730,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                                     closeQr()
                                     status = safeError(it)
                                     showDialog(
-                                        AlertDialog.Builder(activity)
-                                            .setTitle("扫码登录未完成")
-                                            .setMessage(status)
-                                            .setPositiveButton("重新扫码") { _, _ -> qrLogin() }
-                                            .setNegativeButton("返回账号页") { _, _ -> show() }
+                                        TvDialog.confirm(activity, "扫码登录未完成", status, action = { qrLogin() })
                                     )
                                 }
                         }
@@ -815,18 +797,12 @@ class AccountController(private val activity: Activity, private val play: (Cloud
         }
         val snapshot = history
         showDialog(
-            AlertDialog.Builder(activity)
-                .setTitle("云端继续观看")
-                .setItems(
-                    snapshot
-                        .map {
-                            "${it.series.title} · 第 ${it.episodeIndex+1} 集 · ${it.position/1000} 秒"
-                        }
-                        .toTypedArray()
-                ) { _, index ->
-                    play(snapshot[index])
-                }
-                .setNegativeButton("关闭", null)
+            TvDialog.choose(
+                activity,
+                "云端继续观看",
+                snapshot.map { "${it.series.title} · 第 ${it.episodeIndex+1} 集 · ${it.position/1000} 秒" },
+                { index -> play(snapshot[index]) }
+            )
         )
     }
 

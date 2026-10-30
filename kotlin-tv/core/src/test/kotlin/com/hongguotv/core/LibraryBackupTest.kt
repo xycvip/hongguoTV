@@ -161,6 +161,34 @@ class LibraryBackupTest {
         assertEquals(listOf("https://a.example.com/vod","https://b.example.com/vod"),decoded.map { it.api })
         assertEquals("b.example.com",decoded[1].name)
     }
+
+    @Test fun `playback extras and skip marks round trip while legacy backup stays compatible`() {
+        val extras = BackupPlaybackExtras(
+            blockedWords = setOf("加群", "自定义词"),
+            perSeriesDanmaku = mapOf("1" to false, "2" to true),
+            autoSkipUnplayable = true,
+            seekStepSeconds = 30,
+            longPressSpeed = 4f,
+            menuKeyAction = "episodes",
+            remoteUpAction = "previous",
+            remoteDownAction = "next",
+            remoteConfirmAction = "play_pause",
+            remoteMenuAction = "comments",
+            skipMarks = mapOf("1" to SkipMark(12, 8))
+        )
+        val original = data().copy(playbackExtras = extras)
+        assertEquals(extras, LibraryBackup.decode(LibraryBackup.encode(original)).playbackExtras)
+        val legacy = JSONObject(LibraryBackup.encode(data())).apply { remove("playbackExtras") }
+        assertNull(LibraryBackup.decode(legacy.toString()).playbackExtras)
+    }
+    @Test fun `playback extras restore only when settings restore is selected`() {
+        val localExtras = BackupPlaybackExtras(blockedWords = setOf("本机词"), remoteUpAction = "menu")
+        val incomingExtras = BackupPlaybackExtras(blockedWords = setOf("备份词"), remoteUpAction = "previous")
+        val local = data().copy(playbackExtras = localExtras)
+        val incoming = data().copy(playbackExtras = incomingExtras)
+        assertEquals(localExtras, LibraryBackup.merge(local, incoming, false).playbackExtras)
+        assertEquals(incomingExtras, LibraryBackup.merge(local, incoming, true).playbackExtras)
+    }
     @Test fun `invalid format ranges settings duplicates and oversized nesting are rejected`() {
         fun reject(change: (JSONObject)->Unit) { val o=JSONObject(LibraryBackup.encode(data())); change(o); assertTrue(o.toString(),runCatching { LibraryBackup.decode(o.toString()) }.isFailure) }
         reject { it.put("version",2) }; reject { it.put("format","other") }

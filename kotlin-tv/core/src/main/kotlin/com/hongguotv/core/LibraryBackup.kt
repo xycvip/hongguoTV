@@ -14,7 +14,47 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("autoSeason",autoSeason).put("danmaku",danmaku)
         .put("danmakuOpacity",danmakuOpacity).put("danmakuFont",danmakuFont).put("danmakuSpeed",danmakuSpeed).put("danmakuRows",danmakuRows).put("showClock",showClock).put("sourceHidden",sourceHidden)
 }
-data class BackupData(val favorites: List<Series>,val history: List<BackupProgress>,val watched: Set<String>,val searches: List<RecentSearch>,val settings: BackupSettings,val later: List<Series> = emptyList(),val hidden: Set<String> = emptySet(),val favoriteGroups: Map<String,String> = emptyMap(),val thirdSources: List<BackupThirdSource> = emptyList(),val thirdHistory: List<BackupThirdHistory> = emptyList(),val thirdFavorites: List<BackupThirdFavorite> = emptyList(),val accountState: String? = null)
+
+/** 本机播放增强与遥控器配置：随用户选择的播放设置一并备份。 */
+data class BackupPlaybackExtras(
+    val blockedWords: Set<String> = setOf("加群", "微信", "公众号", "QQ群"),
+    val perSeriesDanmaku: Map<String, Boolean> = emptyMap(),
+    val autoSkipUnplayable: Boolean = false,
+    val seekStepSeconds: Int = 10,
+    val longPressSpeed: Float = 3f,
+    val menuKeyAction: String = "panel",
+    val remoteUpAction: String = "previous",
+    val remoteDownAction: String = "next",
+    val remoteConfirmAction: String = "play_pause",
+    val remoteMenuAction: String = "menu",
+    val skipMarks: Map<String, SkipMark> = emptyMap()
+) {
+    fun json(): JSONObject {
+        val perSeries = JSONObject()
+        perSeriesDanmaku.entries.take(500).forEach { (id, enabled) ->
+            if (id.matches(Regex("[0-9]{1,30}"))) perSeries.put(id, enabled)
+        }
+        val marks = JSONObject()
+        skipMarks.entries.take(SkipMarks.MAX_ENTRIES).forEach { (id, mark) ->
+            if (id.matches(Regex("[0-9]{1,30}")) && !mark.empty) {
+                marks.put(id, JSONObject().put("intro", mark.introSeconds).put("outro", mark.outroSeconds))
+            }
+        }
+        return JSONObject()
+            .put("blockedWords", JSONArray(blockedWords.map { it.filterNot(Char::isISOControl).take(50) }.filter { it.isNotBlank() }.take(200)))
+            .put("perSeriesDanmaku", perSeries)
+            .put("autoSkipUnplayable", autoSkipUnplayable)
+            .put("seekStepSeconds", seekStepSeconds)
+            .put("longPressSpeed", longPressSpeed.toDouble())
+            .put("menuKeyAction", menuKeyAction)
+            .put("remoteUpAction", remoteUpAction)
+            .put("remoteDownAction", remoteDownAction)
+            .put("remoteConfirmAction", remoteConfirmAction)
+            .put("remoteMenuAction", remoteMenuAction)
+            .put("skipMarks", marks)
+    }
+}
+data class BackupData(val favorites: List<Series>,val history: List<BackupProgress>,val watched: Set<String>,val searches: List<RecentSearch>,val settings: BackupSettings,val later: List<Series> = emptyList(),val hidden: Set<String> = emptySet(),val favoriteGroups: Map<String,String> = emptyMap(),val thirdSources: List<BackupThirdSource> = emptyList(),val thirdHistory: List<BackupThirdHistory> = emptyList(),val thirdFavorites: List<BackupThirdFavorite> = emptyList(),val accountState: String? = null,val playbackExtras: BackupPlaybackExtras? = null)
 
 /** 三方片源配置：只保存名称与接口，随主备份一起迁移；恢复时只追加不覆盖。 */
 data class BackupThirdSource(val name: String,val api: String)
@@ -77,7 +117,8 @@ object LibraryBackup {
             }))
             .put("watched",JSONArray(data.watched.intersect((data.favorites.map { it.id }+data.history.map { it.series.id }).toSet()).take(500)))
             .put("searches",JSONArray(SearchHistory.encode(data.searches.map { it.copy(query=cleanText(it.query,80)) }))).put("settings",data.settings.json())
-            .put("accountState", data.accountState?.takeIf { it.isNotBlank() }?.let { JSONObject(it) } ?: JSONObject.NULL).toString()
+            .put("accountState", data.accountState?.takeIf { it.isNotBlank() }?.let { JSONObject(it) } ?: JSONObject.NULL)
+            .put("playbackExtras", data.playbackExtras?.json() ?: JSONObject.NULL).toString()
         require(result.toByteArray(Charsets.UTF_8).size<=MAX_BYTES) { "备份超过 2 MB 限制" }
         return result
     }
@@ -192,7 +233,59 @@ object LibraryBackup {
             require(account.toString().length <= 20_000) { "账户备份信息过大" }
             account.toString()
         } else null
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites,accountState)
+        val playbackExtras = if (o.has("playbackExtras") && !o.isNull("playbackExtras")) {
+            val extra = o.getJSONObject("playbackExtras")
+            val blockedArray = extra.optJSONArray("blockedWords") ?: JSONArray()
+            require(blockedArray.length() <= 200) { "屏蔽词数量超过上限" }
+            val blockedWords = (0 until blockedArray.length()).map { index ->
+                val word = blockedArray.get(index)
+                require(word is String && word.length <= 50 && word.isNotBlank() && word.none(Char::isISOControl)) { "屏蔽词格式无效" }
+                word
+            }.toSet()
+            val perSeriesJson = extra.optJSONObject("perSeriesDanmaku") ?: JSONObject()
+            require(perSeriesJson.length() <= 500) { "按剧弹幕设置数量超过上限" }
+            val perSeriesDanmaku = mutableMapOf<String, Boolean>()
+            perSeriesJson.keys().forEach { key ->
+                require(idPattern.matches(key)) { "按剧弹幕剧集标识无效" }
+                val enabled = perSeriesJson.get(key)
+                require(enabled is Boolean) { "按剧弹幕设置无效" }
+                perSeriesDanmaku[key] = enabled
+            }
+            fun bool(key: String, fallback: Boolean): Boolean {
+                if (!extra.has(key)) return fallback
+                val value = extra.get(key)
+                require(value is Boolean) { "播放增强设置无效：$key" }
+                return value
+            }
+            fun stringValue(key: String, fallback: String): String {
+                if (!extra.has(key)) return fallback
+                val value = extra.get(key)
+                require(value is String && value.length <= 30) { "播放增强设置无效：$key" }
+                return value
+            }
+            val seekStep = if (extra.has("seekStepSeconds")) extra.number("seekStepSeconds", 60).toInt() else 10
+            require(seekStep in listOf(10, 15, 30, 60)) { "快进步长无效" }
+            val speedValue = extra.opt("longPressSpeed")
+            val longPressSpeed = if (speedValue == null) 3f else {
+                require(speedValue is Number && speedValue.toFloat() in listOf(2f, 3f, 4f)) { "长按快进倍速无效" }
+                speedValue.toFloat()
+            }
+            val menuKeyAction = stringValue("menuKeyAction", "panel")
+            require(menuKeyAction in listOf("panel", "episodes", "danmaku")) { "菜单键行为无效" }
+            val remoteActions = listOf("previous", "next", "menu", "comments", "play_pause", "episodes", "none")
+            val remoteUpAction = stringValue("remoteUpAction", "previous")
+            val remoteDownAction = stringValue("remoteDownAction", "next")
+            val remoteConfirmAction = stringValue("remoteConfirmAction", "play_pause")
+            val remoteMenuAction = stringValue("remoteMenuAction", "menu")
+            require(listOf(remoteUpAction, remoteDownAction, remoteConfirmAction, remoteMenuAction).all { it in remoteActions }) { "遥控器按键行为无效" }
+            val skipMarks = SkipMarks.decode(extra.optJSONObject("skipMarks")?.toString())
+            BackupPlaybackExtras(
+                blockedWords, perSeriesDanmaku, bool("autoSkipUnplayable", false), seekStep,
+                longPressSpeed, menuKeyAction, remoteUpAction, remoteDownAction,
+                remoteConfirmAction, remoteMenuAction, skipMarks
+            )
+        } else null
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites,accountState,playbackExtras)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {
@@ -223,6 +316,6 @@ object LibraryBackup {
             .groupBy { it.sourceApi to it.videoId }
             .mapNotNull { (_,rows) -> rows.maxByOrNull { it.updatedAt } }
             .sortedByDescending { it.updatedAt }.take(MAX_THIRD_FAVORITES)
-        return BackupData(favorites,history,watched.intersect(retained).take(500).toSet(),(local.searches+incoming.searches).distinct().take(20),if(restoreSettings) incoming.settings else local.settings,(local.later+incoming.later).distinctBy { it.id }.take(100),(local.hidden+incoming.hidden).take(500).toSet(),favoriteGroups,thirdSources,thirdHistory,thirdFavorites,incoming.accountState ?: local.accountState)
+        return BackupData(favorites,history,watched.intersect(retained).take(500).toSet(),(local.searches+incoming.searches).distinct().take(20),if(restoreSettings) incoming.settings else local.settings,(local.later+incoming.later).distinctBy { it.id }.take(100),(local.hidden+incoming.hidden).take(500).toSet(),favoriteGroups,thirdSources,thirdHistory,thirdFavorites,incoming.accountState ?: local.accountState,if(restoreSettings) incoming.playbackExtras ?: local.playbackExtras else local.playbackExtras)
     }
 }

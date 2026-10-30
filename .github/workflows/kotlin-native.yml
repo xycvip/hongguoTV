@@ -10,6 +10,8 @@ permissions:
   contents: read
 jobs:
   android:
+    # 发布提交显式标记 [skip-tests] 时跳过独立验证工作流；正式发布仍由 release 工作流构建签名 APK。
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tests]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

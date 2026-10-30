@@ -202,7 +202,7 @@ class Library(context: Context) {
     var sourceHidden: Boolean
         get() = state().settings.sourceHidden
         set(value) { if (value != sourceHidden) { state().settings = state().settings.copy(sourceHidden = value); put("sourceHidden", value) } }
-    // Per-series intro/outro skips stay on this device, outside the backup, like the theme.
+    // Per-series intro/outro skips are stored locally and included in exported backups.
     private var marksCache: LinkedHashMap<String, SkipMark>? = null
     private fun marks(): LinkedHashMap<String, SkipMark> =
         marksCache ?: SkipMarks.decode(prefs.getString("skipMarks", null)).also { marksCache = it }
@@ -211,6 +211,12 @@ class Library(context: Context) {
         val next = SkipMarks.set(marks(), id, mark)
         marksCache = next
         prefs.edit().putString("skipMarks", SkipMarks.encode(next)).apply()
+    }
+    fun skipMarksSnapshot(): Map<String, SkipMark> = marks().toMap()
+    fun restoreSkipMarks(incoming: Map<String, SkipMark>) {
+        val normalized = SkipMarks.decode(SkipMarks.encode(incoming))
+        marksCache = normalized
+        prefs.edit().putString("skipMarks", SkipMarks.encode(normalized)).apply()
     }
     fun snapshot() = state().snapshot(
         // 三方源/观看历史/收藏来自独立存储，任何异常都退化为空列表，不能让备份整体失败
@@ -242,6 +248,23 @@ class Library(context: Context) {
             "sourceHidden" to { merged.settings.sourceHidden }))
         flush()
     }
+    /** Reset only playback preferences; preserve catalog filters and device/interface preferences. */
+    fun resetPlaybackPreferences() {
+        val defaults = LibraryDisk.decode(emptyMap<String, Any?>()).settings
+        maxQuality = defaults.quality
+        playbackSpeed = defaults.speed
+        autoNext = defaults.autoNext
+        autoSeason = defaults.autoSeason
+        frameMode = defaults.frame
+        danmaku = defaults.danmaku
+        danmakuOpacity = defaults.danmakuOpacity
+        danmakuFont = defaults.danmakuFont
+        danmakuSpeed = defaults.danmakuSpeed
+        danmakuRows = defaults.danmakuRows
+        marksCache = linkedMapOf()
+        prefs.edit().remove("skipMarks").apply()
+    }
+
     /** Restore playback/interface preferences while retaining all user library data. */
     fun resetSettings() {
         val defaults = LibraryDisk.decode(emptyMap<String, Any?>()).settings

@@ -49,12 +49,6 @@ class EpisodePanel(
     private fun render() {
         val content=LinearLayout(activity).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(24),dp(20),dp(24),dp(20))
-            background=GradientDrawable().apply {
-                setColor(TvStyle.surface)
-                cornerRadius=dp(24).toFloat()
-                setStroke(dp(1),TvStyle.outline)
-            }
         }
         content.addView(label("选集  /  正在看第 ${current+1} 集",20f).apply {
             setTypeface(null,android.graphics.Typeface.BOLD)
@@ -99,7 +93,7 @@ class EpisodePanel(
         close.nextFocusDownId=if(previous.isFocusable) previous.id else cells.first().id
         jump.nextFocusDownId=if(next.isFocusable) next.id else cells[minOf(4,cells.lastIndex)].id
         close.nextFocusLeftId=close.id; close.nextFocusRightId=jump.id; jump.nextFocusLeftId=close.id; jump.nextFocusRightId=jump.id
-        dialog.setContentView(content)
+        dialog.setContentView(TvDialog.card(activity,content))
         cells[(focused-group*20).coerceIn(0,cells.lastIndex)].requestFocus()
     }
 }

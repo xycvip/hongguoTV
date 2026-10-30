@@ -2,10 +2,12 @@
 package com.hongguotv.nativeapp
 
 import android.content.Context
+import com.hongguotv.core.BackupPlaybackExtras
+import com.hongguotv.core.SkipMark
 
 /**
  * 电视端本地播放增强设置：弹幕屏蔽词、按剧弹幕记忆、遥控器按键与不兼容集跳过。
- * 只保存在本机，不进入备份，换机后重新设置即可。
+ * 设置保存在本机，也会随用户导出的完整备份迁移。
  */
 class PlaybackExtras(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -16,6 +18,47 @@ class PlaybackExtras(context: Context) {
         set(value) { prefs.edit().putStringSet(KEY_BLOCKED, value.map { it.trim() }.filter { it.isNotEmpty() }.toSet()).apply() }
 
     fun blocks(text: String) = blockedWords.any { it.isNotEmpty() && text.contains(it, ignoreCase = true) }
+
+    /** 导出全部本机播放增强设置，随主备份迁移。 */
+    fun backupSnapshot(skipMarks: Map<String, SkipMark> = emptyMap()): BackupPlaybackExtras {
+        val perSeries = prefs.all.entries.mapNotNull { (key, value) ->
+            if (key.startsWith(KEY_DANMAKU) && value is Boolean) {
+                key.removePrefix(KEY_DANMAKU).takeIf { it.matches(Regex("[0-9]{1,30}")) }?.let { it to value }
+            } else null
+        }.toMap()
+        return BackupPlaybackExtras(
+            blockedWords = blockedWords,
+            perSeriesDanmaku = perSeries,
+            autoSkipUnplayable = autoSkipUnplayable,
+            seekStepSeconds = seekStepSeconds,
+            longPressSpeed = longPressSpeed,
+            menuKeyAction = menuKeyAction,
+            remoteUpAction = remoteUpAction,
+            remoteDownAction = remoteDownAction,
+            remoteConfirmAction = remoteConfirmAction,
+            remoteMenuAction = remoteMenuAction,
+            skipMarks = skipMarks
+        )
+    }
+
+    /** 仅在用户选择「恢复播放设置」时写回；旧备份缺少此段时保持原设置不变。 */
+    fun restoreBackup(data: BackupPlaybackExtras) {
+        val edit = prefs.edit()
+        prefs.all.keys.filter { it.startsWith(KEY_DANMAKU) }.forEach(edit::remove)
+        edit.putStringSet(KEY_BLOCKED, data.blockedWords.toSet())
+            .putBoolean(KEY_AUTO_SKIP, data.autoSkipUnplayable)
+            .putInt(KEY_SEEK_STEP, data.seekStepSeconds)
+            .putFloat(KEY_FAST_SPEED, data.longPressSpeed)
+            .putString(KEY_MENU, data.menuKeyAction)
+            .putString(KEY_REMOTE_UP, data.remoteUpAction)
+            .putString(KEY_REMOTE_DOWN, data.remoteDownAction)
+            .putString(KEY_REMOTE_CONFIRM, data.remoteConfirmAction)
+            .putString(KEY_REMOTE_MENU, data.remoteMenuAction)
+        data.perSeriesDanmaku.forEach { (id, enabled) ->
+            if (id.matches(Regex("[0-9]{1,30}"))) edit.putBoolean(KEY_DANMAKU + id, enabled)
+        }
+        edit.apply()
+    }
 
     /** 按剧记忆弹幕开关：全局开关仍是总闸，单剧可以关闭，默认跟随全局。 */
     fun danmakuEnabled(seriesId: String, global: Boolean) = global && prefs.getBoolean(KEY_DANMAKU + seriesId, true)
@@ -48,11 +91,11 @@ class PlaybackExtras(context: Context) {
         prefs.getString(key, fallback)?.takeIf { it in REMOTE_ACTIONS } ?: fallback
 
     var remoteUpAction: String
-        get() = remoteAction(KEY_REMOTE_UP, REMOTE_MENU)
+        get() = remoteAction(KEY_REMOTE_UP, REMOTE_PREVIOUS)
         set(value) { prefs.edit().putString(KEY_REMOTE_UP, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
 
     var remoteDownAction: String
-        get() = remoteAction(KEY_REMOTE_DOWN, REMOTE_EPISODES)
+        get() = remoteAction(KEY_REMOTE_DOWN, REMOTE_NEXT)
         set(value) { prefs.edit().putString(KEY_REMOTE_DOWN, value.takeIf { it in REMOTE_ACTIONS } ?: REMOTE_NONE).apply() }
 
     var remoteConfirmAction: String
