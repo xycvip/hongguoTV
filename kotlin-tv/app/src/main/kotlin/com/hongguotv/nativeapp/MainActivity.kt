@@ -396,6 +396,7 @@ class MainActivity: Activity() {
             openDetail(remote.series, true)
         }
         cloudAccount.onHistoryChanged = {
+            if (library.isLoaded && !isDestroyed) cloudAccount.syncLocalFavorites(library.favorites())
             if (tab == 6 && screen == "catalog" && !isDestroyed) {
                 main.post { if (tab == 6 && screen == "catalog") accountContentHost?.let { renderAccountContent(it) } }
             }
@@ -519,6 +520,8 @@ class MainActivity: Activity() {
 
     private fun showInitialScreen() {
         if(!isDestroyed && foreground && library.isLoaded && initialCatalogPending) {
+            // 每次冷启动首页统一从短剧开始；用户仍可在本次使用中切换到漫剧。
+            library.contentType = ContentType.SHORT
             if(startupAutoplayEnabled()) launchRandomPlayback()
             else {
                 initialCatalogPending=false
@@ -531,7 +534,11 @@ class MainActivity: Activity() {
         library.loadAsync(onFailure={ problem ->
             if(!isDestroyed) { libraryLoadError=problem; if(foreground) showLibraryError(problem) }
         }) {
-            if(!isDestroyed && foreground) { showInitialScreen(); favoriteMonitor.check() }
+            if(!isDestroyed && foreground) {
+                cloudAccount.syncLocalFavorites(library.favorites())
+                showInitialScreen()
+                favoriteMonitor.check()
+            }
         }
     }
 
@@ -745,9 +752,9 @@ class MainActivity: Activity() {
                     tvTools.choose(
                         "选择恢复方式",
                         listOf(
-                            "合并记录并重置播放偏好设置",
-                            "合并记录并保留当前播放偏好设置",
-                            "合并记录并恢复备份中的播放偏好设置"
+                            "恢复备份并重置播放偏好设置",
+                            "恢复备份并保留当前播放偏好设置",
+                            "恢复备份中的播放偏好设置"
                         ),
                         anchor,
                         { choice ->
@@ -759,7 +766,7 @@ class MainActivity: Activity() {
                                 1 -> "\n本机当前播放偏好设置将保持不变。"
                                 else -> "\n将恢复备份中的播放偏好设置。"
                             }
-                            val message = "备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n恢复会合并到当前记录，不会清空现有个人数据。${preferenceNote}${accountNote}"
+                            val message = "备份包含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.later.size} 部稍后看和 ${data.searches.size} 条搜索记录。\n\n本次将以所选备份文件为准覆盖本机对应记录，不与当前记录合并。${preferenceNote}${accountNote}"
                             tvTools.confirm("确认恢复备份", message, anchor) {
                                 runCatching {
                                     favoriteMonitor.stop()
@@ -768,13 +775,16 @@ class MainActivity: Activity() {
                                         resetPlaybackPreferences()
                                         TvStyle.apply(library.theme)
                                     }
-                                    if (restoreSettings) data.playbackExtras?.let {
-                                        extras.restoreBackup(it)
-                                        library.restoreSkipMarks(it.skipMarks)
+                                    if (restoreSettings) {
+                                        val restoredExtras = data.playbackExtras ?: BackupPlaybackExtras()
+                                        extras.restoreBackup(restoredExtras)
+                                        library.restoreSkipMarks(restoredExtras.skipMarks)
                                     }
                                     tabState.clear(); tabFocus.clear(); catalogFocus = ""; page = 1
-                                    showCatalog(); favoriteMonitor.check()
-                                    Toast.makeText(this, "备份记录已合并恢复", Toast.LENGTH_LONG).show()
+                                    showCatalog()
+                                    cloudAccount.syncLocalFavorites(library.favorites())
+                                    favoriteMonitor.check()
+                                    Toast.makeText(this, "备份记录已恢复", Toast.LENGTH_LONG).show()
                                     restoreBackupAccount(data, anchor)
                                 }.onFailure { tvTools.info("恢复失败", "记录未能完整恢复：${it.message ?: "未知错误"}", anchor) }
                             }
@@ -1790,7 +1800,15 @@ class MainActivity: Activity() {
             val detailIndex=if(grouped) 4 else 3
             when(choice) {
                 0 -> openDetail(series,true)
-                1 -> { val added=library.toggle(series); Toast.makeText(this,if(added) "已收藏" else "已取消收藏",Toast.LENGTH_SHORT).show(); refreshLibraryCards(series.id,!added && (tab==3 || collection=="updates")); if(added) favoriteMonitor.check() }
+                1 -> {
+                    val added=library.toggle(series)
+                    Toast.makeText(this,if(added) "已收藏" else "已取消收藏",Toast.LENGTH_SHORT).show()
+                    refreshLibraryCards(series.id,!added && (tab==3 || collection=="updates"))
+                    if(added) {
+                        cloudAccount.syncLocalFavorites(library.favorites())
+                        favoriteMonitor.check()
+                    }
+                }
                 2 -> { val added=library.toggleLater(series); Toast.makeText(this,if(added) "已加入稍后看" else "已移出稍后看",Toast.LENGTH_SHORT).show(); refreshLibraryCards(series.id,!added && collection=="later") }
                 3 -> if(grouped) showGroupPicker(series,anchor) else openDetail(series)
                 else -> if(choice==detailIndex) openDetail(series) else if(tab==4 || collection=="resume") manageHistory(series,anchor) else { library.hide(series.id); Toast.makeText(this,"已隐藏热门推荐，可在设置中恢复",Toast.LENGTH_SHORT).show(); refreshLibraryCards(series.id,true) }
@@ -1865,11 +1883,12 @@ class MainActivity: Activity() {
         lateinit var startupAutoplayButton: TextView
         fun paintStartupAutoplayButton(focused: Boolean=startupAutoplayButton.hasFocus()) {
             val enabled=startupAutoplayEnabled()
-            startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "✓ 开启" else "关闭"}"
-            startupAutoplayButton.isSelected=enabled
+            startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
+            startupAutoplayButton.isSelected=false
+            // 只在真正获得焦点时高亮；开启状态不再残留选中底色。
             startupAutoplayButton.background=rounded(
-                if(focused) TvStyle.raised else if(enabled) TvStyle.selectedSurface else bg,
-                if(focused || enabled) accent else Color.TRANSPARENT
+                if(focused) TvStyle.raised else bg,
+                if(focused) accent else Color.TRANSPARENT
             )
         }
         fun syncStartupAutoplayButton() = paintStartupAutoplayButton()
@@ -1965,7 +1984,7 @@ class MainActivity: Activity() {
                     if(restoreSettings) data.playbackExtras?.let { extras.restoreBackup(it); library.restoreSkipMarks(it.skipMarks) }
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                     showCatalog(); favoriteMonitor.check()
-                    Toast.makeText(this,"记录已合并恢复",Toast.LENGTH_LONG).show()
+                    Toast.makeText(this,"备份记录已恢复",Toast.LENGTH_LONG).show()
                     restoreBackupAccount(data, backup)
                 }
             }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
@@ -2502,7 +2521,10 @@ class MainActivity: Activity() {
         favorite=addButton(actions,if(library.favorite(data.series.id)) "已收藏" else "收藏") {
             favoriteMonitor.stop()
             val saved=library.toggle(data.series)
-            if(saved) library.observeFavorite(data.series.id,data.episodes.size,System.currentTimeMillis(),acknowledge=true)
+            if(saved) {
+                library.observeFavorite(data.series.id,data.episodes.size,System.currentTimeMillis(),acknowledge=true)
+                cloudAccount.syncLocalFavorites(library.favorites())
+            }
             favorite.text=if(saved) "已收藏" else "收藏"
         }
         lateinit var synopsisButton: TextView
@@ -3551,7 +3573,7 @@ class MainActivity: Activity() {
                 result.fold({ page ->
                     commentCursor=page.nextCursor
                     view.setPage(page,append)
-                    if(!append) view.post { if(commentPanel===view) view.focusCommentArea() }
+                    // setPage 会自行恢复原焦点；仅首次加载时才落到列表首个可操作项。
                 },{ error -> view.showError("评论加载失败：${error.message.orEmpty().take(90)}") })
             }
         }
@@ -3573,8 +3595,8 @@ class MainActivity: Activity() {
                     detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
                 result.fold({ page ->
                     commentReplyCursors[comment.id]=page.nextCursor
+                    // 回复区域展开后保留「查看回复」原焦点，不把光标送回列表顶部。
                     view.setReplies(comment.id,page,append)
-                    view.post { if(commentPanel===view) view.focusCommentArea() }
                 },{
                     view.setReplyLoading(comment.id,false)
                     Toast.makeText(this,"回复加载失败：${it.message.orEmpty()}",Toast.LENGTH_SHORT).show()
@@ -4367,9 +4389,14 @@ class MainActivity: Activity() {
                     val pending=android.app.PendingIntent.getActivity(this,9917,
                         launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),flags)
                     val alarm=getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                    val triggerAt=android.os.SystemClock.elapsedRealtime()+1200L
+                    val triggerAt=android.os.SystemClock.elapsedRealtime()+2500L
                     if(Build.VERSION.SDK_INT>=23) {
-                        alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                        runCatching {
+                            alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                        }.onFailure {
+                            // 精确闹钟受系统限制时，退回允许待机唤醒的闹钟，仍自动拉起应用。
+                            alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                        }
                     } else {
                         alarm.setExact(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
                     }

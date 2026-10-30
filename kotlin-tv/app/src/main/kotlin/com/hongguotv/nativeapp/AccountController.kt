@@ -112,6 +112,7 @@ class AccountController(private val activity: Activity, private val play: (Cloud
     private val acceptedReservations = mutableSetOf<String>()
     private var favorites = FavoriteState()
     private val unconfirmedFavorites = mutableSetOf<String>()
+    private var localFavoriteSyncRunning = false
     private var reservations = emptyMap<Boolean, ReservationState>()
     private var status = "未登录"
     private var busy = false
@@ -339,6 +340,37 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                         { favorites.copy(loading = false, message = "读取失败：${safeError(it)}") },
                     )
                 changed()
+            }
+        }
+    }
+
+    /** 只把本机收藏补充到红果账户；绝不删除或覆盖云端已有收藏。 */
+    fun syncLocalFavorites(localRows: List<Series>) {
+        val account = credentials ?: return
+        if (closed || localFavoriteSyncRunning || favorites.loading || localRows.isEmpty()) return
+        val token = generation
+        localFavoriteSyncRunning = true
+        worker.execute {
+            val result = runCatching {
+                val existing = client.favorites(account).mapTo(mutableSetOf()) { it.series.id }
+                var added = false
+                localRows.distinctBy { it.id }.take(500).forEach { series ->
+                    if (series.id.matches(Regex("[0-9]{1,30}")) && series.id !in existing) {
+                        check(!closed && token == generation)
+                        client.setFavorite(account, series.id, true)
+                        existing.add(series.id)
+                        added = true
+                    }
+                }
+                added
+            }
+            main.post {
+                if (closed || token != generation) {
+                    localFavoriteSyncRunning = false
+                    return@post
+                }
+                localFavoriteSyncRunning = false
+                result.onSuccess { if (it) refreshFavorites() }
             }
         }
     }
@@ -637,18 +669,19 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                     toast("登录二维码无法显示，请重试")
                     return@task
                 }
-                val size = (300 * activity.resources.displayMetrics.density).toInt()
+                val density = activity.resources.displayMetrics.density
+                fun dp(value: Int) = (value * density).toInt()
+                val metrics = activity.resources.displayMetrics
+                val maxQrWidth = (metrics.widthPixels - dp(56)).coerceAtLeast(dp(120))
+                val maxQrHeight = (metrics.heightPixels - dp(210)).coerceAtLeast(dp(120))
+                val size = minOf(dp(300), maxQrWidth, maxQrHeight)
                 val image =
                     android.widget.ImageView(activity).apply {
                         setImageBitmap(bitmap)
+                        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                         adjustViewBounds = true
                         setBackgroundColor(android.graphics.Color.WHITE)
-                        layoutParams =
-                            android.widget.LinearLayout.LayoutParams(size, size).apply {
-                                gravity = android.view.Gravity.CENTER_HORIZONTAL
-                            }
                     }
-                val density = activity.resources.displayMetrics.density
                 val panel = android.widget.LinearLayout(activity).apply {
                     orientation = android.widget.LinearLayout.VERTICAL
                     gravity = android.view.Gravity.CENTER_HORIZONTAL
@@ -664,7 +697,13 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 actions.addView(cancelButton)
                 panel.addView(actions)
                 val qrDialog = AlertDialog.Builder(activity).setView(TvDialog.card(activity, panel)).create()
-                TvDialog.styleWindow(activity, qrDialog, 0.62f, 620) { cancelButton.requestFocus() }
+                val phoneLayout = activity.resources.configuration.smallestScreenWidthDp < 600
+                TvDialog.styleWindow(
+                    activity,
+                    qrDialog,
+                    if (phoneLayout) 0.94f else 0.62f,
+                    if (phoneLayout) 520 else 620
+                ) { cancelButton.requestFocus() }
                 showDialog(qrDialog)
                 cancelButton.setOnClickListener { qrDialog.dismiss() }
                 val current = dialog ?: return@task

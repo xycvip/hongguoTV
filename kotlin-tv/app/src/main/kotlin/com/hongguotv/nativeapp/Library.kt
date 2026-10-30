@@ -233,19 +233,21 @@ class Library(context: Context) {
     var thirdFavoritesRestore: ((List<BackupThirdFavorite>) -> Unit)? = null
 
     fun restore(incoming: BackupData, restoreSettings: Boolean) {
-        val merged = LibraryBackup.merge(snapshot(), incoming, restoreSettings)
-        index = LibraryIndex(merged, state().updates())
+        // 文件恢复以备份为准覆盖本机记录；仅在用户选择保留时沿用当前播放/设备偏好。
+        val current = snapshot()
+        val restored = incoming.copy(settings = if (restoreSettings) incoming.settings else current.settings)
+        index = LibraryIndex(restored, emptyMap())
         persist("favorites", "later", "progress", "watched", "hidden", "searches", "favoriteUpdates", "favoriteGroups")
-        // 三方源、观看历史与收藏各自合并：任一侧异常都只跳过该段，不影响其余记录恢复
-        if(incoming.thirdSources.isNotEmpty()) runCatching { thirdSourcesRestore?.invoke(incoming.thirdSources) }
-        if(incoming.thirdHistory.isNotEmpty()) runCatching { thirdHistoryRestore?.invoke(incoming.thirdHistory) }
-        if(incoming.thirdFavorites.isNotEmpty()) runCatching { thirdFavoritesRestore?.invoke(incoming.thirdFavorites) }
-        writes.submit(mapOf("quality" to { merged.settings.quality }, "playbackSpeed" to { merged.settings.speed },
-            "autoNext" to { merged.settings.autoNext }, "contentType" to { merged.settings.type.storedValue }, "frameMode" to { merged.settings.frame.name },
-            "autoSeason" to { merged.settings.autoSeason }, "danmaku" to { merged.settings.danmaku },
-            "danmakuOpacity" to { merged.settings.danmakuOpacity }, "danmakuFont" to { merged.settings.danmakuFont },
-            "danmakuSpeed" to { merged.settings.danmakuSpeed }, "danmakuRows" to { merged.settings.danmakuRows }, "showClock" to { merged.settings.showClock },
-            "sourceHidden" to { merged.settings.sourceHidden }))
+        // 同样按备份内容恢复三方数据，空列表也代表清空对应本机记录。
+        runCatching { thirdSourcesRestore?.invoke(incoming.thirdSources) }
+        runCatching { thirdHistoryRestore?.invoke(incoming.thirdHistory) }
+        runCatching { thirdFavoritesRestore?.invoke(incoming.thirdFavorites) }
+        writes.submit(mapOf("quality" to { restored.settings.quality }, "playbackSpeed" to { restored.settings.speed },
+            "autoNext" to { restored.settings.autoNext }, "contentType" to { restored.settings.type.storedValue }, "frameMode" to { restored.settings.frame.name },
+            "autoSeason" to { restored.settings.autoSeason }, "danmaku" to { restored.settings.danmaku },
+            "danmakuOpacity" to { restored.settings.danmakuOpacity }, "danmakuFont" to { restored.settings.danmakuFont },
+            "danmakuSpeed" to { restored.settings.danmakuSpeed }, "danmakuRows" to { restored.settings.danmakuRows }, "showClock" to { restored.settings.showClock },
+            "sourceHidden" to { restored.settings.sourceHidden }))
         flush()
     }
     /** Reset only playback preferences; preserve catalog filters and device/interface preferences. */

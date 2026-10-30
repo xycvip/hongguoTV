@@ -234,6 +234,7 @@ internal class OfficialCommentPanel(
     }
 
     private fun render() {
+        val focusTag = list.findFocus()?.tag as? String
         list.removeAllViews()
         if (currentItems.isEmpty() && !loading && statusLabel.text.isNullOrBlank()) {
             statusLabel.text = "暂无评论"
@@ -244,13 +245,22 @@ internal class OfficialCommentPanel(
                 list.addView(commentCard(reply, true))
             }
             if (replyHasMore[comment.id] == true) {
-                list.addView(action(if (comment.id in replyLoading) "正在加载回复…" else "查看更多回复") {
+                list.addView(action(
+                    if (comment.id in replyLoading) "正在加载回复…" else "查看更多回复",
+                    "more-replies:${comment.id}"
+                ) {
                     if (comment.id !in replyLoading) listener.loadMoreReplies(comment)
                 })
             }
+            list.addView(View(context).apply {
+                setBackgroundColor(Color.rgb(48, 54, 64))
+            }, LinearLayout.LayoutParams(LayoutParams.MATCH_PARENT, dp(1)).apply {
+                topMargin = dp(7)
+                bottomMargin = dp(3)
+            })
         }
         if (hasMore) {
-            list.addView(action(if (loading) "加载中…" else "加载更多评论") {
+            list.addView(action(if (loading) "加载中…" else "加载更多评论", "more-comments") {
                 if (!loading) listener.loadMore()
             })
         }
@@ -259,14 +269,30 @@ internal class OfficialCommentPanel(
                 setPadding(dp(8), dp(22), dp(8), dp(22))
             })
         }
+        list.post {
+            val target = focusTag?.let { list.findViewWithTag<View>(it) }
+            if (target != null) target.requestFocus()
+            else if (focusTag == null) firstFocusable(list)?.requestFocus()
+        }
     }
 
     private fun commentCard(comment: OfficialComment, isReply: Boolean): View {
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(if (isReply) 22 else 10), dp(10), dp(8), dp(9))
-            background = rounded(if (isReply) backgroundColor else surfaceColor, 10)
-            isFocusable = false
+            setPadding(dp(if (isReply) 38 else 0), dp(if (isReply) 7 else 11), dp(8), dp(8))
+            background = rounded(Color.TRANSPARENT, 8)
+            isFocusable = isReply
+            isClickable = isReply
+            tag = if (isReply) "reply:${comment.id}" else "comment:${comment.id}"
+            if (isReply) {
+                setOnFocusChangeListener { view, focused ->
+                    view.background = rounded(
+                        if (focused) Color.rgb(43, 51, 63) else Color.TRANSPARENT,
+                        8
+                    )
+                }
+                setOnClickListener { listener.reply(comment) }
+            }
         }
         val authorLine = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -283,22 +309,24 @@ internal class OfficialCommentPanel(
         if (comment.createdAt > 0) authorLine.addView(label(timeText(comment.createdAt), 11f, false, mutedColor))
         card.addView(authorLine)
         card.addView(label(comment.text, 14f, false, textColor).apply {
-            setPadding(0, dp(6), 0, dp(8))
+            setPadding(0, dp(6), 0, dp(7))
         })
         val actions = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         if (!isReply) {
-            actions.addView(action((if (comment.liked) "♥ " else "♡ ") + comment.likes) {
+            actions.addView(action((if (comment.liked) "♥ " else "♡ ") + comment.likes, "comment:${comment.id}:like") {
                 listener.like(comment)
             })
-            actions.addView(action("回复") { listener.reply(comment) })
+            actions.addView(action("回复", "comment:${comment.id}:reply") { listener.reply(comment) })
             if (comment.replies > 0) {
-                actions.addView(action("查看回复（${comment.replies}）") { listener.openReplies(comment) })
+                actions.addView(action("查看回复（${comment.replies}）", "comment:${comment.id}:open-replies") {
+                    listener.openReplies(comment)
+                })
             }
         } else {
-            actions.addView(label("回复", 11f, false, mutedColor))
+            actions.addView(label("选择此回复可继续回复", 11f, false, mutedColor))
         }
         card.addView(actions)
         return card
@@ -313,9 +341,10 @@ internal class OfficialCommentPanel(
             isFocusable = false
         }
 
-    private fun action(value: String, click: () -> Unit) =
+    private fun action(value: String, focusTag: String? = null, click: () -> Unit) =
         TextView(context).apply {
             text = value
+            tag = focusTag
             textSize = 13f
             setTextColor(textColor)
             gravity = Gravity.CENTER

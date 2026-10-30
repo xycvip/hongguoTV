@@ -8,6 +8,6 @@ enum class ContentType(val storedValue: String, val label: String, val searchTab
     AI("ai","AI剧",null);
 
     companion object {
-        fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: COMIC
+        fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: SHORT
     }
 }
