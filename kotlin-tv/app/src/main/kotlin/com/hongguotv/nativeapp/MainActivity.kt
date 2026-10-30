@@ -974,7 +974,7 @@ class MainActivity: Activity() {
                 tag="home:refresh"
                 nextFocusUpId=nav[tab].id
             }
-            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
+            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=nav[tab].id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
             // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
             container.addView(types)
@@ -1335,7 +1335,7 @@ class MainActivity: Activity() {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text("题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             genreClear=addButton(bar,"全部题材") {
-                pendingRefreshFocus="focus:home:genre-clear"
+                pendingRefreshFocus="focus:home:genre"
                 genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true)
             }.apply {
                 tag="home:genre-clear"
@@ -1349,7 +1349,7 @@ class MainActivity: Activity() {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text("题材 · ${aiGenre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             genreClear=addButton(bar,"全部题材") {
-                pendingRefreshFocus="rank:ai:genre-clear"
+                pendingRefreshFocus="rank:board:AI"
                 aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
             }.apply {
                 tag="rank:ai:genre-clear"
