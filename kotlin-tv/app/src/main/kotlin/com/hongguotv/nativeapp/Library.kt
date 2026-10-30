@@ -242,6 +242,33 @@ class Library(context: Context) {
             "sourceHidden" to { merged.settings.sourceHidden }))
         flush()
     }
+    /** Restore playback/interface preferences while retaining all user library data. */
+    fun resetSettings() {
+        val defaults = LibraryDisk.decode(emptyMap()).settings
+        state().settings = defaults
+        marksCache = linkedMapOf()
+        prefs.edit().remove("theme").remove("skipMarks").apply()
+        writes.submit(mapOf(
+            "quality" to { defaults.quality }, "playbackSpeed" to { defaults.speed },
+            "autoNext" to { defaults.autoNext }, "contentType" to { defaults.type.storedValue },
+            "frameMode" to { defaults.frame.name }, "autoSeason" to { defaults.autoSeason },
+            "danmaku" to { defaults.danmaku }, "danmakuOpacity" to { defaults.danmakuOpacity },
+            "danmakuFont" to { defaults.danmakuFont }, "danmakuSpeed" to { defaults.danmakuSpeed },
+            "danmakuRows" to { defaults.danmakuRows }, "showClock" to { defaults.showClock },
+            "sourceHidden" to { defaults.sourceHidden }
+        ))
+    }
+
+    /** Close and wait for queued library writes before an all-data reset removes storage. */
+    fun closeAndAwait(timeoutSeconds: Long = 15): Boolean {
+        close()
+        val loaderDone = loader.awaitTermination(timeoutSeconds, TimeUnit.SECONDS)
+        val writesDone = writes.awaitClosed(timeoutSeconds, TimeUnit.SECONDS)
+        val homesDone = homeWrites.awaitClosed(timeoutSeconds, TimeUnit.SECONDS)
+        synchronized(retiredWrites) { retiredWrites.remove(writes); retiredWrites.remove(homeWrites) }
+        return loaderDone && writesDone && homesDone
+    }
+
     /** Requests prompt background commit, without lifecycle-thread disk waits. */
     fun flush() {
         writes.flush(); homeWrites.flush()
