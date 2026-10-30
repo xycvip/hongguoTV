@@ -120,8 +120,8 @@ internal class OfficialCommentPanel(
         countLabel.text = "《$title》· 第 $episodeNumber 集评论"
         currentItems = emptyList()
         currentReplies = emptyMap()
-        replyTarget = null
-        composerLabel.text = ""
+        clearDraft()
+        input.hint = "说说你的看法……"
         statusLabel.text = "正在加载评论…"
         render()
     }
@@ -168,6 +168,7 @@ internal class OfficialCommentPanel(
         if (signedIn) input.setText("")
         replyTarget = null
         composerLabel.text = ""
+        input.hint = "说说你的看法……"
     }
 
     fun setReplyTarget(comment: OfficialComment) {
