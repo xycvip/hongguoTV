@@ -33,6 +33,7 @@ internal class OfficialCommentPanel(
         fun like(comment: OfficialComment)
         fun reply(comment: OfficialComment)
         fun openReplies(comment: OfficialComment)
+        fun loadMoreReplies(comment: OfficialComment)
         fun send(text: String)
         fun login()
     }
@@ -70,6 +71,9 @@ internal class OfficialCommentPanel(
     private var hasMore = false
     private var currentItems: List<OfficialComment> = emptyList()
     private var currentReplies: Map<String, List<OfficialComment>> = emptyMap()
+    private val replyCursors = mutableMapOf<String, String>()
+    private val replyHasMore = mutableMapOf<String, Boolean>()
+    private val replyLoading = mutableSetOf<String>()
     private var replyTarget: OfficialComment? = null
     private var draft = ""
 
@@ -123,6 +127,9 @@ internal class OfficialCommentPanel(
         countLabel.text = "《$title》· 第 $episodeNumber 集评论"
         currentItems = emptyList()
         currentReplies = emptyMap()
+        replyCursors.clear()
+        replyHasMore.clear()
+        replyLoading.clear()
         hasMore = false
         clearDraft()
         setSending(false)
@@ -140,8 +147,17 @@ internal class OfficialCommentPanel(
         render()
     }
 
-    fun setReplies(commentId: String, rows: List<OfficialComment>) {
-        currentReplies = currentReplies + (commentId to rows)
+    fun setReplies(commentId: String, page: OfficialCommentPage, append: Boolean = false) {
+        val combined = if (append) currentReplies[commentId].orEmpty() + page.items else page.items
+        currentReplies = currentReplies + (commentId to combined.distinctBy { it.id })
+        replyCursors[commentId] = page.nextCursor
+        replyHasMore[commentId] = page.hasMore
+        replyLoading.remove(commentId)
+        render()
+    }
+
+    fun setReplyLoading(commentId: String, loading: Boolean) {
+        if (loading) replyLoading.add(commentId) else replyLoading.remove(commentId)
         render()
     }
 
@@ -226,6 +242,11 @@ internal class OfficialCommentPanel(
             list.addView(commentCard(comment, false))
             currentReplies[comment.id]?.forEach { reply ->
                 list.addView(commentCard(reply, true))
+            }
+            if (replyHasMore[comment.id] == true) {
+                list.addView(action(if (comment.id in replyLoading) "正在加载回复…" else "查看更多回复") {
+                    if (comment.id !in replyLoading) listener.loadMoreReplies(comment)
+                })
             }
         }
         if (hasMore) {
