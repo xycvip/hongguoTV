@@ -672,8 +672,8 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 val density = activity.resources.displayMetrics.density
                 fun dp(value: Int) = (value * density).toInt()
                 val metrics = activity.resources.displayMetrics
-                val maxQrWidth = (metrics.widthPixels - dp(56)).coerceAtLeast(dp(120))
-                val maxQrHeight = (metrics.heightPixels - dp(210)).coerceAtLeast(dp(120))
+                val maxQrWidth = (metrics.widthPixels - dp(88)).coerceAtLeast(dp(96))
+                val maxQrHeight = (metrics.heightPixels - dp(230)).coerceAtLeast(dp(96))
                 val size = minOf(dp(300), maxQrWidth, maxQrHeight)
                 val image =
                     android.widget.ImageView(activity).apply {

@@ -237,8 +237,10 @@ internal class OfficialCommentPanel(
     }
 
     private fun render() {
-        val focusTag = (list.findFocus()?.tag as? String) ?: pendingFocusTag
-        pendingFocusTag = focusTag
+        val focusedInList = list.findFocus()
+        val focusOutsideList = focusedInList == null && findFocus() != null
+        val focusTag = if (focusOutsideList) null else (focusedInList?.tag as? String) ?: pendingFocusTag
+        if (focusOutsideList) pendingFocusTag = null else pendingFocusTag = focusTag
         list.removeAllViews()
         if (currentItems.isEmpty() && !loading && statusLabel.text.isNullOrBlank()) {
             statusLabel.text = "暂无评论"
@@ -275,7 +277,8 @@ internal class OfficialCommentPanel(
         }
         list.post {
             val target = focusTag?.let { list.findViewWithTag<View>(it) }
-            (target ?: firstFocusable(list))?.requestFocus()
+            if (target != null) target.requestFocus()
+            else if (!focusOutsideList) firstFocusable(list)?.requestFocus()
             if (pendingFocusTag == focusTag) pendingFocusTag = null
         }
     }
