@@ -8,6 +8,7 @@ import subprocess
 import base64
 import urllib.error
 import urllib.request
+import urllib.parse
 
 TAG = os.environ["UPDATE_TAG"]
 VERSION_NAME = os.environ["HONGGUOTV_VERSION_NAME"]
@@ -236,19 +237,13 @@ def upload_release_asset(local_path, asset_name, content_type):
     print(f"Uploaded AppDownload Release asset: {result.get('name')}")
 
 upload_release_asset(apk_path, DISTRIBUTION_APK_NAME, "application/vnd.android.package-archive")
-upload_release_asset(json_path, "update.json", "application/json")
 upload_release_asset(sha_path, "SHA256SUMS", "text/plain")
 apk_release_url = f"https://github.com/{DISTRIBUTION_REPOSITORY}/releases/download/{APP_RELEASE_TAG}/{DISTRIBUTION_APK_NAME}"
 manifest["apk"]["url"] = apk_release_url
 with open(json_path, "w", encoding="utf-8") as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)
     f.write("\\n")
-# Replace the manifest asset in the Release with the final URL-bearing manifest.
-for asset in release.get("assets", []):
-    if asset.get("name") == "update.json":
-        request = urllib.request.Request(asset["url"], method="DELETE", headers=api_headers)
-        with urllib.request.urlopen(request, timeout=60):
-            pass
+# Upload the manifest only after the APK URL is known and the APK asset is in place.
 upload_release_asset(json_path, "update.json", "application/json")
 print(f"AppDownload Release 已发布：{APP_RELEASE_TAG}，APK={DISTRIBUTION_APK_NAME}")
 
