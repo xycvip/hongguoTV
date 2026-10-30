@@ -14,7 +14,7 @@ VERSION_NAME = os.environ["HONGGUOTV_VERSION_NAME"]
 VERSION_CODE = int(os.environ["HONGGUOTV_VERSION_CODE"])
 APK_SRC = "kotlin-tv/app/build/outputs/apk/release/app-release.apk"
 APK_NAME = f"HongguoTV-{VERSION_NAME}.apk"
-DISTRIBUTION_APK_NAME = "hongguoTV.apk"
+DISTRIBUTION_APK_NAME = APK_NAME
 DISTRIBUTION_REPOSITORY = "xycvip/AppDownload"
 DISTRIBUTION_DIRECTORY = "hongguoTV"
 OUTPUTS = "outputs"
@@ -162,6 +162,17 @@ def upload_text(path, content, message):
 
 upload_file(f"{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME}", apk_path,
             f"发布红果TV {VERSION_NAME} APK")
+
+# Remove older versioned APKs only after the new APK is safely uploaded.
+DIRECTORY_ITEMS = github_contents_request(DISTRIBUTION_DIRECTORY)
+if isinstance(DIRECTORY_ITEMS, list):
+    for item in DIRECTORY_ITEMS:
+        old_name = item.get("name", "")
+        if item.get("type") == "file" and old_name.endswith(".apk") and old_name != DISTRIBUTION_APK_NAME:
+            github_contents_request(f"{DISTRIBUTION_DIRECTORY}/{old_name}", "DELETE",
+                {"message": f"清理旧版红果TV安装包（{VERSION_NAME}）", "sha": item["sha"], "branch": "main"})
+            print(f"Removed old APK: {old_name}")
+
 with open(json_path, "r", encoding="utf-8") as manifest_file:
     manifest_text = manifest_file.read() + "\n"
 upload_text(f"{DISTRIBUTION_DIRECTORY}/latest.json", manifest_text,
