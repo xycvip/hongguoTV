@@ -99,7 +99,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             isEnabled = true
         }
     }
-    fun show(from: View?) {
+    fun show(from: View?, aboutMode: Boolean = false) {
         if (!active) return
         anchor = from
         dialog?.dismiss()
@@ -108,7 +108,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         if (updatePending) promptedThisSession = true
         val dp = activity.resources.displayMetrics.density
         val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding((24*dp).toInt(), (12*dp).toInt(), (24*dp).toInt(), 0) }
-        body.addView(TvDialog.title(activity,"版本与更新 · ${BuildConfig.VERSION_NAME}"))
+        body.addView(TvDialog.title(activity, if (aboutMode) "关于软件 · ${BuildConfig.VERSION_NAME}" else "版本与更新 · ${BuildConfig.VERSION_NAME}"))
         statusView = TextView(activity).apply {
             text = status
             textSize = 17f
@@ -123,7 +123,20 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToPadding = false
-            addView(statusView, FrameLayout.LayoutParams(-1, -2))
+            val statusContent = LinearLayout(activity).apply {
+                orientation = LinearLayout.VERTICAL
+                if (aboutMode) {
+                    addView(TvDialog.body(
+                        activity,
+                        "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\\n\\n" +
+                            "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\\n" +
+                            "AndroidX Media3 / OkHttp：Apache-2.0\\nKotlin：Apache-2.0\\nBouncy Castle：MIT。\\n\\n" +
+                            "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
+                    ))
+                }
+                addView(statusView, LinearLayout.LayoutParams(-1, -2))
+            }
+            addView(statusContent, FrameLayout.LayoutParams(-1, -2))
         }
         // 限定整个弹窗内容高度，并让说明区占用剩余空间；底部操作按钮始终留在可见区域。
         body.layoutParams = LinearLayout.LayoutParams(
@@ -149,7 +162,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             gravity = android.view.Gravity.END
             setPadding(0, (14*dp).toInt(), 0, 0)
         }
-        val later = TvDialog.capsuleButton(activity,"稍后") { }
+        val later = TvDialog.capsuleButton(activity, if (aboutMode) "关闭" else "稍后") { }
         val action = TvDialog.capsuleButton(activity,"检查更新") { }
         actionButton = action
         buttons.addView(later, LinearLayout.LayoutParams(-2,-2).apply { rightMargin=(12*dp).toInt() })

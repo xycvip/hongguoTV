@@ -384,7 +384,6 @@ class MainActivity: Activity() {
         runCatching { connectivity.registerDefaultNetworkCallback(networkCallback); networkRegistered=true }
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
         mediaSession=TvMediaSession(this,{ if(foreground && screen=="player") requestPlayback(true) },{ if(foreground && screen=="player") requestPlayback(false) },{ position -> if(foreground && screen=="player") seekTo(position) },{ direction -> skipEpisode(direction) },{ if(foreground && screen=="player") returnToDetail() })
-        message(base(),"正在读取本机记录…")
         loadLibrary()
     }
     private fun showLibraryError(problem: Throwable) {
@@ -394,6 +393,8 @@ class MainActivity: Activity() {
     private var startupHomeRefreshStarted=false
     /** 启动全屏推荐期间只保留过场；实际视频首帧出现后按正常播放规则记录进度。 */
     private var bootAutoPlaybackPending=false
+    /** 整个开机推荐播放会话都使用静默失败回退；不影响用户手动发起的正常播放。 */
+    private var startupAutoPlaybackActive=false
     /** 开机自动推荐只在实际播放满 30 秒后才写入历史；手动播放不受此门槛影响。 */
     private var startupPreviewEpisodeId: String?=null
     private var startupPreviewPlayedMs=0L
@@ -435,16 +436,21 @@ class MainActivity: Activity() {
             if(!foreground) { launchRandomPlaybackStarted=false; initialCatalogPending=true; return }
             val picked=randomRecommender.pick(1).firstOrNull()
                 ?: library.cachedHome(library.contentType)?.items?.shuffled()?.firstOrNull()
-            if(picked!=null) openDetail(picked,resume=true,autoplay=true)
-            else {
+            if(picked!=null) {
+                startupAutoPlaybackActive=true
+                openDetail(picked,resume=true,autoplay=true)
+            } else {
+                startupAutoPlaybackActive=false
                 bootAutoPlaybackPending=false
                 showCatalog(load=true)
                 Toast.makeText(this,"暂时无法获取随机推荐，请检查网络后重试",Toast.LENGTH_LONG).show()
             }
         }
         val cached=randomRecommender.pick(1).firstOrNull()
-        if(cached!=null) openDetail(cached,resume=true,autoplay=true)
-        else replenishRandomPool { playRandomOrFallback() }
+        if(cached!=null) {
+            startupAutoPlaybackActive=true
+            openDetail(cached,resume=true,autoplay=true)
+        } else replenishRandomPool { playRandomOrFallback() }
     }
     private fun startupAutoplayEnabled() =
         getSharedPreferences("startup_playback",MODE_PRIVATE).getBoolean("autoplay_recommendation",true)
@@ -1847,12 +1853,7 @@ class MainActivity: Activity() {
         }
         lateinit var aboutButton: TextView
         aboutButton=setting(device,"关于软件  ·  v${BuildConfig.VERSION_NAME}") {
-            AlertDialog.Builder(this)
-                .setTitle("关于软件")
-                .setMessage("红果TV\n版本：${BuildConfig.VERSION_NAME}\n\n本项目基于开源项目及第三方组件开发，感谢相关项目与开发者。")
-                .setPositiveButton("检查更新") { _, _ -> updater.show(aboutButton) }
-                .setNegativeButton("关闭", null)
-                .show()
+            updater.show(aboutButton, aboutMode = true)
         }
         // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
         val settingsFooter=text("红果TV  /  ${BuildConfig.VERSION_NAME}    ·    所有数据保存在本机",12f,muted).apply {
@@ -2247,7 +2248,10 @@ class MainActivity: Activity() {
             val target=ResumePlayback.target(result.episodes,cloud?.episodeId ?: progress?.episodeId,cloud?.position ?: progress?.position ?: 0,progress?.completed==true)
             episodeIndex=target.index; group=episodeIndex/20
             if(resume) playEpisode(target.index,target.position,autoplay=detailAutoplay) else showDetail(false)
-        }, { problem -> error(body,problem) { openDetail(series,resume,detailAutoplay) } })
+        }, { problem ->
+            if(startupAutoPlaybackActive) failStartupRecommendation()
+            else error(body,problem) { openDetail(series,resume,detailAutoplay) }
+        })
     }
     private fun showDetail(focusEpisode: Boolean) {
         invalidatePage(); releaseCatalogViews(); screen="detail"; val data=detail ?: return showCatalog()
@@ -2585,9 +2589,27 @@ class MainActivity: Activity() {
         playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${recovery.attempts+1}/3 · ${formatTime(retryPosition)}"
         retryPending=true; main.postDelayed(retryRunnable,delay)
     }
+    private fun failStartupRecommendation() {
+        startupAutoPlaybackActive=false
+        bootAutoPlaybackPending=false
+        startupPreviewEpisodeId=null
+        startupPreviewPlayedMs=0L
+        startupPreviewLastTickAt=0L
+        hideBootSplash()
+        cancelRecovery()
+        cancelPrefetch()
+        if(screen=="player") releasePlayer()
+        showCatalog(load=true)
+    }
     private fun playerFailure(problem: Throwable) {
+        val startupFailure=startupAutoPlaybackActive
         retryPosition=currentPosition().coerceAtLeast(0); retryAutoplay=requestedAutoplay && !sleepStopped
         saveProgress(); hideBootSplash(); bootAutoPlaybackPending=false; cancelRecovery(); cancelPrefetch()
+        if(startupFailure) {
+            failStartupRecommendation()
+            android.util.Log.i("HongguoTV","Startup recommendation playback failed; returned to home: ${problem.message}")
+            return
+        }
         playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
         val incompatible=problem is UnplayableVideoException
         val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
@@ -3224,7 +3246,7 @@ class MainActivity: Activity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
     private fun returnToDetail(forceDetail: Boolean=false) {
-        sleepTimer.cancel(); sleepStopped=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
+        sleepTimer.cancel(); sleepStopped=false; startupAutoPlaybackActive=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
         if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
     }
 
@@ -3459,9 +3481,13 @@ class MainActivity: Activity() {
             val horizontalPaddingDp = if (mobileLayout) 12f else 24f
             val contentWidthPx = dp((availableWidthDp - horizontalPaddingDp * 2f).toInt())
                 .coerceAtLeast(dp(240))
-            val targetCardWidthDp = if (mobileLayout) 150f else 170f
-            val columns = (contentWidthPx / dp(targetCardWidthDp.toInt()).coerceAtLeast(1))
-                .coerceIn(2, 8)
+            // 排行榜使用六列网格；账户片单按相同屏幕宽度计算目标卡片宽度，
+            // 再按可用空间动态决定列数，避免账户卡片比排行榜明显更大。
+            val targetCardWidthDp = ((availableWidthDp - horizontalPaddingDp * 2f) / gridColumns)
+                .coerceAtLeast(88f)
+            val columns = kotlin.math.ceil(
+                contentWidthPx.toFloat() / dp(targetCardWidthDp.toInt()).coerceAtLeast(1)
+            ).toInt().coerceIn(2, 8)
             val posterWidth = ((contentWidthPx - dp(8) * (columns - 1)) / columns - dp(8))
                 .coerceAtLeast(dp(72))
             val posterHeight = (posterWidth / TvStyle.POSTER_ASPECT).toInt()
