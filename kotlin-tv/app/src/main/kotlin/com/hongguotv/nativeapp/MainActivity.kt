@@ -3883,6 +3883,7 @@ class MainActivity: Activity() {
         val content=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         content.addView(TvDialog.title(this,"重置软件"))
         content.addView(TvDialog.body(this,"选择一种重置方式。恢复设置不会动你的个人记录；清除所有数据则会让应用回到首次使用状态。"))
+        lateinit var optionsDialog: AlertDialog
         fun option(title:String,description:String,onClick:()->Unit): LinearLayout =
             LinearLayout(this).apply {
                 orientation=LinearLayout.VERTICAL
@@ -3895,6 +3896,7 @@ class MainActivity: Activity() {
                 addView(text(description,13f,muted).apply { setPadding(0,dp(5),0,0) })
             }
         val settingsOption=option("恢复软件设置","恢复播放、弹幕、界面和遥控器默认值；保留观看记录、收藏、稍后看及片源配置。") {
+            optionsDialog.dismiss()
             TvDialog.confirm(this,"恢复软件设置","将恢复默认播放与界面设置。观看记录、收藏、稍后看、片源配置和账号信息都会保留。") {
                 library.resetSettings()
                 getSharedPreferences("playback-extras-v1",MODE_PRIVATE).edit().clear().apply()
@@ -3911,6 +3913,7 @@ class MainActivity: Activity() {
             }.show()
         }
         val allOption=option("清除所有数据","清空账号、本机设置、观看记录、收藏、片源和缓存，重新启动后相当于首次使用。") {
+            optionsDialog.dismiss()
             TvDialog.confirm(this,"清除所有数据","此操作不可撤销！本机登录信息、观看记录、收藏、稍后看、片源配置及所有设置都会被清除。已导出的备份文件不受影响。确定继续吗？") {
                 clearAllLocalData()
             }.show()
@@ -3921,12 +3924,12 @@ class MainActivity: Activity() {
         content.addView(settingsOption,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(10) })
         content.addView(allOption,LinearLayout.LayoutParams(-1,-2))
         content.addView(buttons)
-        val dialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
-        TvDialog.styleWindow(this,dialog,0.72f,720) { settingsOption.requestFocus() }
-        cancel.setOnClickListener { dialog.dismiss() }
-        dialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
-        dialog.show()
-        settingsOption.post { if(dialog.isShowing) settingsOption.requestFocus() }
+        optionsDialog=AlertDialog.Builder(this).setView(TvDialog.card(this,content)).create()
+        TvDialog.styleWindow(this,optionsDialog,0.72f,720) { settingsOption.requestFocus() }
+        cancel.setOnClickListener { optionsDialog.dismiss() }
+        optionsDialog.setOnDismissListener { if(anchor.isAttachedToWindow) anchor.requestFocus() }
+        optionsDialog.show()
+        settingsOption.post { if(optionsDialog.isShowing) settingsOption.requestFocus() }
     }
 
     private fun clearAllLocalData() {
