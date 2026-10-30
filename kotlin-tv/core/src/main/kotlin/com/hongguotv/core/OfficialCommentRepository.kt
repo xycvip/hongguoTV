@@ -36,6 +36,7 @@ data class OfficialCommentPage(
 class OfficialCommentRepository(
     private val http: OkHttpClient,
     private val playbackSession: PlaybackDeviceSession = PlaybackDeviceSession.shared,
+    private val apiBase: String = "https://api5-normal-sinfonlinea.fqnovel.com",
 ) {
     private data class Identity(val device: Map<String, String>, val cookie: String)
 
@@ -67,7 +68,7 @@ class OfficialCommentRepository(
         val identity = identity(account, body != null)
         val bytes = body?.toString()?.toByteArray(Charsets.UTF_8)
         val signed = Signer(identity.device).sign(
-            "https://api5-normal-sinfonlinea.fqnovel.com$path",
+            "${apiBase.trimEnd('/')}$path",
             identity.device + params,
             bytes,
         )
