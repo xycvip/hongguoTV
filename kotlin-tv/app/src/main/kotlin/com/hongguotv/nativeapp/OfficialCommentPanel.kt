@@ -143,10 +143,14 @@ internal class OfficialCommentPanel(
 
     fun setPage(page: OfficialCommentPage, append: Boolean, replies: Map<String, List<OfficialComment>> = currentReplies) {
         loading = false
+        val existingIds = if (append) currentItems.mapTo(mutableSetOf()) { it.id } else emptySet()
+        val newlyLoaded = if (append) page.items.filterNot { it.id in existingIds } else emptyList()
         currentItems = (if (append) currentItems + page.items else page.items).distinctBy { it.id }
         currentReplies = replies
         hasMore = page.hasMore
         statusLabel.text = if (currentItems.isEmpty()) "暂无评论" else "共 ${page.total} 条评论"
+        // 加载下一页后，从新增评论的第一个操作项继续向下浏览，而不是停在列表末尾的加载按钮。
+        if (newlyLoaded.isNotEmpty()) pendingFocusTag = "comment:${newlyLoaded.first().id}:like"
         render()
     }
 
@@ -239,7 +243,7 @@ internal class OfficialCommentPanel(
     private fun render() {
         val focusedInList = list.findFocus()
         val focusOutsideList = focusedInList == null && findFocus() != null
-        val focusTag = if (focusOutsideList) null else (focusedInList?.tag as? String) ?: pendingFocusTag
+        val focusTag = if (focusOutsideList) null else pendingFocusTag ?: (focusedInList?.tag as? String)
         if (focusOutsideList) pendingFocusTag = null else pendingFocusTag = focusTag
         list.removeAllViews()
         if (currentItems.isEmpty() && !loading && statusLabel.text.isNullOrBlank()) {
