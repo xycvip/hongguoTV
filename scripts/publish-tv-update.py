@@ -182,18 +182,75 @@ def upload_text(path, content, message):
     result = github_contents_request(path, "PUT", payload)
     print(f"Uploaded {path}: {result.get('commit', {}).get('sha', 'committed')}")
 
-upload_file(f"{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME}", apk_path,
-            f"发布红果TV {VERSION_NAME} APK")
+# Publish APK as an asset of an app-specific Release in AppDownload.
+# Each app uses its own tag namespace so releases from other apps never collide.
+APP_RELEASE_TAG = f"hongguotv-v{VERSION_NAME}"
+release_api = f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases/tags/{APP_RELEASE_TAG}"
+api_headers = {
+    "Authorization": f"Bearer {token}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "HongguoTV-AppDownload-Publisher",
+}
+try:
+    request = urllib.request.Request(release_api, headers=api_headers)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        release = json.loads(response.read().decode("utf-8"))
+except urllib.error.HTTPError as exc:
+    if exc.code != 404:
+        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(f"读取 AppDownload Release 失败（HTTP {exc.code}）：{detail}") from exc
+    create_payload = json.dumps({
+        "tag_name": APP_RELEASE_TAG,
+        "target_commitish": "main",
+        "name": f"红果 TV {VERSION_NAME}",
+        "body": f"红果 TV {VERSION_NAME}\\n\\n{notes}",
+        "draft": False,
+        "prerelease": False,
+        "make_latest": "true",
+    }, ensure_ascii=False).encode("utf-8")
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases",
+        data=create_payload, method="POST",
+        headers={**api_headers, "Content-Type": "application/json"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        release = json.loads(response.read().decode("utf-8"))
 
-# Remove older versioned APKs only after the new APK is safely uploaded.
-DIRECTORY_ITEMS = github_contents_request(DISTRIBUTION_DIRECTORY)
-if isinstance(DIRECTORY_ITEMS, list):
-    for item in DIRECTORY_ITEMS:
-        old_name = item.get("name", "")
-        if item.get("type") == "file" and old_name.endswith(".apk") and old_name != DISTRIBUTION_APK_NAME:
-            github_contents_request(f"{DISTRIBUTION_DIRECTORY}/{old_name}", "DELETE",
-                {"message": f"清理旧版红果TV安装包（{VERSION_NAME}）", "sha": item["sha"], "branch": "main"})
-            print(f"Removed old APK: {old_name}")
+# Delete same-name assets when retrying an interrupted publication.
+for asset in release.get("assets", []):
+    if asset.get("name") in (DISTRIBUTION_APK_NAME, "latest.json", "SHA256SUMS"):
+        request = urllib.request.Request(asset["url"], method="DELETE", headers=api_headers)
+        with urllib.request.urlopen(request, timeout=60):
+            pass
+
+upload_url = release["upload_url"].split("{", 1)[0]
+def upload_release_asset(local_path, asset_name, content_type):
+    with open(local_path, "rb") as source:
+        data = source.read()
+    request = urllib.request.Request(
+        f"{upload_url}?name={urllib.parse.quote(asset_name)}",
+        data=data, method="POST",
+        headers={**api_headers, "Content-Type": content_type})
+    with urllib.request.urlopen(request, timeout=300) as response:
+        result = json.loads(response.read().decode("utf-8"))
+    print(f"Uploaded AppDownload Release asset: {result.get('name')}")
+
+upload_release_asset(apk_path, DISTRIBUTION_APK_NAME, "application/vnd.android.package-archive")
+upload_release_asset(json_path, "update.json", "application/json")
+upload_release_asset(sha_path, "SHA256SUMS", "text/plain")
+apk_release_url = f"https://github.com/{DISTRIBUTION_REPOSITORY}/releases/download/{APP_RELEASE_TAG}/{DISTRIBUTION_APK_NAME}"
+manifest["apk"]["url"] = apk_release_url
+with open(json_path, "w", encoding="utf-8") as f:
+    json.dump(manifest, f, indent=2, ensure_ascii=False)
+    f.write("\\n")
+# Replace the manifest asset in the Release with the final URL-bearing manifest.
+for asset in release.get("assets", []):
+    if asset.get("name") == "update.json":
+        request = urllib.request.Request(asset["url"], method="DELETE", headers=api_headers)
+        with urllib.request.urlopen(request, timeout=60):
+            pass
+upload_release_asset(json_path, "update.json", "application/json")
+print(f"AppDownload Release 已发布：{APP_RELEASE_TAG}，APK={DISTRIBUTION_APK_NAME}")
 
 with open(json_path, "r", encoding="utf-8") as manifest_file:
     manifest_text = manifest_file.read() + "\n"
@@ -205,7 +262,7 @@ readme_text = f"""# 红果 TV 分发目录
 
 当前版本：**{VERSION_NAME}**
 
-- APK 安装包：[下载 {DISTRIBUTION_APK_NAME}](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME})
+- APK 安装包：[下载 {DISTRIBUTION_APK_NAME}](https://github.com/{DISTRIBUTION_REPOSITORY}/releases/download/hongguotv-v{VERSION_NAME}/{DISTRIBUTION_APK_NAME})
 - 应用内更新清单：[latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
 
 ## 本次更新说明
