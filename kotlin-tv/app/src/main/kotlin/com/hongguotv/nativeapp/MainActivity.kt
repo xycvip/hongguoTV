@@ -3421,8 +3421,8 @@ class MainActivity: Activity() {
     }
     private fun currentOfficialCommentCredentials(): AccountCredentials? {
         if(!cloudAccount.signedIn) return null
+        // A restored session may still be refreshing its profile; anonymous reads remain available.
         return cloudAccount.recommendationCredentials()
-            ?: throw java.io.IOException("红果账号正在验证，请稍后重试")
     }
     private fun loadOfficialComments(append: Boolean) {
         val view=commentPanel ?: return
@@ -3476,7 +3476,7 @@ class MainActivity: Activity() {
         val seriesId=data.series.id
         val vid=data.episodes.getOrNull(episodeIndex) ?: return
         val credentials=runCatching { currentOfficialCommentCredentials() }
-        if(credentials.isFailure) { Toast.makeText(this,credentials.exceptionOrNull()?.message ?: "账号状态暂不可用",Toast.LENGTH_SHORT).show(); return }
+        if(credentials.isFailure || credentials.getOrNull()==null) { Toast.makeText(this,"红果账号正在验证或已失效，请重新登录",Toast.LENGTH_SHORT).show(); return }
         val token=commentGeneration
         io.execute {
             val result=runCatching { officialCommentRepository.setLiked(credentials.getOrNull(),seriesId,comment.id,!comment.liked) }
@@ -3496,7 +3496,7 @@ class MainActivity: Activity() {
         val vid=data.episodes.getOrNull(episodeIndex) ?: return
         val replyTarget=view.replyTarget()
         val credentials=runCatching { currentOfficialCommentCredentials() }
-        if(credentials.isFailure) { Toast.makeText(this,credentials.exceptionOrNull()?.message ?: "账号状态暂不可用",Toast.LENGTH_SHORT).show(); return }
+        if(credentials.isFailure || credentials.getOrNull()==null) { Toast.makeText(this,"红果账号正在验证或已失效，请重新登录",Toast.LENGTH_SHORT).show(); return }
         val token=commentGeneration
         view.setSending(true)
         io.execute {
