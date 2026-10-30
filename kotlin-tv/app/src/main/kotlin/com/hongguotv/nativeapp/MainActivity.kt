@@ -243,6 +243,10 @@ class MainActivity: Activity() {
     private var playError=false
     private var lastSaved=0L
     private var quality=""
+    /** 本次播放会话内的临时降档，不改用户全局设置；重进播放页或手动改清晰度时清除。 */
+    private var sessionQuality: Int?=null
+    private var downgradeEpisode=""
+    private var downgradeCount=0
     private val tick=object: Runnable {
         override fun run() {
             if(!foreground || isDestroyed) return
@@ -1089,10 +1093,13 @@ class MainActivity: Activity() {
             artwork.addView(image,FrameLayout.LayoutParams(-1,-1))
             val rank=TextView(this@MainActivity).apply { textSize=11f; setTypeface(null,Typeface.BOLD); setPadding(dp(8),dp(4),dp(8),dp(4)) }
             artwork.addView(rank,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.START))
-            val title=text("",14f).apply { maxLines=2; minLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(7),dp(3),0) }
+            // 部分机型单行/两行标题实测行高不一致，minLines 保底失效；用换行探针实测两行高度并固定，热度/集数标签才能对齐
+            val title=text("测\n测",14f).apply { gravity=Gravity.TOP; includeFontPadding=true; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(7),dp(3),0) }
+            title.measure(View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+            val titleHeight=title.measuredHeight
             val badge=text("",12f).apply { maxLines=1; minLines=1; minHeight=dp(19); ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),0,0,0) }
             card.addView(artwork,lp(-1,-2))
-            card.addView(title,lp(-1,-2))
+            card.addView(title,lp(-1,titleHeight))
             card.addView(badge,lp(-1,-2))
             card.layoutParams=RecyclerView.LayoutParams(-1,-2).apply { rightMargin=dp(14); bottomMargin=dp(10) }
             return CardHolder(card,artwork,image,rank,title,badge)
@@ -1908,10 +1915,12 @@ class MainActivity: Activity() {
         updater.interrupt()
         val data=detail ?: return
         val playbackStarted=android.os.SystemClock.elapsedRealtime()
+        // 从详情页重新进播放器时丢弃上一轮的临时降档；自动连播保持在同一条降档链上。
+        if(screen!="player") { sessionQuality=null; downgradeEpisode=""; downgradeCount=0 }
         val reuse=screen=="player" && player!=null && playerView!=null && !recovering && !playError
         library.setWatched(data.series.id,false)
         val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
-        val prefetched=if(position==0L && !recovering) preparedNext.take("${data.episodes[selectedIndex]}:${library.maxQuality}") else null
+        val prefetched=if(position==0L && !recovering) preparedNext.take("${data.episodes[selectedIndex]}:${effectiveQuality()}") else null
         val claimedHttp=if(prefetched!=null) prefetchHttp.also { prefetchHttp=null } else null
         saveProgress(); library.flush(); invalidatePage(); favoriteMonitor.stop(); releaseCatalogViews(); stopDanmaku()
         if(reuse) {
@@ -1919,12 +1928,13 @@ class MainActivity: Activity() {
             episodePanel?.dismiss(); episodePanel=null; speedDialog?.dismiss(); speedDialog=null
             playerListener?.let { player?.removeListener(it) }; playerListener=null
             player?.stop(); player?.clearMediaItems()
+            video?.let { android.util.Log.w("HongguoTV","Prefetch episode=${episodeIndex+1} ${it.stats()}") }
             video?.close(); video=null; closeTransport(playbackHttp); playbackHttp=null
             main.removeCallbacks(hideHud); main.removeCallbacks(seekRunnable); pendingSeek=null
         } else releasePlayer()
         artwork.cancelPage(clearMemory=true)
         playbackHttp=claimedHttp; video=prefetched
-        var firstReady=true; var firstFrame=true
+        var firstReady=true; var firstFrame=true; var rebufferStart=0L
         if(!recovering) recovery.reset()
         autoRecovery=false; readySince=0; startPosition=position.coerceAtLeast(0); requestedAutoplay=autoplay
         val skipMark=library.skipMark(data.series.id)
@@ -1960,11 +1970,13 @@ class MainActivity: Activity() {
         playbackText.text="正在获取播放地址…"; progressBar.progress=0; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
         controls.removeAllViews(); controls.visibility=View.GONE; transportPlay=null; sleepButton=null
         syncMediaSession()
-        val requestedId=data.episodes[episodeIndex]; val maxQuality=library.maxQuality; val ticket=generation
+        val requestedId=data.episodes[episodeIndex]; val maxQuality=effectiveQuality(); val ticket=generation
+        // 每集最多自动降两档，换集后重新计数，避免一集失败就把整部剧拖到最低画质。
+        if(requestedId!=downgradeEpisode) { downgradeEpisode=requestedId; downgradeCount=0 }
         work({ prefetched ?: RemoteVideo(repository.http,repository.stream(requestedId,maxQuality)).prepare() }, { remote ->
             video=remote; quality=remote.info.quality
             val p=player ?: run {
-                val load=DefaultLoadControl.Builder().setBufferDurationsMs(15000,30000,1000,2000).setTargetBufferBytes(12*1024*1024).build()
+                val load=DefaultLoadControl.Builder().setBufferDurationsMs(20000,50000,1000,5000).setTargetBufferBytes(32*1024*1024).build()
                 val renderers=androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableDecoderFallback(true)
                 ExoPlayer.Builder(this,renderers).setLoadControl(load).build().also {
                     player=it; playerView?.player=it
@@ -1983,9 +1995,11 @@ class MainActivity: Activity() {
                             return
                         }
                         playbackReady=true; incompatibleSkips=0
-                        if(firstReady) { firstReady=false; readySince=android.os.SystemClock.elapsedRealtime(); android.util.Log.i("HongguoTV","Playback ready episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${readySince-playbackStarted}"); startDanmaku() }
+                        if(firstReady) { firstReady=false; readySince=android.os.SystemClock.elapsedRealtime(); android.util.Log.w("HongguoTV","Playback ready episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${readySince-playbackStarted}"); startDanmaku() }
+                        else if(rebufferStart>0) { android.util.Log.w("HongguoTV","Rebuffer end episode=${episodeIndex+1} stalledMs=${android.os.SystemClock.elapsedRealtime()-rebufferStart}"); rebufferStart=0 }
                         if(hud.visibility==View.VISIBLE) updatePlaybackText()
                     }
+                    if(state==Player.STATE_BUFFERING && !firstReady && rebufferStart==0L) { rebufferStart=android.os.SystemClock.elapsedRealtime(); android.util.Log.w("HongguoTV","Rebuffer start episode=${episodeIndex+1} positionMs=${p.currentPosition}") }
                     syncMediaSession()
                     if(state==Player.STATE_ENDED) {
                         saveProgress(true)
@@ -1998,7 +2012,7 @@ class MainActivity: Activity() {
                 override fun onRenderedFirstFrame() {
                     if(active() && firstFrame) {
                         firstFrame=false
-                        android.util.Log.i("HongguoTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
+                        android.util.Log.w("HongguoTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
                     }
                 }
                 override fun onIsPlayingChanged(playing: Boolean) { if(active()) { if(hud.visibility==View.VISIBLE) showHud(); syncMediaSession() } }
@@ -2027,7 +2041,7 @@ class MainActivity: Activity() {
         val p=player ?: return; val data=detail ?: return
         if(!foreground || !p.isPlaying || !library.autoNext || playError || sleepStopped || episodeIndex>=data.episodes.lastIndex) return
         if(!PrefetchPolicy.nearEnd(p.currentPosition,p.duration,p.playbackParameters.speed)) return
-        val id=data.episodes[episodeIndex+1]; val quality=library.maxQuality; val key="$id:$quality"
+        val id=data.episodes[episodeIndex+1]; val quality=effectiveQuality(); val key="$id:$quality"
         if(preparedNext.isFresh(key) || prefetchJob?.isDone==false) return
         val now=android.os.SystemClock.elapsedRealtime()
         if(readySince==0L || now-readySince<3000 || p.bufferedPosition-p.currentPosition<5000) return
@@ -2059,6 +2073,20 @@ class MainActivity: Activity() {
         playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${recovery.attempts+1}/3 · ${formatTime(retryPosition)}"
         retryPending=true; main.postDelayed(retryRunnable,delay)
     }
+    /** 播放取流用的档位：本会话降过档就用降档值，否则用用户设置值。 */
+    private fun effectiveQuality(): Int = sessionQuality ?: library.maxQuality
+    /** 临时降档只影响本次播放，不写回用户设置，避免一集片源坏了就把全局画质永久拉低。 */
+    private fun applySessionDowngrade(target: Int) {
+        sessionQuality=target; downgradeCount++
+        android.util.Log.w("HongguoTV","Auto downgrade to ${target}P episode=${episodeIndex+1} attempt=$downgradeCount actual=$quality")
+        playEpisode(episodeIndex,retryPosition,retryAutoplay)
+    }
+    /** 每集最多自动降两档：解码失败立即降，其余错误等同档重试预算用尽再降。 */
+    private fun autoDowngradeTarget(decoding: Boolean,retryable: Boolean): Int? {
+        if(downgradeCount>=2) return null
+        if(!decoding && !(retryable && !recovery.remaining)) return null
+        return QualityDowngrade.next(QualityDowngrade.parse(quality),effectiveQuality())
+    }
     private fun playerFailure(problem: Throwable) {
         retryPosition=currentPosition().coerceAtLeast(0); retryAutoplay=requestedAutoplay && !sleepStopped
         saveProgress(); cancelRecovery(); cancelPrefetch()
@@ -2087,10 +2115,19 @@ class MainActivity: Activity() {
             }
         } else {
             addButton(actions,"立即重试") { playEpisode(episodeIndex,retryPosition,retryAutoplay) }.requestFocus()
-            addButton(actions,"尝试 720P") { library.maxQuality=720; playEpisode(episodeIndex,retryPosition,retryAutoplay) }
+            // 手动入口的档位按当前实际播放档位推算，不再写死 720P。
+            QualityDowngrade.next(QualityDowngrade.parse(quality),effectiveQuality())?.let { lower ->
+                addButton(actions,"切换到 ${lower}P") { sessionQuality=null; downgradeCount=0; library.maxQuality=lower; playEpisode(episodeIndex,retryPosition,retryAutoplay) }
+            }
             addButton(actions,"返回选集") { returnToDetail(true) }
         }
-        if(retryable && !sleepStopped) {
+        // 解码失败同档重试没有意义，同档重试预算又已用尽时也不该再空转：两种情况都自动退一档。
+        val lower=if(incompatible || sleepStopped) null else autoDowngradeTarget(decoding,retryable)
+        if(lower!=null) {
+            playbackText.text="当前清晰度无法播放，正在自动切换到 ${lower}P"
+            autoRecovery=false
+            main.postDelayed({ if(foreground && screen=="player" && playError) applySessionDowngrade(lower) },600)
+        } else if(retryable && !sleepStopped) {
             addButton(controls,"停止自动重试") { cancelRecovery(); playbackText.text="自动重试已停止，观看位置已保留。" }
             autoRecovery=true; scheduleRecovery()
         }
@@ -2556,6 +2593,8 @@ class MainActivity: Activity() {
             setOnItemClickListener { _,_,index,_ ->
                 val target=options[index]; val changed=library.maxQuality!=target
                 library.maxQuality=target
+                // 用户手动选定档位即视为放弃本轮自动降档，后续失败重新从选定档位起算。
+                sessionQuality=null; downgradeEpisode=""; downgradeCount=0
                 if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
                 if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
             }
@@ -2708,6 +2747,7 @@ class MainActivity: Activity() {
         speedDialog?.dismiss(); speedDialog=null
         main.removeCallbacks(hideHud); main.removeCallbacks(seekRunnable); pendingSeek=null
         playerListener?.let { player?.removeListener(it) }; playerListener=null
+        video?.let { android.util.Log.w("HongguoTV","Prefetch end ${it.stats()}") }
         video?.close(); video=null; playerView?.player=null; playerView=null; player?.release(); player=null; playbackReady=false; transportPlay=null; sleepButton=null
         stopDanmaku(); danmakuView=null
         closeTransport(playbackHttp); playbackHttp=null

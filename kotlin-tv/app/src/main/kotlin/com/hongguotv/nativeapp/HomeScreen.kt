@@ -8,6 +8,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.widget.*
+import com.hongguotv.core.FocusGrid
 import com.hongguotv.core.Series
 
 /** Fixed text slots keep D-pad movement from resizing the content below the preview. */
@@ -118,7 +119,7 @@ class HomeScreen(
                 val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
                 val image=if(entry!=null) ImageView(context).apply { scaleType=ImageView.ScaleType.FIT_CENTER; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO } else null
                 view.addView(image ?: label("›",36f).apply { gravity=Gravity.CENTER },LayoutParams(-1,((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()))
-                val title=label(entry?.series?.title ?: "查看全部",14f).apply { minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
+                val title=label(entry?.series?.title ?: "查看全部",14f).apply { gravity=Gravity.TOP; includeFontPadding=true; minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
                 val badge=label(entry?.label ?: shelf.title,12f,TvStyle.muted).apply { minLines=1; maxLines=1; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(2),0,0) }
                 val progress=ProgressBar(context,null,android.R.attr.progressBarStyleHorizontal).apply { max=100; progress=entry?.progress ?: 0; visibility=if(entry?.progress==null) INVISIBLE else VISIBLE; progressTintList=android.content.res.ColorStateList.valueOf(accent) }
                 view.addView(title); view.addView(badge); view.addView(progress,LayoutParams(-1,dp(3)).apply { topMargin=dp(4) })
@@ -153,10 +154,13 @@ class HomeScreen(
             val next=label("更多热门  ›",14f,TvStyle.muted).apply { id=View.generateViewId(); tag="home:more"; isFocusable=true; isFocusableInTouchMode=true; gravity=Gravity.CENTER; minHeight=dp(44); setPadding(dp(16),dp(10),dp(16),dp(10)); background=shape(false); setOnFocusChangeListener { _,f -> background=shape(f); setTextColor(if(f) TvStyle.text else TvStyle.muted); if(f) lastFocus=tag.toString() }; setOnClickListener { more() } }
             contents.addView(next,LayoutParams(-1,-2).apply { topMargin=dp(8) }); footer+=next; moreButton=next
         }
+        // 行列目标统一由 FocusGrid 计算，避界规则不再散落在各处；越出首/末行交给顶部导航与页脚。
+        val grid=FocusGrid(rows.map { it.cards.size })
         rows.forEachIndexed { i,row -> row.cards.forEachIndexed { j,card ->
-            card.view.nextFocusLeftId=row.cards[(j-1).coerceAtLeast(0)].view.id; card.view.nextFocusRightId=row.cards[(j+1).coerceAtMost(row.cards.lastIndex)].view.id
-            card.view.nextFocusUpId=if(i==0) top.id else rows[i-1].cards[j.coerceAtMost(rows[i-1].cards.lastIndex)].view.id
-            card.view.nextFocusDownId=if(i==rows.lastIndex) refresh.id else rows[i+1].cards[j.coerceAtMost(rows[i+1].cards.lastIndex)].view.id
+            card.view.nextFocusLeftId=row.cards[grid.left(i,j).col].view.id
+            card.view.nextFocusRightId=row.cards[grid.right(i,j).col].view.id
+            card.view.nextFocusUpId=grid.up(i,j)?.let { rows[it.row].cards[it.col].view.id } ?: top.id
+            card.view.nextFocusDownId=grid.down(i,j)?.let { rows[it.row].cards[it.col].view.id } ?: refresh.id
         } }
         footer.forEachIndexed { i,v -> v.nextFocusUpId=if(i==0) rows.lastOrNull()?.cards?.firstOrNull()?.view?.id ?: top.id else footer[i-1].id; v.nextFocusDownId=footer.getOrNull(i+1)?.id ?: v.id }
         top.nextFocusDownId=firstId()
@@ -243,9 +247,12 @@ class HomeScreen(
     private fun fitArtwork() {
         if(height<=0) return
         rows.forEach { row ->
+            // 部分机型单行/两行标题的实测行高不一致（minLines 保底失效），统一为行内最高标题，保证集数与进度条对齐
+            val titleHeight=row.cards.maxOf { item -> item.title.measuredHeight }
+            if(titleHeight>0) row.cards.forEach { card -> if(card.title.layoutParams.height!=titleHeight) card.title.layoutParams=card.title.layoutParams.apply { height=titleHeight } }
             val textHeight=row.cards.maxOf { item -> item.view.paddingTop+item.view.paddingBottom+(1 until item.view.childCount).sumOf { child ->
                 val view=item.view.getChildAt(child); val params=view.layoutParams as LayoutParams
-                view.measuredHeight+params.topMargin+params.bottomMargin
+                (if(params.height>0) params.height else view.measuredHeight)+params.topMargin+params.bottomMargin
             } }
             val desired=((row.cards.first().view.width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
             val imageHeight=minOf(desired,(height-row.block.getChildAt(0).measuredHeight-textHeight-dp(8)).coerceAtLeast(dp(48)))

@@ -147,12 +147,12 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         // AI 剧没有独立搜索口径，官网把它归在漫剧搜索结果里
         if(type==ContentType.AI) return search(keyword,page,ContentType.COMIC)
         if(type==ContentType.COMIC) {
-            try { return appSearch(keyword,page,type) }
+            try { return fillSeasonsFromDetail(appSearch(keyword,page,type),page) }
             catch(e: Exception) { /* App search API rejected the request or the cursor expired; the website paginates independently. */ }
             return fillSeasons(webSearch(keyword,page,COMIC_WEB_GENRE),page,type,keyword)
         }
         var appError: Exception? = null
-        try { val result=appSearch(keyword,page,type); if(result.items.isNotEmpty() || !result.hasMore) return result } catch (e: Exception) { if(e is SearchSessionExpiredException) throw e; appError=e }
+        try { val result=appSearch(keyword,page,type); if(result.items.isNotEmpty() || !result.hasMore) return fillSeasonsFromDetail(result,page) } catch (e: Exception) { if(e is SearchSessionExpiredException) throw e; appError=e }
         return try { fillSeasons(webSearch(keyword,page,SHORT_WEB_GENRE),page,type,keyword) }
         catch(e: Exception) { throw IOException("搜索暂不可用（App接口：${appError?.message ?: "无结果"}；网站：${e.message}）",e) }
     }
@@ -235,7 +235,10 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             additions[base]=extra
         }
         if(additions.values.all { it.isEmpty() }) return page
-        // 原位合并：同一基底按季号排列，其余条目保持原有相关性顺序
+        return mergeSeasonGroups(page,additions)
+    }
+    /** 原位合并：同一基底按季号排列，其余条目保持原有相关性顺序。 */
+    private fun mergeSeasonGroups(page: CatalogPage, additions: Map<String,List<Series>>): CatalogPage {
         val output=mutableListOf<Series>()
         val placed=mutableSetOf<String>()
         for(item in page.items) {
@@ -247,6 +250,34 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             } else output+=item
         }
         return page.copy(items=output)
+    }
+    /**
+     * App 搜索接口把同系列的各季分散在分页里并与无关剧混排，首页常缺季。
+     * 详情页 related 自带整季聚合（与详情页"系列 N 季"同源），用第一条命中的详情把首页同名季补齐；
+     * 只对已出现 2 条以上的基底补，避免泛词搜索为单条结果额外拉详情页。
+     */
+    private fun fillSeasonsFromDetail(page: CatalogPage, pageNumber: Int): CatalogPage {
+        if(pageNumber!=1 || page.items.size<2) return page
+        val groups=page.items.groupBy { baseName(it.title) }.filter { (base,rows) -> base.isNotBlank() && rows.size>1 }
+        if(groups.isEmpty()) return page
+        val additions=mutableMapOf<String,List<Series>>()
+        for((base,rows) in groups.entries.sortedByDescending { it.value.size }.take(2)) {
+            val extra=detailSeasons(base,rows.first().id).filter { s -> page.items.none { it.id==s.id } }
+            additions[base]=extra
+        }
+        if(additions.values.all { it.isEmpty() }) return page
+        return mergeSeasonGroups(page,additions)
+    }
+    private fun detailSeasons(base: String, id: String): List<Series> {
+        val key="detail|$base"
+        val cached=synchronized(seasonFills) { seasonFills[key]?.takeIf { clock()-it.at<86_400_000 }?.items }
+        if(cached!=null) return cached
+        val found=runCatching { val d=detail(id); (listOf(d.series)+d.sameName).filter { baseName(it.title)==base }.distinctBy { it.id } }.getOrElse { emptyList() }
+        synchronized(seasonFills) {
+            seasonFills[key]=SeasonFill(clock(),found)
+            while(seasonFills.size>50) seasonFills.remove(seasonFills.keys.first())
+        }
+        return found
     }
     /** App 搜索/联想接口和播放接口一样按注册设备放行：未注册的随机身份只会拿到 HTTP 200 空体。 */
     private fun searchValues(): MutableMap<String,String> {
@@ -408,16 +439,7 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
     fun stream(id: String, maxQuality: Int = 1080): StreamInfo {
         require(id.matches(Regex("[0-9]{1,30}")))
         val payload="""{"biz_param":{"detail_page_version":0,"device_level":3,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024},"mixed_video_id_map":{"1004":["$id"]}}""".toByteArray()
-        val identity=playbackSession.profile(http)
-        val query=Signer.encode(identity.values+("_rticket" to clock().toString()))
-        val playerUrl="https://api5-normal-sinfonlineb.fqnovel.com/novel/player/multi_video_model/v1/?$query"
-        val request=Request.Builder()
-            .url(playerUrl)
-            .header("User-Agent",PLAYBACK_UA)
-            .header("Accept","application/json; charset=utf-8,application/x-protobuf")
-            .apply { if(identity.cookie.isNotBlank()) header("Cookie",identity.cookie) }
-            .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        val data=JSONObject(playbackText(request.build()))
+        val data=JSONObject(playbackResponse(id,payload))
         val code=data.optInt("Code",data.optInt("code",0))
         if(code!=0) throw IOException("播放接口暂不可用（错误码 $code）")
         val map=data.optJSONObject("data") ?: throw IOException("播放信息为空")
@@ -441,21 +463,37 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         val quality=if(selected.first>0) "${selected.first}P"+(if(selected.first>maxQuality) "（兼容资源）" else "") else "自动"
         return StreamInfo(url,key,quality)
     }
-    /** 播放信息接口会间歇性返回 HTTP 200 空体；按 0/700/1500 毫秒退避最多读取三次，只换请求时间戳不换设备身份。 */
-    private fun playbackText(request: Request): String {
-        var attempt=0
-        while(true) {
-            val next=request.newBuilder().url(request.url.newBuilder().setQueryParameter("_rticket",clock().toString()).build()).build()
-            val body=RequestScope.execute(http.newCall(next)) { response ->
-                if(!response.isSuccessful) throw IOException("播放接口请求失败（HTTP ${response.code}）")
-                response.body?.string().orEmpty()
+    private fun playerRequest(id: String,payload: ByteArray,identity: PlaybackDeviceSession.Profile): Request {
+        val query=Signer.encode(identity.values+("_rticket" to clock().toString()))
+        return Request.Builder()
+            .url("https://api5-normal-sinfonlineb.fqnovel.com/novel/player/multi_video_model/v1/?$query")
+            .header("User-Agent",PLAYBACK_UA)
+            .header("Accept","application/json; charset=utf-8,application/x-protobuf")
+            .apply { if(identity.cookie.isNotBlank()) header("Cookie",identity.cookie) }
+            .post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .build()
+    }
+    /** 播放信息接口会间歇性返回 HTTP 200 空体（同身份、同参数连发十几次全成功，说明是平台侧抖动而非参数问题）。
+     *  先按 0/700/1500/3000 毫秒退避重试，仍为空则重新注册一台匿名设备再走一轮，
+     *  覆盖「进程内的注册身份在长时间播放后失效」的情况。 */
+    private fun playbackResponse(id: String,payload: ByteArray): String {
+        var identity=playbackSession.profile(http)
+        repeat(2) { round ->
+            var attempt=0
+            while(true) {
+                val body=RequestScope.execute(http.newCall(playerRequest(id,payload,identity))) { response ->
+                    if(!response.isSuccessful) throw IOException("播放接口请求失败（HTTP ${response.code}）")
+                    response.body?.string().orEmpty()
+                }
+                if(body.isNotBlank()) return body
+                val delay=listOf(700L,1500L,3000L).getOrNull(attempt) ?: break
+                if(Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("播放请求已取消")
+                Thread.sleep(delay)
+                attempt++
             }
-            if(body.isNotBlank()) return body
-            val delay=listOf(700L,1500L).getOrNull(attempt) ?: throw EmptyPlaybackResponseException()
-            if(Thread.currentThread().isInterrupted) throw java.io.InterruptedIOException("播放请求已取消")
-            Thread.sleep(delay)
-            attempt++
+            if(round==0) identity=playbackSession.renew(http)
         }
+        throw EmptyPlaybackResponseException()
     }
     companion object {
         // 网站搜索混合两类内容：video_data.genre 205 是漫剧，203 是短剧
