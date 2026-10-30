@@ -133,12 +133,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
           RELEASE_NOTES: |
-            - 清除所有数据完成后立即重新打开应用，取消原有闹钟等待重启流程。
-            - 调整清除数据后的重启兼容处理，最终采用直接启动全新首页的方式。
-            - Media3 播放器依赖统一升级至 1.11.1，涵盖 ExoPlayer、HLS 与 UI 模块。
-            - 优化手机扫码登录二维码尺寸，短屏设备弹窗显示更适配。
-            - 关于页面补充当前版本号显示，并优化版本信息展示。
-            - 优化备份恢复选项文案，默认题材切换为短剧。
+            - 题材选择记住手动切换的短剧、漫剧和 AI 剧，冷启动仍默认短剧。
+            - 题材类型标签按屏幕宽度自适应分配空间与间距。
+            - 搜索热搜推荐改为短剧与漫剧混合展示，不再清一色 AI 剧。
+            - 修复清除所有数据：停止后台任务、等待写入完成，再清空本机设置与记录后重启。
         run: python3 scripts/publish-tv-update.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
