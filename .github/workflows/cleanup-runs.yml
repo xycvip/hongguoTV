@@ -5,7 +5,7 @@ on:
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 concurrency:
   group: cleanup-workflow-runs
@@ -87,4 +87,53 @@ jobs:
             core.notice('本次清理工作流自身的运行记录无法在运行过程中删除，会保留这一条。');
             if (failed > 0 || pending.length > 0) {
               core.setFailed('部分运行记录未能删除，请查看上方日志后重新运行清理工作流。');
+            }
+
+            // 历史 Tag：按其指向提交的提交时间排序，只保留最新的一个。
+            core.info('正在读取仓库全部 Tag……');
+            const tags = await github.paginate(
+              github.rest.repos.listTags,
+              { owner, repo, per_page: 100 }
+            );
+
+            if (tags.length > 1) {
+              const datedTags = [];
+              for (const tag of tags) {
+                try {
+                  const commit = await github.rest.repos.getCommit({
+                    owner, repo, ref: tag.commit.sha
+                  });
+                  const date = commit.data.commit.committer?.date ||
+                               commit.data.commit.author?.date ||
+                               '1970-01-01T00:00:00Z';
+                  datedTags.push({ name: tag.name, sha: tag.commit.sha, date });
+                } catch (error) {
+                  core.warning(`无法读取 Tag ${tag.name} 的提交时间：${error.message}`);
+                }
+              }
+
+              datedTags.sort((a, b) => new Date(b.date) - new Date(a.date));
+              const newest = datedTags[0];
+              core.info(`保留最新 Tag：${newest.name}（${newest.date}）`);
+
+              let tagDeleted = 0;
+              let tagFailed = 0;
+              for (const tag of datedTags.slice(1)) {
+                try {
+                  await github.rest.git.deleteRef({
+                    owner, repo, ref: `tags/${tag.name}`
+                  });
+                  tagDeleted++;
+                  core.info(`已删除旧 Tag：${tag.name}`);
+                } catch (error) {
+                  tagFailed++;
+                  core.warning(`删除 Tag 失败 ${tag.name}：${error.message}`);
+                }
+              }
+              core.info(`Tag 清理结束：保留 1 个，删除 ${tagDeleted} 个，失败 ${tagFailed} 个。`);
+              if (tagFailed > 0) {
+                core.setFailed('部分历史 Tag 未能删除，请查看日志。');
+              }
+            } else {
+              core.info(`仓库当前只有 ${tags.length} 个 Tag，无需清理。`);
             }
