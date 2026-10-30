@@ -17,6 +17,9 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
     companion object {
         const val REPOSITORY = "xycvip/hongguoTV"
         const val RELEASES = "https://github.com/$REPOSITORY/releases"
+        const val DOWNLOAD_REPOSITORY = "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV"
+        const val LATEST_MANIFEST = "$DOWNLOAD_REPOSITORY/latest.json"
+        const val LATEST_APK = "$DOWNLOAD_REPOSITORY/hongguoTV.apk"
         const val MAX_APK_BYTES = 80L * 1024 * 1024
         /**
          * Public GitHub is often slow or unreachable from mainland China home networks.
@@ -34,6 +37,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
         /** All hosts we ever send HTTPS traffic to — the interceptor whitelist. */
         val ALLOWED_HOSTS = setOf(
             "github.com",
+            "raw.githubusercontent.com",
             "release-assets.githubusercontent.com",
             "objects.githubusercontent.com",
             "gh-proxy.com", "ghfast.top", "gh-proxy.net",
@@ -48,13 +52,13 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
             require(update.tag.matches(Regex("kotlin-v[0-9][0-9A-Za-z.+-]{0,80}")))
             // Keep this in sync with scripts/publish-tv-update.py: HongguoTV-<version>.apk
-            require(update.fileName.matches(Regex("HongguoTV-[0-9][0-9A-Za-z.+-]{0,80}\\.apk")))
+            require(update.fileName == "hongguoTV.apk")
             require(update.size in 1..MAX_APK_BYTES && update.sha256.matches(Regex("[0-9a-f]{64}")))
             return update
         }
     }
     /** Original GitHub URL for this APK; [AppUpdateRepository] will wrap it with mirrors. */
-    val downloadUrl get() = "$RELEASES/download/$tag/$fileName"
+    val downloadUrl get() = LATEST_APK
 }
 
 /** Streaming validation also protects a cached APK from partial downloads and stale metadata. */
@@ -132,7 +136,7 @@ class AppUpdateRepository : java.io.Closeable {
     private fun hostOf(url: String) = url.removePrefix("https://").substringBefore("/")
 
     fun latest(): AppUpdate {
-        val base = "${AppUpdate.RELEASES}/latest/download/update.json?cachebust=${System.currentTimeMillis()}"
+        val base = "${AppUpdate.LATEST_MANIFEST}?cachebust=${System.currentTimeMillis()}"
         return tryMirrors(base, 12) { response, _ ->
             val bytes = response.body?.byteStream()?.use { input ->
                 val out = ByteArrayOutputStream(); val buffer = ByteArray(4096)
