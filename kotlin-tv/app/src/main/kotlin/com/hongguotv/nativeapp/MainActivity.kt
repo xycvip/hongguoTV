@@ -116,6 +116,7 @@ class MainActivity: Activity() {
     private var homeContentLogged=false
     private var pendingCloudProgress: CloudProgress? = null
     private var accountContentHost: FrameLayout? = null
+    private var renderedAccountAvatarRevision = -1L
     private var accountQrAutoStarted = false
     private var accountSection = 0 // 0=history, 1=favorites, 2=upcoming reservations, 3=online reservations
     private lateinit var cloudAccount: AccountController
@@ -3372,7 +3373,15 @@ class MainActivity: Activity() {
                 contentDescription = "红果账户头像"
             }
             addView(image, FrameLayout.LayoutParams(-1, -1))
-            if (cloudAccount.accountAvatarUrl.isNotBlank()) loadCover(image, cloudAccount.accountAvatarUrl)
+            if (cloudAccount.accountAvatarUrl.isNotBlank()) {
+                val revision = cloudAccount.accountProfileRevision
+                if (revision != renderedAccountAvatarRevision) {
+                    renderedAccountAvatarRevision = revision
+                    artwork.reload(image, cloudAccount.accountAvatarUrl)
+                } else {
+                    loadCover(image, cloudAccount.accountAvatarUrl)
+                }
+            }
         }
         profileRow.addView(avatar, lp(avatarSize, avatarSize).apply { rightMargin = dp(12) })
         val identity = column()
