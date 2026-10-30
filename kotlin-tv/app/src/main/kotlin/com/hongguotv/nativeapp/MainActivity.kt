@@ -3236,6 +3236,8 @@ class MainActivity: Activity() {
     /** Account page: compact centered QR sign-in; full-width account dashboard after login. */
     private fun renderAccountContent(host: FrameLayout) {
         if (!::cloudAccount.isInitialized || tab != 6 || screen != "catalog") return
+        val previousFocus = host.findFocus()?.tag?.toString()
+        val previousScrollY = (host.getChildAt(0) as? ScrollView)?.scrollY ?: 0
         host.removeAllViews()
         val mobileLayout = widthDp() < 600f
         val density = resources.displayMetrics.density
@@ -3243,10 +3245,10 @@ class MainActivity: Activity() {
         val availableHeightDp = (host.height.takeIf { it > 0 } ?: (resources.displayMetrics.heightPixels - dp(130))).toFloat() / density
 
         if (!cloudAccount.signedIn) {
+            // QR 尺寸同时受实际可用宽度和高度约束；短屏时优先缩小二维码，不让卡片被屏幕裁切。
             val cardWidthDp = minOf(
-                (availableWidthDp - 24f).coerceAtLeast(260f),
-                (availableHeightDp - 28f).coerceAtLeast(260f),
-                if (mobileLayout) 340f else 460f
+                (availableWidthDp - 20f).coerceAtLeast(180f),
+                if (mobileLayout) 380f else 460f
             )
             val cardWidth = dp(cardWidthDp.toInt())
             val card = column().apply {
@@ -3255,7 +3257,6 @@ class MainActivity: Activity() {
                 setPadding(dp(if (mobileLayout) 14 else 26), dp(if (mobileLayout) 14 else 24),
                     dp(if (mobileLayout) 14 else 26), dp(if (mobileLayout) 14 else 24))
                 elevation = dp(6).toFloat()
-                minimumHeight = cardWidth
             }
             card.addView(text("登录红果账户", if (mobileLayout) 21f else 26f, white).apply {
                 typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
@@ -3266,11 +3267,15 @@ class MainActivity: Activity() {
                 setPadding(0, dp(6), 0, dp(if (mobileLayout) 10 else 16))
             }, lp(-1, -2))
             val qr = cloudAccount.inlineQrBitmap
-            val qrSize = minOf(
-                dp(if (mobileLayout) 142 else 220),
-                (cardWidth * if (mobileLayout) .48f else .50f).toInt(),
-                dp((availableHeightDp * if (mobileLayout) .27f else .34f).toInt().coerceAtLeast(112))
-            )
+            val horizontalPaddingDp = if (mobileLayout) 12f else 26f
+            val qrWidthLimitDp = (cardWidthDp - horizontalPaddingDp * 2f - 12f).coerceAtLeast(88f)
+            // 为标题、说明、状态和按钮预留空间，避免二维码在手机竖屏/短屏上顶出可视区域。
+            val qrHeightLimitDp = (availableHeightDp - if (mobileLayout) 208f else 230f).coerceAtLeast(88f)
+            val qrSize = dp(minOf(
+                if (mobileLayout) 176 else 240,
+                qrWidthLimitDp.toInt(),
+                qrHeightLimitDp.toInt()
+            ).coerceAtLeast(88))
             if (qr != null) {
                 card.addView(ImageView(this).apply {
                     setImageBitmap(qr)
@@ -3307,9 +3312,17 @@ class MainActivity: Activity() {
             card.addView(refresh, lp(-2, dp(if (mobileLayout) 38 else 44)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             })
-            val loginHost = FrameLayout(this)
+            val loginHost = FrameLayout(this).apply {
+                minimumHeight = host.height.coerceAtLeast(dp(240))
+            }
             loginHost.addView(card, FrameLayout.LayoutParams(cardWidth, -2, Gravity.CENTER))
-            host.addView(loginHost, FrameLayout.LayoutParams(-1, -1))
+            val loginScroll = ScrollView(this).apply {
+                isFillViewport = true
+                isVerticalScrollBarEnabled = false
+                clipToPadding = false
+            }
+            loginScroll.addView(loginHost, ViewGroup.LayoutParams(-1, -2))
+            host.addView(loginScroll, FrameLayout.LayoutParams(-1, -1))
             if (cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy && !accountQrAutoStarted) {
                 accountQrAutoStarted = true
                 host.post { if (tab == 6 && !cloudAccount.signedIn && cloudAccount.inlineQrBitmap == null && !cloudAccount.inlineBusy) cloudAccount.startQrInline() }
@@ -3322,6 +3335,7 @@ class MainActivity: Activity() {
             isFillViewport = true
             clipToPadding = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            isVerticalScrollBarEnabled = false
         }
         val page = column().apply {
             setPadding(dp(if (mobileLayout) 12 else 24), dp(if (mobileLayout) 14 else 20),
@@ -3363,11 +3377,13 @@ class MainActivity: Activity() {
             cloudAccount.refreshFavorites()
             cloudAccount.refreshReservations()
             Toast.makeText(this, "正在刷新云端数据…", Toast.LENGTH_SHORT).show()
-        }
-        addButton(actions, "退出登录") {
-            accountSection = 0
-            accountQrAutoStarted = false
-            cloudAccount.logoutInline()
+        }.apply { tag = "account:refresh" }
+        addButton(actions, "退出登录").apply { tag = "account:logout" }.also { logoutButton ->
+            logoutButton.setOnClickListener {
+                accountSection = 0
+                accountQrAutoStarted = false
+                cloudAccount.logoutInline()
+            }
         }
         page.addView(actions, lp(-1, -2))
 
@@ -3382,6 +3398,7 @@ class MainActivity: Activity() {
                 if (index == 2 || index == 3) cloudAccount.refreshReservations()
                 renderAccountContent(host)
             }
+            item.tag = "account:tab:$index"
             item.setTextColor(if (accountSection == index) accent else muted)
         }
         page.addView(tabs, lp(-1, -2))
@@ -3395,40 +3412,56 @@ class MainActivity: Activity() {
                 setPadding(0, dp(5), 0, dp(10))
             }, lp(-1, -2))
         }
-        fun addArtworkRow(cover: String, title: String, subtitle: String, click: () -> Unit) {
-            val itemRow = row().apply {
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(8), dp(8), dp(10), dp(8))
-                background = rounded(surface, TvStyle.outline)
-                isFocusable = true
-                isFocusableInTouchMode = true
-                setOnFocusChangeListener { view, focused ->
-                    view.background = rounded(if (focused) TvStyle.raised else surface, if (focused) accent else TvStyle.outline)
+        fun addArtworkShelf(entries: List<Triple<Series, String, () -> Unit>>, shelfKey: String) {
+            if (entries.isEmpty()) return
+            val horizontal = HorizontalScrollView(this).apply {
+                isHorizontalScrollBarEnabled = false
+                clipToPadding = false
+                setPadding(dp(2), dp(2), dp(2), dp(8))
+            }
+            val line = row().apply { gravity = Gravity.TOP }
+            val cardWidth = ((resources.displayMetrics.widthPixels * .9f - dp(70)) / 6)
+                .coerceAtLeast(dp(100))
+            val posterHeight = ((cardWidth - dp(8)) / TvStyle.POSTER_ASPECT).toInt()
+            entries.forEachIndexed { index, entry ->
+                val (series, subtitle, click) = entry
+                val key = "$shelfKey:${series.id}"
+                val card = column().apply {
+                    tag = key
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    setPadding(dp(4), dp(4), dp(4), dp(8))
+                    background = TvStyle.card(this@MainActivity, false)
+                    contentDescription = "${series.title}，$subtitle"
+                    setOnFocusChangeListener { view, focused ->
+                        view.background = TvStyle.card(this@MainActivity, focused)
+                    }
+                    setOnClickListener { click() }
                 }
-                setOnClickListener { click() }
+                val poster = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    background = rounded(Color.rgb(25, 29, 35))
+                    contentDescription = "${series.title} 封面"
+                }
+                card.addView(poster, lp(-1, posterHeight))
+                loadCover(poster, series.cover)
+                card.addView(text(series.title.ifBlank { "未知剧集" }, 14f, white).apply {
+                    minLines = 2
+                    maxLines = 2
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(3), dp(5), dp(3), 0)
+                }, lp(-1, -2))
+                card.addView(text(subtitle, 12f, muted).apply {
+                    maxLines = 1
+                    ellipsize = TextUtils.TruncateAt.END
+                    setPadding(dp(3), dp(3), 0, 0)
+                }, lp(-1, -2))
+                line.addView(card, lp(cardWidth, -1).apply { rightMargin = dp(14) })
+                card.nextFocusLeftId = if (index == 0) card.id else View.NO_ID
+                card.nextFocusRightId = if (index == entries.lastIndex) card.id else View.NO_ID
             }
-            val posterWidth = dp(if (mobileLayout) 58 else 72)
-            val posterHeight = dp(if (mobileLayout) 78 else 96)
-            val poster = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-                background = rounded(Color.rgb(25, 29, 35))
-                contentDescription = "${title} 封面"
-            }
-            itemRow.addView(poster, lp(posterWidth, posterHeight).apply { rightMargin = dp(12) })
-            loadCover(poster, cover)
-            val words = column().apply { gravity = Gravity.CENTER_VERTICAL }
-            words.addView(text(title.ifBlank { "未知剧集" }, if (mobileLayout) 14f else 17f, white).apply {
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
-            }, lp(-1, -2))
-            words.addView(text(subtitle, 12f, muted).apply {
-                setPadding(0, dp(6), 0, 0)
-                maxLines = 2
-                ellipsize = TextUtils.TruncateAt.END
-            }, lp(-1, -2))
-            itemRow.addView(words, lp(0, -2).apply { weight = 1f })
-            page.addView(itemRow, lp(-1, -2).apply { bottomMargin = dp(8) })
+            horizontal.addView(line)
+            page.addView(horizontal, lp(-1, -2).apply { bottomMargin = dp(8) })
         }
 
         when (accountSection) {
@@ -3440,14 +3473,14 @@ class MainActivity: Activity() {
                         gravity = Gravity.CENTER
                         setPadding(0, dp(30), 0, dp(30))
                     }, lp(-1, -2))
-                } else history.forEach { item ->
+                } else addArtworkShelf(history.map { item ->
                     val episodeText = if (item.episodeCount > 0) "第 ${item.episodeIndex + 1} 集 / 共 ${item.episodeCount} 集" else "第 ${item.episodeIndex + 1} 集"
                     val progressText = if (item.duration > 0) "$episodeText · ${formatTime(item.position)} / ${formatTime(item.duration)}" else episodeText
-                    addArtworkRow(item.series.cover, item.series.title, progressText) {
+                    Triple(item.series, progressText) {
                         pendingCloudProgress = item
                         openDetail(item.series, true)
                     }
-                }
+                }, "account:history")
             }
             1 -> {
                 val fav = cloudAccount.favoriteState()
@@ -3458,9 +3491,9 @@ class MainActivity: Activity() {
                         gravity = Gravity.CENTER
                         setPadding(0, dp(30), 0, dp(30))
                     }, lp(-1, -2))
-                } else fav.rows.forEach { item ->
-                    addArtworkRow(item.series.cover, item.series.title, "红果账户收藏") { openDetail(item.series, true) }
-                }
+                } else addArtworkShelf(fav.rows.map { item ->
+                    Triple(item.series, "红果账户收藏") { openDetail(item.series, true) }
+                }, "account:favorites")
             }
             2, 3 -> {
                 val online = accountSection == 3
@@ -3473,22 +3506,33 @@ class MainActivity: Activity() {
                         gravity = Gravity.CENTER
                         setPadding(0, dp(30), 0, dp(30))
                     }, lp(-1, -2))
-                } else state.rows.forEach { item ->
+                } else addArtworkShelf(state.rows.map { item ->
                     val sub = when {
                         item.publishText.isNotBlank() -> item.publishText
                         item.publishAt > 0L -> if (online) "已上线" else "预约作品 · 等待上线"
                         else -> if (online) "已上线" else "预约成功 · 等待上线"
                     }
-                    addArtworkRow(item.series.cover, item.series.title, sub) {
+                    Triple(item.series, sub) {
                         if (online) openDetail(item.series, true)
                         else Toast.makeText(this, "该作品尚未上线，可在预约列表查看更新。", Toast.LENGTH_SHORT).show()
                     }
-                }
+                }, if (online) "account:online" else "account:upcoming")
             }
         }
 
         scroll.addView(page, ViewGroup.LayoutParams(-1, -2))
         host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        // 页面因云端刷新而重绘时，恢复原按钮/卡片焦点与滚动位置，避免焦点掉回顶部导航。
+        val restoreTag = previousFocus?.takeIf { it.startsWith("account:") }
+            ?: "account:tab:$accountSection"
+        host.post {
+            if (tab != 6 || screen != "catalog" || host.parent == null) return@post
+            val target = host.findViewWithTag<View>(restoreTag)
+                ?: host.findViewWithTag<View>("account:tab:$accountSection")
+                ?: host.findViewWithTag<View>("account:refresh")
+            target?.requestFocus()
+            scroll.post { scroll.scrollTo(0, previousScrollY.coerceAtMost((page.height - scroll.height).coerceAtLeast(0))) }
+        }
     }
 
     private fun goBack() {
