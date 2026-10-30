@@ -11,6 +11,7 @@ class ArtworkCache(private val directory: File) {
         val f=file(url)
         if(!f.isFile || f.length() !in 1..4*1024*1024 || System.currentTimeMillis()-f.lastModified() !in 0..7*24*60*60*1000L) null else f.readBytes()
     }.getOrNull()
+    @Synchronized fun remove(url: String) { runCatching { file(url).delete() } }
     @Synchronized fun put(url: String,bytes: ByteArray) {
         if(bytes.size>4*1024*1024) return
         runCatching {
