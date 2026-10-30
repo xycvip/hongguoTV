@@ -3390,7 +3390,8 @@ class MainActivity: Activity() {
             override fun login()=requireOfficialCommentLogin()
         }, avatarLoader={ image, url -> artwork.load(image,url,ArtworkLoader.PRIORITY_VISIBLE,dp(34),dp(34)) })
         commentPanel=view
-        val width=(resources.displayMetrics.widthPixels*.42f).toInt().coerceAtLeast(dp(360))
+        val screenWidth=resources.displayMetrics.widthPixels
+        val width=(screenWidth*.42f).toInt().coerceAtLeast(dp(320)).coerceAtMost((screenWidth*.62f).toInt().coerceAtLeast(1))
         root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END))
         view.translationX=width.toFloat()
         view.animate().translationX(0f).setDuration(220).start()
