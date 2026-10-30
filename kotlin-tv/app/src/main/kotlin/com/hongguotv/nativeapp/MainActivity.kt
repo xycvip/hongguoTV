@@ -3978,7 +3978,10 @@ class MainActivity: Activity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if(screen=="player") {
             val key=event.keyCode
-            if(key==KeyEvent.KEYCODE_BACK) { if(event.action==KeyEvent.ACTION_UP) goBack(); return true }
+            if(key==KeyEvent.KEYCODE_BACK) {
+                if(event.action==KeyEvent.ACTION_UP && commentPanel?.dismissEditorIfNeeded()!=true) goBack()
+                return true
+            }
             if(key in listOf(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,KeyEvent.KEYCODE_MEDIA_PLAY,KeyEvent.KEYCODE_MEDIA_PAUSE,KeyEvent.KEYCODE_MEDIA_NEXT,KeyEvent.KEYCODE_MEDIA_PREVIOUS,KeyEvent.KEYCODE_MEDIA_STOP,KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,KeyEvent.KEYCODE_MEDIA_REWIND)) {
                 if(event.action==KeyEvent.ACTION_DOWN && event.repeatCount==0) when(key) {
                     KeyEvent.KEYCODE_MEDIA_PLAY -> requestPlayback(true)
