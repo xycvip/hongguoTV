@@ -51,7 +51,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
                 apk.optString("url").takeIf { it.isNotBlank() } ?: "https://github.com/xycvip/AppDownload/releases/download/hongguotv-v${o.getString(\"versionName\")}/${apk.getString(\"name\")}"))
             require(update.versionCode in 1..Int.MAX_VALUE.toLong() && update.minSdk in 26..100)
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
-            require(update.tag.matches(Regex("kotlin-v[0-9][0-9A-Za-z.+-]{0,80}")))
+            require(update.tag.matches(Regex("hongguotv-v[0-9][0-9A-Za-z.+-]{0,80}")))
             require(update.downloadUrl.startsWith("https://github.com/xycvip/AppDownload/releases/download/hongguotv-v"))
             require(update.downloadUrl.endsWith("/${update.fileName}"))
             // Keep this in sync with scripts/publish-tv-update.py: HongguoTV-<version>.apk
