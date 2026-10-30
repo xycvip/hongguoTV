@@ -40,7 +40,6 @@ jobs:
           KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.HONGGUOTV_KEY_ALIAS }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -n "$KEYSTORE_B64"
@@ -65,7 +64,7 @@ jobs:
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
           if curl --fail --silent --show-error --location \
-              "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/update.json?cachebust=$(date +%s)" \
+              "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json?cachebust=$(date +%s)" \
               --output "$LATEST_MANIFEST"; then
             LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
             VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
@@ -100,7 +99,7 @@ jobs:
           echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
           echo "Using monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
-          echo "UPDATE_TAG=kotlin-v${VERSION_NAME}" >> "$GITHUB_ENV"
+          echo "UPDATE_TAG=hongguotv-v${VERSION_NAME}" >> "$GITHUB_ENV"
       # Push commits marked [skip-tests] build the APK without running tests or lint.
       - name: Tests and release lint
         if: ${{ (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tests]')) && (github.event_name != 'workflow_dispatch' || inputs.skip_tests != true) }}
@@ -129,41 +128,11 @@ jobs:
             exit 1
           fi
           echo "Verified APK package=$ACTUAL_PACKAGE versionCode=$ACTUAL_VERSION_CODE"
-      - name: Publish APK, source, and update manifest
+      - name: Publish APK and update manifest
         env:
           GH_TOKEN: ${{ github.token }}
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
         run: python3 scripts/publish-tv-update.py
-      - name: Keep only the newest published release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          # Keep the newest stable published release; delete older release entries only.
-          # Git tags and source history are intentionally left untouched.
-          OLD_RELEASE_IDS="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -s '[.[][] | select(.draft == false and .prerelease == false)] | sort_by(.published_at) | reverse | .[1:] | .[].id')"
-          if [[ -z "$OLD_RELEASE_IDS" ]]; then
-            echo "Only one stable release exists; nothing to delete."
-            exit 0
-          fi
-          while IFS= read -r RELEASE_ID; do
-            [[ -n "$RELEASE_ID" ]] || continue
-            echo "Deleting old release ID $RELEASE_ID"
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID"
-          done <<< "$OLD_RELEASE_IDS"
-      - name: Keep only the newest application release tag
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          CURRENT_TAG="$UPDATE_TAG"
-          while IFS= read -r REF; do
-            [[ -n "$REF" ]] || continue
-            TAG="${REF#refs/tags/}"
-            [[ "$TAG" == "$CURRENT_TAG" ]] && continue
-            echo "Deleting old application tag: $TAG"
-            gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$TAG"
-          done < <(gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/kotlin-v" --jq '.[].ref')
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
