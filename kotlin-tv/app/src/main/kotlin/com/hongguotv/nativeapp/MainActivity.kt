@@ -135,6 +135,11 @@ class MainActivity: Activity() {
     private var playerView: PlayerView?=null
     private var danmakuView: DanmakuView?=null
     private var danmakuLoader: DanmakuLoader?=null
+    private val officialCommentRepository by lazy { OfficialCommentRepository(repository.http) }
+    private var commentPanel: OfficialCommentPanel?=null
+    private var commentAnchor: View?=null
+    private var commentCursor="0"
+    private var commentGeneration=0
     private lateinit var favoriteMonitor: FavoriteMonitor
     private val favoriteBadges=mutableMapOf<String,TextView>()
     private var favoriteStatus: TextView?=null
@@ -2574,6 +2579,7 @@ class MainActivity: Activity() {
         outroSkipSeconds=skipMark?.outroSeconds ?: 0; outroTriggered=false; ffActive=false
         if(autoplay) sleepStopped=false
         screen="player"; episodeIndex=selectedIndex; group=episodeIndex/20
+        if(commentPanel!=null) { commentPanel?.setEpisode(data.series.title,episodeIndex+1); loadOfficialComments(false) }
         if(isStartupPreview) {
             startupPreviewEpisodeId=data.episodes[selectedIndex]
             startupPreviewPlayedMs=0L
@@ -2778,7 +2784,7 @@ class MainActivity: Activity() {
     private fun showHud() {
         if(screen!="player") return
         hud.visibility=View.VISIBLE; updatePlaybackText(); main.removeCallbacks(hideHud)
-        if(!panel && !ffActive && player?.isPlaying==true) main.postDelayed(hideHud,4500)
+        if(!panel && !ffActive && player?.isPlaying==true) main.postDelayed(hideHud,5000)
     }
     private fun updatePlaybackText() {
         transportPlay?.text=if(player?.playWhenReady==true) "暂停" else "播放"
@@ -3173,6 +3179,7 @@ class MainActivity: Activity() {
         val play=addButton(transport,if(player?.playWhenReady==true) "暂停" else "播放") { togglePlayback() }.also { transportPlay=it }
         addButton(transport,"上一集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
         addButton(transport,"下一集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
+        addButton(transport,"评论") { openOfficialComments(it) }.tag="player:comments"
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
         lateinit var more: TextView
@@ -3358,7 +3365,149 @@ class MainActivity: Activity() {
         danmakuLoader=null
         danmakuView?.unbind()
     }
+    /** Opens only the ordinary, episode-level comment panel. Video playback is never paused. */
+    private fun openOfficialComments(anchor: View?) {
+        if(screen!="player" || commentPanel!=null) return
+        val data=detail ?: return
+        commentAnchor=anchor
+        panel=false
+        controls.visibility=View.GONE
+        controls.clearFocus()
+        val signedIn=cloudAccount.signedIn
+        val view=OfficialCommentPanel(this,signedIn,object: OfficialCommentPanel.Listener {
+            override fun close()=closeOfficialComments()
+            override fun loadMore()=loadOfficialComments(true)
+            override fun like(comment: OfficialComment)=toggleOfficialCommentLike(comment)
+            override fun reply(comment: OfficialComment) {
+                if(!cloudAccount.signedIn) requireOfficialCommentLogin()
+                else commentPanel?.setReplyTarget(comment)
+            }
+            override fun openReplies(comment: OfficialComment)=loadOfficialCommentReplies(comment)
+            override fun send(text: String)=sendOfficialComment(text)
+            override fun login()=requireOfficialCommentLogin()
+        })
+        commentPanel=view
+        val width=(resources.displayMetrics.widthPixels*.42f).toInt().coerceAtLeast(dp(360))
+        root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END))
+        view.setEpisode(data.series.title,episodeIndex+1)
+        loadOfficialComments(false)
+        view.post { if(commentPanel===view) view.focusCommentArea() }
+        showHud()
+    }
+    private fun closeOfficialComments() {
+        val view=commentPanel ?: return
+        commentGeneration++
+        if(view.parent===root) root.removeView(view)
+        commentPanel=null
+        if(screen=="player" && !isFinishing) {
+            showPanel()
+            panel=false
+            showHud()
+            val target=controls.findViewWithTag<View>("player:comments")
+            target?.requestFocus()
+        } else commentAnchor?.takeIf { it.isAttachedToWindow }?.requestFocus()
+        commentAnchor=null
+    }
+    private fun currentOfficialCommentCredentials(): AccountCredentials? {
+        if(!cloudAccount.signedIn) return null
+        return cloudAccount.recommendationCredentials()
+            ?: throw java.io.IOException("红果账号正在验证，请稍后重试")
+    }
+    private fun loadOfficialComments(append: Boolean) {
+        val view=commentPanel ?: return
+        val data=detail ?: return
+        val seriesId=data.series.id
+        val vid=data.episodes.getOrNull(episodeIndex) ?: return
+        val cursor=if(append) commentCursor else "0"
+        val token=++commentGeneration
+        if(!append) commentCursor="0"
+        view.showLoading(if(append) "正在加载更多评论…" else "正在加载本集评论…")
+        val credentials=runCatching { currentOfficialCommentCredentials() }
+        if(credentials.isFailure) { view.showError(credentials.exceptionOrNull()?.message ?: "账号状态暂不可用"); return }
+        io.execute {
+            val result=runCatching { officialCommentRepository.list(credentials.getOrNull(),seriesId,vid,cursor) }
+            main.post {
+                if(token!=commentGeneration || commentPanel!==view || screen!="player" ||
+                    detail?.series?.id!=seriesId || detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
+                result.fold({ page ->
+                    commentCursor=page.nextCursor
+                    view.setPage(page,append)
+                    if(!append) view.post { if(commentPanel===view) view.focusCommentArea() }
+                },{ error -> view.showError("评论加载失败：${error.message.orEmpty().take(90)}") })
+            }
+        }
+    }
+    private fun loadOfficialCommentReplies(comment: OfficialComment) {
+        val view=commentPanel ?: return
+        val data=detail ?: return
+        val seriesId=data.series.id
+        val vid=data.episodes.getOrNull(episodeIndex) ?: return
+        val token=commentGeneration
+        val credentials=runCatching { currentOfficialCommentCredentials() }
+        if(credentials.isFailure) { view.showError(credentials.exceptionOrNull()?.message ?: "账号状态暂不可用"); return }
+        io.execute {
+            val result=runCatching { officialCommentRepository.replies(credentials.getOrNull(),seriesId,vid,comment.id) }
+            main.post {
+                if(token!=commentGeneration || commentPanel!==view || detail?.series?.id!=seriesId ||
+                    detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
+                result.fold({ view.setReplies(comment.id,it.items) },{ Toast.makeText(this,"回复加载失败：${it.message.orEmpty()}",Toast.LENGTH_SHORT).show() })
+            }
+        }
+    }
+    private fun toggleOfficialCommentLike(comment: OfficialComment) {
+        if(!cloudAccount.signedIn) { requireOfficialCommentLogin(); return }
+        val view=commentPanel ?: return
+        val data=detail ?: return
+        val seriesId=data.series.id
+        val vid=data.episodes.getOrNull(episodeIndex) ?: return
+        val credentials=runCatching { currentOfficialCommentCredentials() }
+        if(credentials.isFailure) { Toast.makeText(this,credentials.exceptionOrNull()?.message ?: "账号状态暂不可用",Toast.LENGTH_SHORT).show(); return }
+        val token=commentGeneration
+        io.execute {
+            val result=runCatching { officialCommentRepository.setLiked(credentials.getOrNull(),seriesId,comment.id,!comment.liked) }
+            main.post {
+                if(token!=commentGeneration || commentPanel!==view || detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
+                result.fold({ loadOfficialComments(false) },{ Toast.makeText(this,"点赞操作失败：${it.message.orEmpty()}",Toast.LENGTH_SHORT).show() })
+            }
+        }
+    }
+    private fun sendOfficialComment(raw: String) {
+        if(!cloudAccount.signedIn) { requireOfficialCommentLogin(); return }
+        val view=commentPanel ?: return
+        val data=detail ?: return
+        val text=raw.trim()
+        if(text.isEmpty()) { Toast.makeText(this,"先写点评论内容",Toast.LENGTH_SHORT).show(); return }
+        val seriesId=data.series.id
+        val vid=data.episodes.getOrNull(episodeIndex) ?: return
+        val replyTarget=view.replyTarget()
+        val credentials=runCatching { currentOfficialCommentCredentials() }
+        if(credentials.isFailure) { Toast.makeText(this,credentials.exceptionOrNull()?.message ?: "账号状态暂不可用",Toast.LENGTH_SHORT).show(); return }
+        val token=commentGeneration
+        view.setSending(true)
+        io.execute {
+            val result=runCatching {
+                if(replyTarget==null) officialCommentRepository.publish(credentials.getOrNull(),seriesId,vid,text)
+                else officialCommentRepository.reply(credentials.getOrNull(),seriesId,vid,replyTarget.id,text)
+            }
+            main.post {
+                if(token!=commentGeneration || commentPanel!==view || detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
+                view.setSending(false)
+                result.fold({
+                    view.clearDraft()
+                    Toast.makeText(this,if(replyTarget==null) "评论已提交，审核通过后显示" else "回复已提交，审核通过后显示",Toast.LENGTH_SHORT).show()
+                    loadOfficialComments(false)
+                },{ Toast.makeText(this,"提交失败：${it.message.orEmpty()}",Toast.LENGTH_LONG).show() })
+            }
+        }
+    }
+    private fun requireOfficialCommentLogin() {
+        closeOfficialComments()
+        cloudAccount.show()
+    }
     private fun releasePlayer() {
+        commentGeneration++
+        commentPanel?.let { if(it.parent===root) root.removeView(it) }
+        commentPanel=null; commentAnchor=null
         hideBootSplash()
         cancelRecovery(); cancelPrefetch(); mediaSession.deactivate(); tvTools.close()
         ffActive=false; outroSkipSeconds=0; outroTriggered=false
@@ -3800,6 +3949,7 @@ class MainActivity: Activity() {
 
     private fun goBack() {
         if(!library.isLoaded) { finish(); return }
+        if(screen=="player" && commentPanel!=null) { closeOfficialComments(); return }
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
             "detail" -> showCatalog()
@@ -3826,6 +3976,7 @@ class MainActivity: Activity() {
                 }
                 return true
             }
+            if(commentPanel!=null) return super.dispatchKeyEvent(event)
             if(!panel) {
                 if(key in listOf(KeyEvent.KEYCODE_DPAD_LEFT,KeyEvent.KEYCODE_DPAD_RIGHT,KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER,KeyEvent.KEYCODE_DPAD_UP,KeyEvent.KEYCODE_DPAD_DOWN,KeyEvent.KEYCODE_MENU)) {
                     if(key==KeyEvent.KEYCODE_DPAD_RIGHT && event.action==KeyEvent.ACTION_UP) { stopFastForward(); return true }
