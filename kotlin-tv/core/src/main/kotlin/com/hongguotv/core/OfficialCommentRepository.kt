@@ -280,7 +280,7 @@ class OfficialCommentRepository(
 
     private fun validId(value: String) = value.matches(Regex("[0-9]{1,32}"))
 
-    private fun parseComment(comment: JSONObject, reply: Boolean = false): OfficialComment? {
+    internal fun parseComment(comment: JSONObject, reply: Boolean = false): OfficialComment? {
         val common = comment.optJSONObject("common") ?: comment.optJSONObject("Common") ?: JSONObject()
         val content = common.optJSONObject("content") ?: JSONObject()
         val expand = comment.optJSONObject("expand") ?: JSONObject()
