@@ -369,7 +369,7 @@ class MainActivity: Activity() {
         TvStyle.apply(getSharedPreferences("native-library-v1", Context.MODE_PRIVATE).getString("theme", null))
         super.onCreate(state)
         applyImmersiveFullscreen()
-        library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root)
+        library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this); extras=PlaybackExtras(this); root=FrameLayout(this).apply { setBackgroundColor(bg) }; setContentView(root); showBootSplash()
         updater=AppUpdater(this) { foreground && library.isLoaded && screen=="catalog" && !tvTools.showing }
         cloudAccount = AccountController(this) { remote ->
             pendingCloudProgress = remote
@@ -724,6 +724,13 @@ class MainActivity: Activity() {
         container.setPadding(horizontal,vertical,horizontal,vertical); root.addView(container,FrameLayout.LayoutParams(-1,-1))
         if(title!=null) { val heading=row(); addButton(heading,"‹ 返回") { goBack() }; heading.addView(text(title,22f).apply { setTypeface(null,Typeface.BOLD); gravity=Gravity.CENTER_VERTICAL },lp(0,dp(44)).apply { weight=1f }); container.addView(heading) }
         applyClock()
+        // 启动画面覆盖在首个页面之上；自动播放时一直保留到视频首帧。
+        bootSplash?.let { splash ->
+            if(splash.parent==null) root.addView(splash,FrameLayout.LayoutParams(-1,-1))
+            if(!bootAutoPlaybackPending) main.postDelayed({
+                if(!isDestroyed && !bootAutoPlaybackPending && bootSplash===splash) hideBootSplash()
+            },850)
+        }
         return container
     }
     /** Re-adds the optional top-right clock after every root rebuild; ticks on minute boundaries. */
@@ -888,10 +895,6 @@ class MainActivity: Activity() {
         val brand=row().apply { gravity=Gravity.CENTER_VERTICAL }
         brand.addView(ImageView(this).apply { setImageResource(com.hongguotv.nativeapp.R.drawable.app_icon) },lp(dp(if(compactHeader) 24 else 28),dp(if(compactHeader) 24 else 28)).apply { rightMargin=dp(6) })
         brand.addView(text("红果",if(compactHeader) 18f else 22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
-        brand.addView(text("v${BuildConfig.VERSION_NAME.substringBefore('+')}",12f,muted).apply {
-            setPadding(dp(5),0,0,dp(9))
-            if(compactHeader) visibility=View.GONE
-        },lp(-2,-2).apply { gravity=Gravity.BOTTOM })
         top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
         listOf("首页","搜索","排行榜","收藏","最近观看","设置","红果账户").forEachIndexed { index,label ->
             val item=addButton(top,label,index==tab || (index==6 && screen=="account")) { switchTab(index) }
@@ -2392,6 +2395,8 @@ class MainActivity: Activity() {
         if(focusEpisode) episodes.getOrNull((episodeIndex-group*20).coerceIn(0,episodes.lastIndex))?.requestFocus() else play.requestFocus()
     }
     private fun showBootSplash() {
+        // 首次启动已显示启动动画时复用同一层，避免自动播放切页时闪一下。
+        if(bootSplash?.parent===root) return
         hideBootSplash()
         val overlay=FrameLayout(this).apply {
             background=GradientDrawable(GradientDrawable.Orientation.TL_BR,intArrayOf(Color.rgb(4,7,16),Color.rgb(11,20,39),Color.rgb(3,5,12)))
