@@ -290,7 +290,7 @@ class OfficialCommentRepository(
         val action = comment.optJSONObject("user_action") ?: JSONObject()
         val id = comment.opt(if (reply) "reply_id" else "comment_id")?.toString().orEmpty()
         val text = content.optString("text", "").trim()
-        if (!validId(id) || text.isBlank()) return null
+        if (!validId(id) || id == "0" || text.isBlank()) return null
         val avatar = base.optString("expand_user_avatar").ifBlank { base.optString("user_avatar") }
         val liked = when (val value = action.opt("user_digg")) {
             is Boolean -> value
