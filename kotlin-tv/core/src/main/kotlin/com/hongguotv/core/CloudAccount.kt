@@ -46,7 +46,7 @@ internal object AccountCredentialsParser {
     fun parseHeader(value: String) = AccountCredentials(value)
 }
 
-data class CloudProfile(val id: String, val nickname: String)
+data class CloudProfile(val id: String, val nickname: String, val avatarUrl: String = "")
 
 data class CloudProgress(
     val series: Series,
@@ -154,7 +154,22 @@ class CloudAccountClient(private val http: OkHttpClient) {
                 ?: throw IOException("账号资料为空")
         val id = data.str("biz_user_id")
         if (id.isBlank()) throw IOException("登录态未通过账号验证，请重新登录")
-        return CloudProfile(id, data.str("user_name").ifBlank { "红果用户" })
+        // 红果账号资料在不同客户端/接口版本中使用过多种头像字段名，按优先级兼容解析。
+        val userInfo = data.optJSONObject("user_info") ?: data.optJSONObject("user") ?: data
+        val avatar = listOf(
+            "avatar_url", "avatar_uri", "avatar_thumb", "avatar_large",
+            "user_avatar", "avatar", "head_url", "head_image"
+        ).asSequence().map { key ->
+            userInfo.optString(key).takeIf { it.isNotBlank() && it != "null" }
+                ?: data.optString(key).takeIf { it.isNotBlank() && it != "null" }
+        }.filterNotNull().firstOrNull()?.let { raw ->
+            when {
+                raw.startsWith("//") -> "https:$raw"
+                raw.startsWith("https://", true) || raw.startsWith("http://", true) -> raw
+                else -> ""
+            }
+        }.orEmpty()
+        return CloudProfile(id, data.str("user_name").ifBlank { "红果用户" }, avatar)
     }
 
     fun history(credentials: AccountCredentials): List<CloudProgress> {
