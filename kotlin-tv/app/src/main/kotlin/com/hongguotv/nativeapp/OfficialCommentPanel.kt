@@ -125,6 +125,7 @@ internal class OfficialCommentPanel(
         currentReplies = emptyMap()
         hasMore = false
         clearDraft()
+        setSending(false)
         input.hint = "说说你的看法……"
         statusLabel.text = "正在加载评论…"
         render()
