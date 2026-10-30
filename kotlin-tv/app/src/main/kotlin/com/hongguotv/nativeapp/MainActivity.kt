@@ -3515,7 +3515,7 @@ class MainActivity: Activity() {
                 card.nextFocusLeftId = if (columnIndex > 0) cards[index - 1].id else View.NO_ID
                 card.nextFocusRightId = if (index < rowEnd) cards[index + 1].id else View.NO_ID
                 card.nextFocusUpId = if (rowIndex > 0) cards[index - columns].id
-                    else host.findViewWithTag<View>("account:tab:$accountSection")?.id ?: View.NO_ID
+                    else tabs.findViewWithTag<View>("account:tab:$accountSection")?.id ?: View.NO_ID
                 card.nextFocusDownId = if (index + columns < cards.size) cards[index + columns].id else View.NO_ID
             }
             page.addView(grid, lp(-1, -2).apply { bottomMargin = dp(8) })
