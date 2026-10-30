@@ -1149,12 +1149,26 @@ class MainActivity: Activity() {
             container.addView(heading)
             val boardRow=row().apply { setPadding(0,0,0,dp(8)) }
             listOf(RankBoard.REAL, RankBoard.COMIC, RankBoard.AI).forEach { board ->
+                val focusTag = "rank:board:${board.name}"
                 addButton(boardRow, "${board.label}榜", rankBoard == board) {
-                    if (rankBoard != board) { rankBoard=board; aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true) }
-                }.apply { nextFocusUpId=nav[tab].id }
+                    if (rankBoard != board) {
+                        pendingRefreshFocus=focusTag
+                        rankBoard=board
+                        aiCatalog=false
+                        aiGenre=null
+                        page=1
+                        catalogFocus=""
+                        tabState.remove(2)
+                        tabFocus.remove(2)
+                        showCatalog(true)
+                    }
+                }.apply {
+                    tag=focusTag
+                    nextFocusUpId=nav[tab].id
+                }
             }
             rankRefresh=addButton(boardRow,"刷新") {
-                pendingRefreshFocus="rank"
+                pendingRefreshFocus="rank:refresh"
                 page=1
                 catalogFocus=""
                 showCatalog(true)
@@ -1242,7 +1256,7 @@ class MainActivity: Activity() {
                         pendingRefreshFocus=null
                         root.post {
                             if(screen=="catalog" && tab==requestTab) {
-                                val target=if(restore=="rank") rankRefresh else homeRefreshControl
+                                val target=if(restore.startsWith("rank:")) root.findViewWithTag<View>(restore) else homeRefreshControl
                                 if(target?.isAttachedToWindow==true) target.requestFocus()
                             }
                         }
@@ -1269,7 +1283,7 @@ class MainActivity: Activity() {
                     pendingRefreshFocus=null
                     root.post {
                         if(screen=="catalog" && tab==requestTab) {
-                            val target=if(restore=="rank") rankRefresh else homeRefreshControl
+                            val target=if(restore.startsWith("rank:")) root.findViewWithTag<View>(restore) else homeRefreshControl
                             if(target?.isAttachedToWindow==true) target.requestFocus()
                         }
                     }
