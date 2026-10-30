@@ -194,7 +194,7 @@ except urllib.error.HTTPError as exc:
         "tag_name": APP_RELEASE_TAG,
         "target_commitish": "main",
         "name": f"红果 TV {VERSION_NAME}",
-        "body": f"红果 TV {VERSION_NAME}\\n\\n{notes}",
+        "body": f"红果 TV {VERSION_NAME}\n\n{notes}",
         "draft": False,
         "prerelease": False,
         "make_latest": "true",
@@ -231,7 +231,7 @@ apk_release_url = f"https://github.com/{DISTRIBUTION_REPOSITORY}/releases/downlo
 manifest["apk"]["url"] = apk_release_url
 with open(json_path, "w", encoding="utf-8") as f:
     json.dump(manifest, f, indent=2, ensure_ascii=False)
-    f.write("\\n")
+    f.write("\n")
 # Upload the manifest only after the APK URL is known and the APK asset is in place.
 upload_release_asset(json_path, "update.json", "application/json")
 print(f"AppDownload Release 已发布：{APP_RELEASE_TAG}，APK={DISTRIBUTION_APK_NAME}")
@@ -348,7 +348,7 @@ if source_release is None:
             "tag_name": SOURCE_RELEASE_TAG,
             "target_commitish": os.environ.get("GITHUB_SHA", "custom"),
             "name": f"红果 TV {VERSION_NAME}",
-            "body": f"红果 TV {VERSION_NAME}\\n\\n{notes}",
+            "body": f"红果 TV {VERSION_NAME}\n\n{notes}",
             "draft": False,
             "prerelease": False,
             "make_latest": "true",
