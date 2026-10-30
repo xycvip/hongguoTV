@@ -21,9 +21,10 @@ class PlaybackSpeedTest {
         } finally { Locale.setDefault(original) }
     }
 
-    @Test fun missingOrUnknownContentPreferenceDefaultsToComic() {
-        assertEquals(ContentType.COMIC,ContentType.fromStored(null))
-        assertEquals(ContentType.COMIC,ContentType.fromStored("unknown"))
+    @Test fun missingOrUnknownContentPreferenceDefaultsToShort() {
+        assertEquals(ContentType.SHORT,ContentType.fromStored(null))
+        assertEquals(ContentType.SHORT,ContentType.fromStored("unknown"))
         assertEquals(ContentType.SHORT,ContentType.fromStored("short"))
+        assertEquals(ContentType.COMIC,ContentType.fromStored("comic"))
     }
 }
