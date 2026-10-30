@@ -84,15 +84,40 @@ def translate_notes(notes_text):
 
 
 def changelog():
-    """Build concise Chinese release notes from commits since the previous release."""
+    """Build concise Chinese release notes from commits since the previous AppDownload build."""
     current_commit = os.environ.get("GITHUB_SHA", "HEAD")
-    previous_tag = run_text(
-        ["gh", "release", "view", "--json", "tagName", "--jq", ".tagName"]
-    )
-    if previous_tag:
+    previous_ref = ""
+    # New AppDownload manifests record the source commit, so no source Release is needed.
+    try:
+        manifest_url = (
+            "https://raw.githubusercontent.com/xycvip/AppDownload/main/"
+            "hongguoTV/latest.json?cachebust=" + str(os.getpid())
+        )
+        with urllib.request.urlopen(manifest_url, timeout=30) as response:
+            previous_manifest = json.loads(response.read().decode("utf-8"))
+        candidate = str(previous_manifest.get("sourceCommit", "")).strip()
+        if re.fullmatch(r"[0-9a-fA-F]{40}", candidate):
+            check = subprocess.run(
+                ["git", "cat-file", "-e", f"{candidate}^{{commit}}"],
+                check=False, capture_output=True
+            )
+            if check.returncode == 0:
+                previous_ref = candidate
+    except Exception:
+        pass
+
+    # One-time migration fallback: older manifests have no sourceCommit field.
+    if not previous_ref:
+        previous_tag = run_text(
+            ["gh", "release", "view", "--json", "tagName", "--jq", ".tagName"]
+        )
+        if previous_tag:
+            previous_ref = previous_tag
+
+    if previous_ref:
         subjects = run_text([
             "git", "log", "--no-merges", "--reverse", "--format=%s",
-            f"{previous_tag}..{current_commit}",
+            f"{previous_ref}..{current_commit}",
         ]).splitlines()
     else:
         subjects = run_text([
@@ -104,18 +129,19 @@ def changelog():
         line = subject.strip()
         if not line:
             continue
-        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
+        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
         line = re.sub(
-            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
             "", line, flags=re.I
         )
         cleaned.append(line)
-    return translate_notes("\n".join(cleaned))
+    return translate_notes("\\n".join(cleaned))
 
 notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
     "schema": 1,
     "packageName": "com.x.hongguotv",
+    "sourceCommit": os.environ.get("GITHUB_SHA", ""),
     "versionCode": VERSION_CODE,
     "versionName": VERSION_NAME,
     "minSdk": 26,
@@ -317,86 +343,69 @@ upload_text(homepage_path, homepage_text,
             f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
 print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，中文更新说明与红果TV首页区域均已更新")
 
-# Also publish the exact same verified build to the source repository Releases.
-# Keep the historical source-release tag namespace (kotlin-vX.Y.Z); AppDownload
-# continues using hongguotv-vX.Y.Z and remains the in-app updater's source of truth.
-SOURCE_REPOSITORY = "xycvip/hongguoTV"
-SOURCE_RELEASE_TAG = f"kotlin-v{VERSION_NAME}"
-source_token = os.environ.get("GH_TOKEN", "").strip()
-if not source_token:
-    raise SystemExit("缺少 GH_TOKEN：无法在源码仓库创建 Release。")
-
-source_headers = {
-    "Authorization": f"Bearer {source_token}",
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "HongguoTV-Source-Release-Publisher",
-}
-
-def source_api(method, url, payload=None):
-    data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    headers = dict(source_headers)
-    if data is not None:
-        headers["Content-Type"] = "application/json"
-    request = urllib.request.Request(url, data=data, method=method, headers=headers)
-    try:
+# Remove older HongguoTV Releases only after the new AppDownload Release,
+# manifest, directory README, and homepage section have all been published.
+# Other applications' Releases in AppDownload are intentionally preserved.
+def cleanup_old_hongguotv_releases():
+    page = 1
+    removed = []
+    while True:
+        url = (
+            f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases"
+            f"?per_page=100&page={page}"
+        )
+        request = urllib.request.Request(url, headers=api_headers)
         with urllib.request.urlopen(request, timeout=90) as response:
-            raw = response.read()
-            return json.loads(raw.decode("utf-8")) if raw else {}
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        if method == "GET" and exc.code == 404:
-            return None
-        raise RuntimeError(f"源码仓库 Release 操作失败（HTTP {exc.code}）：{detail}") from exc
+            releases = json.loads(response.read().decode("utf-8"))
+        if not releases:
+            break
 
-source_release = source_api(
-    "GET",
-    f"https://api.github.com/repos/{SOURCE_REPOSITORY}/releases/tags/{SOURCE_RELEASE_TAG}",
-)
-if source_release is None:
-    source_release = source_api(
-        "POST",
-        f"https://api.github.com/repos/{SOURCE_REPOSITORY}/releases",
-        {
-            "tag_name": SOURCE_RELEASE_TAG,
-            "target_commitish": os.environ.get("GITHUB_SHA", "custom"),
-            "name": f"红果 TV {VERSION_NAME}",
-            "body": f"红果 TV {VERSION_NAME}\n\n{notes}",
-            "draft": False,
-            "prerelease": False,
-            "make_latest": "true",
-        },
+        for old_release in releases:
+            old_tag = str(old_release.get("tag_name", ""))
+            if not old_tag.startswith("hongguotv-v") or old_tag == APP_RELEASE_TAG:
+                continue
+
+            delete_url = (
+                f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}"
+                f"/releases/{old_release['id']}"
+            )
+            request = urllib.request.Request(delete_url, method="DELETE", headers=api_headers)
+            try:
+                with urllib.request.urlopen(request, timeout=90):
+                    pass
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:1000]
+                raise RuntimeError(
+                    f"删除旧版 AppDownload Release {old_tag} 失败（HTTP {exc.code}）：{detail}"
+                ) from exc
+
+            # Release deletion does not remove its Git tag; remove that tag as well.
+            tag_ref = urllib.parse.quote(old_tag, safe="")
+            ref_url = (
+                f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}"
+                f"/git/refs/tags/{tag_ref}"
+            )
+            request = urllib.request.Request(ref_url, method="DELETE", headers=api_headers)
+            try:
+                with urllib.request.urlopen(request, timeout=90):
+                    pass
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    detail = exc.read().decode("utf-8", errors="replace")[:1000]
+                    raise RuntimeError(
+                        f"删除旧版 Tag {old_tag} 失败（HTTP {exc.code}）：{detail}"
+                    ) from exc
+            removed.append(old_tag)
+
+        if len(releases) < 100:
+            break
+        page += 1
+
+    print(
+        f"AppDownload 红果TV旧版清理完成：删除 {len(removed)} 个旧 Release/Tag；"
+        f"保留当前版本 {APP_RELEASE_TAG}。"
     )
+    if removed:
+        print("已清理：" + ", ".join(removed))
 
-# A retry replaces only this release's three assets; it never touches other releases.
-for asset in source_release.get("assets", []):
-    if asset.get("name") in (APK_NAME, "SHA256SUMS", "update.json"):
-        source_api("DELETE", asset["url"])
-
-source_upload_url = source_release["upload_url"].split("{", 1)[0]
-
-def upload_source_asset(local_path, asset_name, content_type):
-    with open(local_path, "rb") as source:
-        data = source.read()
-    request = urllib.request.Request(
-        f"{source_upload_url}?name={urllib.parse.quote(asset_name)}",
-        data=data,
-        method="POST",
-        headers={**source_headers, "Content-Type": content_type},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=300) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:1000]
-        raise RuntimeError(f"源码仓库 Release 附件上传失败（HTTP {exc.code}）：{detail}") from exc
-    print(f"Uploaded source Release asset: {result.get('name')}")
-
-upload_source_asset(apk_path, APK_NAME, "application/vnd.android.package-archive")
-upload_source_asset(sha_path, "SHA256SUMS", "text/plain")
-upload_source_asset(json_path, "update.json", "application/json")
-print(
-    f"源码仓库 Release 已同步发布："
-    f"https://github.com/{SOURCE_REPOSITORY}/releases/tag/{SOURCE_RELEASE_TAG}"
-)
-
+cleanup_old_hongguotv_releases()
