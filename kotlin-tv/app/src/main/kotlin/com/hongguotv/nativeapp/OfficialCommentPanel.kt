@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import com.hongguotv.core.OfficialComment
 import com.hongguotv.core.OfficialCommentPage
 
@@ -185,6 +186,17 @@ internal class OfficialCommentPanel(
 
     fun replyTarget(): OfficialComment? = replyTarget
     fun draft(): String = if (signedIn) input.text.toString() else draft
+
+    /** Let the first Back dismiss the TV keyboard before the Activity closes this panel. */
+    fun dismissEditorIfNeeded(): Boolean {
+        if (!signedIn || !input.hasFocus()) return false
+        val manager = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            ?: return false
+        if (!manager.isAcceptingText) return false
+        manager.hideSoftInputFromWindow(input.windowToken, 0)
+        input.clearFocus()
+        return true
+    }
 
     fun focusCommentArea() {
         val target = list.getChildAt(0)
