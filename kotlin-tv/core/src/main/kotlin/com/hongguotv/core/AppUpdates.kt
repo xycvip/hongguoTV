@@ -15,7 +15,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
                      val tag: String, val fileName: String, val size: Long, val sha256: String, val notes: String) {
     fun newerThan(installed: Long, sdk: Int) = versionCode > installed && minSdk <= sdk
     companion object {
-        const val REPOSITORY = "xycvip/hongguoTV"
+        const val REPOSITORY = "jycao2/hongguoTV"
         const val RELEASES = "https://github.com/$REPOSITORY/releases"
         const val MAX_APK_BYTES = 80L * 1024 * 1024
         /**
@@ -40,7 +40,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
         )
         fun parse(json: String): AppUpdate {
             val o = JSONObject(json)
-            require(o.getInt("schema") == 1 && o.getString("packageName") == "com.x.hongguotv") { "更新信息不匹配" }
+            require(o.getInt("schema") == 1 && o.getString("packageName") == "com.hongguotv.nativeapp") { "更新信息不匹配" }
             val apk = o.getJSONObject("apk")
             val update = AppUpdate(o.getLong("versionCode"), o.getString("versionName"), o.getInt("minSdk"),
                 o.getString("tag"), apk.getString("name"), apk.getLong("size"), apk.getString("sha256").lowercase(), o.optString("notes").take(1500))
