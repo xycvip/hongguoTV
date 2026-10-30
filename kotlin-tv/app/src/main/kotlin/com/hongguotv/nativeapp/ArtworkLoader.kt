@@ -75,6 +75,18 @@ class ArtworkLoader(context: Context) {
     init { repeat(if (lowRam) 1 else 2) { workers.execute(::work) } }
 
     /** Size defaults to the laid-out content bounds, including the detail page's portrait artwork. */
+    /** Re-fetch one image from the network, bypassing both memory and disk artwork caches. */
+    fun reload(view: ImageView, url: String, priority: Int = PRIORITY_VISIBLE) {
+        if (closed || url.isBlank()) return
+        cache.snapshot().keys.filter { it.url == url }.forEach { cache.remove(it) }
+        disk.remove(url)
+        bindings[view]?.let { binding ->
+            binding.applied = null
+            binding.failed = null
+        }
+        load(view, url, priority)
+    }
+
     fun load(view: ImageView, url: String, priority: Int = PRIORITY_VISIBLE, widthPx: Int = 0, heightPx: Int = 0) {
         if (closed) return
         val previous = bindings[view]
