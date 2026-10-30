@@ -141,6 +141,7 @@ class MainActivity: Activity() {
     private var commentCursor="0"
     private var commentGeneration=0
     private var commentListScope: RequestScope?=null
+    private val commentReplyCursors=mutableMapOf<String,String>()
     private lateinit var favoriteMonitor: FavoriteMonitor
     private val favoriteBadges=mutableMapOf<String,TextView>()
     private var favoriteStatus: TextView?=null
@@ -3385,7 +3386,8 @@ class MainActivity: Activity() {
                 if(!cloudAccount.signedIn) requireOfficialCommentLogin()
                 else commentPanel?.setReplyTarget(comment)
             }
-            override fun openReplies(comment: OfficialComment)=loadOfficialCommentReplies(comment)
+            override fun openReplies(comment: OfficialComment)=loadOfficialCommentReplies(comment,false)
+            override fun loadMoreReplies(comment: OfficialComment)=loadOfficialCommentReplies(comment,true)
             override fun send(text: String)=sendOfficialComment(text)
             override fun login()=requireOfficialCommentLogin()
         }, avatarLoader={ image, url -> artwork.load(image,url,ArtworkLoader.PRIORITY_VISIBLE,dp(34),dp(34)) })
@@ -3410,6 +3412,7 @@ class MainActivity: Activity() {
             }.start()
         }
         commentPanel=null
+        commentReplyCursors.clear()
         if(screen=="player" && !isFinishing) {
             showPanel()
             panel=false
@@ -3452,20 +3455,29 @@ class MainActivity: Activity() {
             }
         }
     }
-    private fun loadOfficialCommentReplies(comment: OfficialComment) {
+    private fun loadOfficialCommentReplies(comment: OfficialComment, append: Boolean) {
         val view=commentPanel ?: return
         val data=detail ?: return
         val seriesId=data.series.id
         val vid=data.episodes.getOrNull(episodeIndex) ?: return
+        val cursor=if(append) commentReplyCursors[comment.id].orEmpty() else "0"
         val token=commentGeneration
         val credentials=runCatching { currentOfficialCommentCredentials() }
-        if(credentials.isFailure) { view.showError(credentials.exceptionOrNull()?.message ?: "账号状态暂不可用"); return }
+        if(credentials.isFailure) { Toast.makeText(this,credentials.exceptionOrNull()?.message ?: "账号状态暂不可用",Toast.LENGTH_SHORT).show(); return }
+        view.setReplyLoading(comment.id,true)
         io.execute {
-            val result=runCatching { officialCommentRepository.replies(credentials.getOrNull(),seriesId,vid,comment.id) }
+            val result=runCatching { officialCommentRepository.replies(credentials.getOrNull(),seriesId,vid,comment.id,cursor) }
             main.post {
                 if(token!=commentGeneration || commentPanel!==view || detail?.series?.id!=seriesId ||
                     detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
-                result.fold({ view.setReplies(comment.id,it.items) },{ Toast.makeText(this,"回复加载失败：${it.message.orEmpty()}",Toast.LENGTH_SHORT).show() })
+                result.fold({ page ->
+                    commentReplyCursors[comment.id]=page.nextCursor
+                    view.setReplies(comment.id,page,append)
+                    view.post { if(commentPanel===view) view.focusCommentArea() }
+                },{
+                    view.setReplyLoading(comment.id,false)
+                    Toast.makeText(this,"回复加载失败：${it.message.orEmpty()}",Toast.LENGTH_SHORT).show()
+                })
             }
         }
     }
@@ -3523,7 +3535,7 @@ class MainActivity: Activity() {
         commentGeneration++
         commentListScope?.cancel(); commentListScope=null
         commentPanel?.let { if(it.parent===root) root.removeView(it) }
-        commentPanel=null; commentAnchor=null
+        commentPanel=null; commentAnchor=null; commentReplyCursors.clear()
         hideBootSplash()
         cancelRecovery(); cancelPrefetch(); mediaSession.deactivate(); tvTools.close()
         ffActive=false; outroSkipSeconds=0; outroTriggered=false
