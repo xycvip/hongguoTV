@@ -244,7 +244,7 @@ class Library(context: Context) {
     }
     /** Restore playback/interface preferences while retaining all user library data. */
     fun resetSettings() {
-        val defaults = LibraryDisk.decode(emptyMap()).settings
+        val defaults = LibraryDisk.decode(emptyMap<String, Any?>()).settings
         state().settings = defaults
         marksCache = linkedMapOf()
         prefs.edit().remove("theme").remove("skipMarks").apply()
