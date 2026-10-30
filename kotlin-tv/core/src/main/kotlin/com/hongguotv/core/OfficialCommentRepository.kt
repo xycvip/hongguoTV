@@ -295,7 +295,7 @@ class OfficialCommentRepository(
         val liked = when (val value = action.opt("user_digg")) {
             is Boolean -> value
             is Number -> value.toInt() != 0
-            else -> value?.toString() in setOf("1", "true")
+            else -> value?.toString()?.let { it == "1" || it.equals("true", ignoreCase = true) } ?: false
         }
         return OfficialComment(
             id = id,
