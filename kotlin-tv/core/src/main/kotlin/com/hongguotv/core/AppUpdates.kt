@@ -46,9 +46,12 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             val o = JSONObject(json)
             require(o.getInt("schema") == 1 && o.getString("packageName") == "com.x.hongguotv") { "更新信息不匹配" }
             val apk = o.getJSONObject("apk")
-            val update = AppUpdate(o.getLong("versionCode"), o.getString("versionName"), o.getInt("minSdk"),
-                o.getString("tag"), apk.getString("name"), apk.getLong("size"), apk.getString("sha256").lowercase(), o.optString("notes").take(1500),
-                apk.optString("url").takeIf { it.isNotBlank() } ?: "https://github.com/xycvip/AppDownload/releases/download/hongguotv-v${o.getString("versionName")}/${apk.getString("name")}"))
+            val manifestVersionName = o.getString("versionName")
+            val manifestApkName = apk.getString("name")
+            val fallbackDownloadUrl = "https://github.com/xycvip/AppDownload/releases/download/hongguotv-v$manifestVersionName/$manifestApkName"
+            val update = AppUpdate(o.getLong("versionCode"), manifestVersionName, o.getInt("minSdk"),
+                o.getString("tag"), manifestApkName, apk.getLong("size"), apk.getString("sha256").lowercase(), o.optString("notes").take(1500),
+                apk.optString("url").takeIf { it.isNotBlank() } ?: fallbackDownloadUrl)
             require(update.versionCode in 1..Int.MAX_VALUE.toLong() && update.minSdk in 26..100)
             require(update.versionName.matches(Regex("[0-9][0-9A-Za-z.+-]{0,63}")))
             require(update.tag.matches(Regex("hongguotv-v[0-9][0-9A-Za-z.+-]{0,80}")))
