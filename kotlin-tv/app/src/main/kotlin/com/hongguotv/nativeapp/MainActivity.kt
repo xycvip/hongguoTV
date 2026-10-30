@@ -413,7 +413,7 @@ class MainActivity: Activity() {
                         catalog=resultPage.items; hasMore=resultPage.hasMore; homeFromCache=false
                         if(screen=="catalog" && page==1) {
                             homeScreen?.updateShelves(homeShelves(),requestFocus=false)
-                            homeRefreshControl?.text="刷新热门"
+                            homeRefreshControl?.text="刷新"
                             homeRefreshControl?.setOnClickListener { refreshAllHome() }
                         }
                     }
@@ -824,7 +824,7 @@ class MainActivity: Activity() {
         }
         tab=next; val saved=tabState[next]; page=saved?.page ?: 1; catalog=saved?.items ?: emptyList(); hasMore=saved?.hasMore ?: false; ranking=saved?.ranking; catalogFocus=tabFocus[next].orEmpty()
         rankBoard=saved?.board ?: rankBoard; genre=saved?.genre ?: genre
-        aiCatalog=saved?.aiCatalog ?: false; aiGenre=saved?.aiGenre
+        aiCatalog=false; aiGenre=null
         showCatalog(load=(next<=2 && catalog.isEmpty() && (next!=1 || query.isNotBlank())))
         // 切回搜索页时焦点落输入框，避免页面重建后焦点丢失
         if(next==1) searchInput?.requestFocus()
@@ -958,12 +958,12 @@ class MainActivity: Activity() {
         }
         if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
-            homeRefreshControl=addButton(types,"刷新热门") { showCatalog(true) }.apply {
+            homeRefreshControl=addButton(types,"刷新") { showCatalog(true) }.apply {
                 tag="home:refresh"
                 nextFocusUpId=nav[tab].id
             }
-            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=homeRefreshControl?.id ?: nav[tab].id }
-            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=genreButton?.id ?: homeRefreshControl?.id ?: nav[tab].id }
+            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { nextFocusUpId=nav[tab].id }
+            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
             // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
             container.addView(types)
             nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: nav[tab].id }
@@ -1132,41 +1132,21 @@ class MainActivity: Activity() {
             // 键盘末行先指向历史（结果区建立后由 wireSearchPanel 补全联想与网格指向）
             azLastRow.forEach { it.nextFocusDownId=historyFirst?.id ?: View.NO_ID }
         } else if(tab==2) {
-            val heading=row().apply { setPadding(0,dp(8),0,dp(6)) }
-            aiEntry=null; aiBack=null; aiGenreButton=null
-            heading.addView(text(if(aiCatalog) "AI剧 · 全部分类" else "${rankBoard.label}热播榜",25f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-            if(aiCatalog) {
-                aiBack=addButton(heading,"‹ 返回AI剧榜") {
-                    aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
-                    aiBack?.post { if(aiBack?.isAttachedToWindow==true) aiBack?.requestFocus() }
-                }.apply { nextFocusUpId=nav[tab].id }
-                aiGenreButton=addButton(heading,aiGenre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }
-                    .apply { nextFocusUpId=nav[tab].id }
-            } else {
-                if(rankBoard==RankBoard.AI) {
-                    // 只有 AI 剧榜提供分类浏览入口，其余榜单保持原有切换/刷新两个按钮
-                    aiEntry=addButton(heading,"全部分类") {
-                        aiCatalog=true; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
-                        aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() }
-                    }.apply { nextFocusUpId=nav[tab].id }
-                }
-                rankSwitch=addButton(heading,"看${nextRankBoard().label}榜") {
-                    rankBoard=nextRankBoard()
-                    page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
-                    // 重建期间网格被清空，焦点必须落回按钮，否则会丢到不可见区域
-                    rankSwitch?.post { if(rankSwitch?.isAttachedToWindow==true) rankSwitch?.requestFocus() }
-                }.apply { nextFocusUpId=nav[tab].id }
-                rankRefresh=addButton(heading,"刷新榜单") { page=1; catalogFocus=""; showCatalog(true)
-                    rankRefresh?.post { if(rankRefresh?.isAttachedToWindow==true) rankRefresh?.requestFocus() }
+            val heading=row().apply { setPadding(0,dp(8),0,dp(6)); gravity=Gravity.CENTER_VERTICAL }
+            heading.addView(text("热播榜",25f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
+            container.addView(heading)
+            val boardRow=row().apply { setPadding(0,0,0,dp(8)) }
+            listOf(RankBoard.REAL, RankBoard.COMIC, RankBoard.AI).forEach { board ->
+                addButton(boardRow, "${board.label}榜", rankBoard == board) {
+                    if (rankBoard != board) { rankBoard=board; aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true) }
                 }.apply { nextFocusUpId=nav[tab].id }
             }
-            container.addView(heading)
-            val defaultSource=if(aiCatalog) "来源：红果AI剧分类" else "来源：红果${rankBoard.label}热播榜"
-            val loadingText=if(aiCatalog) "正在读取AI剧分类…" else "正在读取最新榜单…"
-            rankSubtitle=text(if(load) loadingText else ranking?.updatedText?.ifBlank { defaultSource } ?: defaultSource,13f,muted)
-                .apply { setPadding(0,0,0,dp(8)) }
+            rankRefresh=addButton(boardRow,"刷新") { page=1; catalogFocus=""; showCatalog(true) }.apply { nextFocusUpId=nav[tab].id }
+            container.addView(boardRow)
+            val defaultSource="来源：红果${rankBoard.label}热播榜"
+            rankSubtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText?.ifBlank { defaultSource } ?: defaultSource,13f,muted).apply { setPadding(0,0,0,dp(8)) }
             container.addView(rankSubtitle)
-            nav.forEach { it.nextFocusDownId=(if(aiCatalog) aiBack ?: aiGenreButton else aiEntry ?: rankSwitch)?.id ?: View.NO_ID }
+            nav.forEach { it.nextFocusDownId=boardRow.getChildAt(0)?.id ?: View.NO_ID }
         } else if(tab>2) {
             val heading=row().apply { setPadding(0,dp(14),0,dp(6)) }
             heading.addView(text(if(tab==3) "我的收藏" else "接着上次看",25f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
@@ -1247,7 +1227,7 @@ class MainActivity: Activity() {
             }, { problem ->
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
                     refreshHomePending=false
-                    homeRefreshControl?.text=if(catalog.isNotEmpty()) "当前显示上次内容 · 联网后按确认刷新" else "热门暂时无法加载 · 按确认重试"
+                    homeRefreshControl?.text="刷新"
                     homeRefreshControl?.setOnClickListener { refreshAllHome() }
                     return@work
                 }
@@ -1546,7 +1526,7 @@ class MainActivity: Activity() {
         homeScreen=home; body.addView(home,lp(-1,0).apply { weight=1f })
         val hot=catalog.filterNot { it.id in library.hidden() }
         home.render(homeShelves(),catalogFocus,!focusNav && !focusType,null,homePosition)
-        homeRefreshControl?.text=if(loading) if(homeFromCache) "已显示上次内容 · 正在更新热门…" else "正在更新热门…" else "刷新热门"
+        homeRefreshControl?.text="刷新"
         homeRefreshControl?.setOnClickListener { refreshAllHome() }
         homeRefreshControl?.nextFocusDownId=home.firstId()
         if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: home.firstId() }
@@ -1566,9 +1546,12 @@ class MainActivity: Activity() {
     private fun refreshAllHome() {
         if(refreshHomePending) return
         refreshHomePending=true
+        apiStatusCheckStarted=false
         showCatalog(true)
+        homeScreen?.reloadArtwork()
         loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true)
         loadHomeShelf(ContentType.AI,true)
+        main.post { if(screen=="catalog" && tab==0) runAutomaticApiChecks() }
     }
 
     /** Load the other homepage category in the background so both shelves are available without delaying the first screen. */
@@ -1856,12 +1839,7 @@ class MainActivity: Activity() {
             updater.show(aboutButton, aboutMode = true)
         }
         // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
-        val settingsFooter=text("红果TV  /  ${BuildConfig.VERSION_NAME}    ·    所有数据保存在本机",12f,muted).apply {
-            id=View.generateViewId(); isFocusable=false; setPadding(dp(10),dp(8),dp(10),dp(3))
-        }
-        val settingsDisclaimer=text("本应用仅用于技术交流与学习，不提供、不存储、不传播任何视频内容，内容版权归原平台所有。",11f,muted).apply {
-            gravity=Gravity.CENTER; setPadding(dp(10),0,dp(10),dp(6))
-        }
+        // 设置页不再显示底部版本号及说明文字。
         rechainSettings={
             val left=listOf(qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
                 (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
@@ -1877,8 +1855,7 @@ class MainActivity: Activity() {
             nav.forEach { it.nextFocusDownId=qualityButton.id }
         }
         rechainSettings()
-        footerHost.addView(settingsFooter,lp(-2,-2))
-        footerHost.addView(settingsDisclaimer,lp(-2,-2))
+
         // 页面重建（如切换片源显隐）后按标签恢复焦点，避免跳回顶部导航
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
@@ -2201,26 +2178,53 @@ class MainActivity: Activity() {
         dlg.setOnDismissListener { exitDialog=null }
     }
     private fun showGenrePicker() {
-        val aiMode=tab==2 && aiCatalog
-        val anchor=if(aiMode) aiGenreButton ?: return else genreButton ?: return
-        val type=if(aiMode) ContentType.AI else library.contentType
-        val current=if(aiMode) aiGenre else genre
-        io.execute {
-            val result=runCatching { repository.genres(type) }
-            main.post {
-                if(isDestroyed || !foreground || screen!="catalog") return@post
-                if(aiMode) { if(tab!=2 || !aiCatalog) return@post } else if(tab!=0) return@post
-                result.onSuccess { genres ->
-                    tvTools.choose("选择${type.label}题材",listOf("全部题材")+genres.map { it.name },anchor,{ index ->
-                        val next=if(index==0) null else genres[index-1]
-                        if(next!=current) {
-                            if(aiMode) aiGenre=next else genre=next
-                            page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
+        if (tab != 0) return
+        val anchor = genreButton ?: return
+        var selectedType = library.contentType
+        var requestId = 0
+        val content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(12)) }
+        val typeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val grid = GridLayout(this).apply { columnCount = 3; alignmentMode = GridLayout.ALIGN_BOUNDS; useDefaultMargins = false }
+        val loading = text("正在读取题材…", 13f, muted)
+        content.addView(typeRow)
+        content.addView(loading, lp(-1, -2).apply { topMargin = dp(8); bottomMargin = dp(8) })
+        content.addView(grid)
+        lateinit var dialog: AlertDialog
+        fun loadGenres(type: ContentType) {
+            selectedType = type
+            val ticket = ++requestId
+            typeRow.removeAllViews()
+            listOf(ContentType.SHORT, ContentType.COMIC, ContentType.AI).forEach { item -> addButton(typeRow, item.label, item == type) { loadGenres(item) } }
+            grid.removeAllViews()
+            loading.text = "正在读取${type.label}题材…"
+            io.execute {
+                val result = runCatching { repository.genres(type) }
+                main.post {
+                    if (isDestroyed || !dialog.isShowing || ticket != requestId || screen != "catalog" || tab != 0) return@post
+                    result.onSuccess { genres ->
+                        loading.text = if (genres.isEmpty()) "暂无可选题材" else "选择${type.label}题材"
+                        val labels = listOf("全部题材") + genres.map { it.name }
+                        labels.forEachIndexed { index, name ->
+                            val chosen = if (type == library.contentType) (if (index == 0) genre == null else genre?.name == name) else index == 0
+                            val item = button(name, chosen) {
+                                library.contentType = type
+                                genre = if (index == 0) null else genres[index - 1]
+                                page = 1; catalogFocus = ""; tabState.remove(0); tabFocus.remove(0)
+                                dialog.dismiss()
+                                showCatalog(true, focusType = true)
+                            }
+                            grid.addView(item, GridLayout.LayoutParams(GridLayout.spec(index / 3), GridLayout.spec(index % 3, 1f)).apply { width = 0; setMargins(dp(4), dp(4), dp(4), dp(4)) })
                         }
-                    })
-                }.onFailure { tvTools.info("题材暂不可用","题材列表加载失败，请稍后重试。",anchor) }
+                        grid.getChildAt(0)?.requestFocus()
+                    }.onFailure { loading.text = "题材加载失败，请稍后重试" }
+                }
             }
         }
+        dialog = AlertDialog.Builder(this).setTitle("选择题材").setView(ScrollView(this).apply { addView(content) }).setNegativeButton("关闭", null).create()
+        TvDialog.styleWindow(this, dialog)
+        dialog.setOnDismissListener { if (anchor.isAttachedToWindow) anchor.requestFocus() }
+        dialog.show()
+        loadGenres(selectedType)
     }
     private fun manageHistory(series: Series,anchor: View?) {
         tvTools.choose(series.title,listOf("继续观看",if(library.watched(series.id)) "恢复未看状态" else "标记整剧已看","删除这条记录"),anchor,{ index ->
@@ -3291,6 +3295,11 @@ class MainActivity: Activity() {
                 gravity = Gravity.CENTER
                 setPadding(0, dp(6), 0, dp(if (mobileLayout) 10 else 16))
             }, lp(-1, -2))
+            card.addView(row().apply {
+                gravity = Gravity.CENTER
+                addView(text("●", 10f, Color.rgb(235, 75, 75)).apply { setPadding(0, 0, dp(5), 0) }, lp(-2, -2))
+                addView(text("已下线", 12f, white), lp(-2, -2))
+            }, lp(-1, -2).apply { bottomMargin = dp(8) })
             val qr = cloudAccount.inlineQrBitmap
             val horizontalPaddingDp = if (mobileLayout) 12f else 26f
             val qrWidthLimitDp = (cardWidthDp - horizontalPaddingDp * 2f - 12f).coerceAtLeast(88f)
@@ -3304,7 +3313,7 @@ class MainActivity: Activity() {
             if (qr != null) {
                 card.addView(ImageView(this).apply {
                     setImageBitmap(qr)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    scaleType = ImageView.ScaleType.CENTER_CROP
                     setBackgroundColor(Color.WHITE)
                     setPadding(dp(5), dp(5), dp(5), dp(5))
                     contentDescription = "红果账户登录二维码"
@@ -3332,6 +3341,11 @@ class MainActivity: Activity() {
             val refresh = button(if (cloudAccount.inlineBusy) "正在获取…" else "刷新二维码") {
                 accountQrAutoStarted = true
                 cloudAccount.startQrInline()
+            }.apply {
+                isFocusable = true
+                isFocusableInTouchMode = true
+                nextFocusUpId = nav.getOrNull(6)?.id ?: View.NO_ID
+                nextFocusDownId = id
             }
             refresh.isEnabled = !cloudAccount.inlineBusy
             card.addView(refresh, lp(-2, dp(if (mobileLayout) 38 else 44)).apply {
@@ -3427,10 +3441,10 @@ class MainActivity: Activity() {
             setPadding(dp(9), dp(6), dp(9), dp(6))
             isFocusable = false
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
-            addView(text("●", 10f, Color.rgb(76, 205, 125)).apply {
+            addView(text("●", 10f, if (cloudAccount.signedIn) Color.rgb(76, 205, 125) else Color.rgb(235, 75, 75)).apply {
                 setPadding(0, 0, dp(5), 0)
             }, lp(-2, -2))
-            addView(text("已上线", 12f, white), lp(-2, -2))
+            addView(text(if (cloudAccount.signedIn) "已上线" else "已下线", 12f, white), lp(-2, -2))
         }
         profileRow.addView(onlineStatus, lp(-2, -2).apply { leftMargin = dp(8) })
         page.addView(profileRow, lp(-1, -2))
@@ -3453,7 +3467,7 @@ class MainActivity: Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(12))
         }
-        val sections = listOf("观看历史", "账户收藏", "待上线", "已上线")
+        val sections = listOf("观看历史", "账户收藏", "预约已上线", "预约待上线")
         sections.forEachIndexed { index, label ->
             val item = addButton(tabs, label, accountSection == index) {
                 accountSection = index
@@ -3476,20 +3490,13 @@ class MainActivity: Activity() {
         }
         fun addArtworkShelf(entries: List<Triple<Series, String, () -> Unit>>, shelfKey: String) {
             if (entries.isEmpty()) return
-            // Match the ranking page's multi-row poster grid, with columns derived from
-            // the actual account content width rather than a fixed one-line carousel.
+            // 卡片列数只由屏幕宽度决定，不受片单条数影响；末行保留固定卡片宽度。
             val horizontalPaddingDp = if (mobileLayout) 12f else 24f
-            val contentWidthPx = dp((availableWidthDp - horizontalPaddingDp * 2f).toInt())
-                .coerceAtLeast(dp(240))
-            // 排行榜使用六列网格；账户片单按相同屏幕宽度计算目标卡片宽度，
-            // 再按可用空间动态决定列数，避免账户卡片比排行榜明显更大。
-            val targetCardWidthDp = ((availableWidthDp - horizontalPaddingDp * 2f) / gridColumns)
-                .coerceAtLeast(88f)
-            val columns = kotlin.math.ceil(
-                contentWidthPx.toFloat() / dp(targetCardWidthDp.toInt()).coerceAtLeast(1)
-            ).toInt().coerceIn(2, 8)
-            val posterWidth = ((contentWidthPx - dp(8) * (columns - 1)) / columns - dp(8))
-                .coerceAtLeast(dp(72))
+            val contentWidthPx = dp((availableWidthDp - horizontalPaddingDp * 2f).toInt()).coerceAtLeast(dp(240))
+            val minCardWidth = dp(if (mobileLayout) 104 else 132)
+            val columns = ((contentWidthPx + dp(8)) / (minCardWidth + dp(8))).toInt().coerceIn(2, gridColumns)
+            val cardWidth = ((contentWidthPx - dp(8) * columns) / columns).coerceAtLeast(dp(88))
+            val posterWidth = (cardWidth - dp(8)).coerceAtLeast(dp(72))
             val posterHeight = (posterWidth / TvStyle.POSTER_ASPECT).toInt()
             val grid = GridLayout(this).apply {
                 columnCount = columns
@@ -3535,9 +3542,9 @@ class MainActivity: Activity() {
                 }, lp(-1, -2))
                 val params = GridLayout.LayoutParams(
                     GridLayout.spec(rowIndex),
-                    GridLayout.spec(columnIndex, 1f)
+                    GridLayout.spec(columnIndex)
                 ).apply {
-                    width = 0
+                    width = cardWidth
                     height = -2
                     setMargins(dp(4), dp(4), dp(4), dp(10))
                 }
@@ -3591,12 +3598,12 @@ class MainActivity: Activity() {
                 }, "account:favorites")
             }
             2, 3 -> {
-                val online = accountSection == 3
+                val online = accountSection == 2
                 val state = cloudAccount.reservationState(online)
-                sectionHeading(if (online) "已上线" else "待上线", if (state.loading) "正在同步预约记录…" else state.message)
+                sectionHeading(if (online) "预约已上线" else "预约待上线", if (state.loading) "正在同步预约记录…" else state.message)
                 if (!state.loaded && !state.loading) cloudAccount.refreshReservations()
                 if (state.rows.isEmpty()) {
-                    val emptyText = if (state.loading) "正在读取预约记录…" else if (state.loaded) "暂无${if (online) "已上线" else "待上线"}作品" else state.message
+                    val emptyText = if (state.loading) "正在读取预约记录…" else if (state.loaded) "暂无${if (online) "预约已上线" else "预约待上线"}作品" else state.message
                     page.addView(text(emptyText, 14f, muted).apply {
                         gravity = Gravity.CENTER
                         setPadding(0, dp(30), 0, dp(30))

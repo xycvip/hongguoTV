@@ -94,7 +94,9 @@ class HomeScreen(
 
     /** Retry visible cover requests after the owner cancels work for a page or lifecycle change. */
     fun reloadArtwork() {
-        loadNearbySelection()
+        if (restoring) return
+        // 刷新首页时重新请求当前已展示的所有货架封面，避免仅当前焦点附近有图。
+        rows.forEach { row -> row.cards.forEach(::requestCover) }
     }
 
     fun render(shelves: List<Shelf>,focus: String,requestFocus: Boolean,more: (() -> Unit)?,position: Position?=null) {
