@@ -3376,6 +3376,8 @@ class MainActivity: Activity() {
         val signedIn=cloudAccount.signedIn
         val view=OfficialCommentPanel(this,signedIn,object: OfficialCommentPanel.Listener {
             override fun close()=closeOfficialComments()
+            override fun previousEpisode()=skipEpisode(-1)
+            override fun nextEpisode()=skipEpisode(1)
             override fun loadMore()=loadOfficialComments(true)
             override fun like(comment: OfficialComment)=toggleOfficialCommentLike(comment)
             override fun reply(comment: OfficialComment) {
