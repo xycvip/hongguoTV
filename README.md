@@ -2,7 +2,7 @@
 
 **红果TV** 是一个面向 Android TV / 智能电视的非官方红果短剧客户端项目，使用 **Kotlin + Android 原生开发**。项目重点优化电视大屏和遥控器操作，同时支持 Android 手机和平板。**本项目与红果官方无关联，非官方客户端。**
 
-[下载最新版 APK](https://github.com/xycvip/hongguoTV/releases/latest) · [查看全部版本](https://github.com/xycvip/hongguoTV/releases) · [查看源码](https://github.com/xycvip/hongguoTV/tree/custom)
+[下载最新版 APK（AppDownload）](https://github.com/xycvip/AppDownload/tree/main/hongguoTV) · [应用内更新清单](https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json) · [查看源码](https://github.com/xycvip/hongguoTV/tree/custom) · [查看源码版本记录](https://github.com/xycvip/hongguoTV/releases)
 
 ## 项目特点
 
@@ -13,7 +13,7 @@
 - **弹幕功能**：支持弹幕显示设置、关键词屏蔽及按剧记忆设置。
 - **个人资料管理**：收藏分组、观看记录及本地数据备份与恢复。
 - **界面设置**：提供多种界面主题及播放偏好设置。
-- **应用更新**：支持应用内检查更新与下载安装。
+- **应用更新**：支持应用内检查更新与下载安装，更新包由 AppDownload 仓库分发。
 
 ## 运行环境
 
@@ -28,7 +28,7 @@
 
 ## 下载与安装
 
-前往 [GitHub Releases](https://github.com/xycvip/hongguoTV/releases/latest) 下载最新 APK，安装到兼容的 Android 设备即可。
+前往 [AppDownload 红果TV 分发目录](https://github.com/xycvip/AppDownload/tree/main/hongguoTV)，下载带版本号的最新 APK。应用内更新通过该目录中的 `latest.json` 检查版本并下载对应安装包。
 
 ## 项目说明
 
