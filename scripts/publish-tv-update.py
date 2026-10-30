@@ -129,13 +129,13 @@ def changelog():
         line = subject.strip()
         if not line:
             continue
-        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
+        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
         line = re.sub(
-            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
             "", line, flags=re.I
         )
         cleaned.append(line)
-    return translate_notes("\\n".join(cleaned))
+    return translate_notes("\n".join(cleaned))
 
 notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
@@ -348,7 +348,7 @@ print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIREC
 # Other applications' Releases in AppDownload are intentionally preserved.
 def cleanup_old_hongguotv_releases():
     page = 1
-    removed = []
+    all_releases = []
     while True:
         url = (
             f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases"
@@ -359,8 +359,13 @@ def cleanup_old_hongguotv_releases():
             releases = json.loads(response.read().decode("utf-8"))
         if not releases:
             break
+        all_releases.extend(releases)
+        if len(releases) < 100:
+            break
+        page += 1
 
-        for old_release in releases:
+    removed = []
+    for old_release in all_releases:
             old_tag = str(old_release.get("tag_name", ""))
             if not old_tag.startswith("hongguotv-v") or old_tag == APP_RELEASE_TAG:
                 continue
@@ -397,9 +402,6 @@ def cleanup_old_hongguotv_releases():
                     ) from exc
             removed.append(old_tag)
 
-        if len(releases) < 100:
-            break
-        page += 1
 
     print(
         f"AppDownload 红果TV旧版清理完成：删除 {len(removed)} 个旧 Release/Tag；"
