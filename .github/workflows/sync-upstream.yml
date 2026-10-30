@@ -31,33 +31,34 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Preserve fork automation workflows
-        run: |
-          mkdir -p /tmp/fork-workflows
-          for file in sync-upstream.yml prepare-custom-update.yml cleanup-runs.yml; do
-            if [ -f ".github/workflows/$file" ]; then
-              cp ".github/workflows/$file" "/tmp/fork-workflows/$file"
-            fi
-          done
-
       - name: Fetch upstream main
         run: |
           git remote add upstream https://github.com/jycao2/hongguoTV.git
           git fetch upstream main
 
-      - name: Reset main to upstream and restore fork automation
+      - name: Sync upstream source while preserving fork workflows
+        shell: bash
         run: |
           set -euo pipefail
-          git checkout main
-          git reset --hard upstream/main
-          mkdir -p .github/workflows
-          cp /tmp/fork-workflows/*.yml .github/workflows/
-          git add .github/workflows/sync-upstream.yml .github/workflows/prepare-custom-update.yml .github/workflows/cleanup-runs.yml
+
+          # Keep this fork's workflow definitions intact so scheduled sync and
+          # custom review automation remain available without requiring a PAT
+          # with the special workflow scope.
+          git diff --name-only --diff-filter=D HEAD upstream/main -- . ':(exclude).github/workflows/**' |
+            while IFS= read -r file; do
+              [ -n "$file" ] && git rm -f -- "$file"
+            done
+
+          # Copy every upstream path except .github/workflows.
+          git checkout upstream/main -- . ':(exclude).github/workflows/**'
+          git add -A -- . ':(exclude).github/workflows/**'
+
           if git diff --cached --quiet; then
-            echo "Upstream code and preserved automation are already up to date."
+            echo "Source files already match upstream main."
             exit 0
           fi
-          git commit -m "Sync main with upstream while preserving fork automation"
+
+          git commit -m "Sync source files from upstream main"
 
       - name: Push synchronized main
-        run: git push --force-with-lease origin HEAD:main
+        run: git push origin HEAD:main
