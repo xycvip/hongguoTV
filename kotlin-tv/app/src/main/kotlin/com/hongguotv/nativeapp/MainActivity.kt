@@ -3391,6 +3391,8 @@ class MainActivity: Activity() {
         commentPanel=view
         val width=(resources.displayMetrics.widthPixels*.42f).toInt().coerceAtLeast(dp(360))
         root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END))
+        view.translationX=width.toFloat()
+        view.animate().translationX(0f).setDuration(220).start()
         view.setEpisode(data.series.title,episodeIndex+1)
         loadOfficialComments(false)
         view.post { if(commentPanel===view) view.focusCommentArea() }
@@ -3399,7 +3401,11 @@ class MainActivity: Activity() {
     private fun closeOfficialComments() {
         val view=commentPanel ?: return
         commentGeneration++
-        if(view.parent===root) root.removeView(view)
+        if(view.parent===root) {
+            view.animate().translationX(view.width.toFloat()).setDuration(180).withEndAction {
+                if(view.parent===root) root.removeView(view)
+            }.start()
+        }
         commentPanel=null
         if(screen=="player" && !isFinishing) {
             showPanel()
