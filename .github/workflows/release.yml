@@ -174,3 +174,5 @@ jobs:
       - name: Remove temporary signing material
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12"
+
+# Release trigger marker: account artwork refresh [skip-tests]
