@@ -190,4 +190,33 @@ APK 文件名带版本号。每次成功发布后，工作流会自动更新本�
 """
 upload_text(f"{DISTRIBUTION_DIRECTORY}/README.md", readme_text,
             f"更新红果TV {VERSION_NAME} 下载说明")
-print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}")
+
+# Also keep the AppDownload repository homepage README in sync with the newest app release.
+homepage_readme = f"""# AppDownload
+
+应用安装包与版本更新信息的集中分发仓库。
+
+## 最新版本
+
+### 红果 TV
+
+当前版本：**{VERSION_NAME}**
+
+- [下载最新版 {DISTRIBUTION_APK_NAME}](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME})
+- [应用内更新清单 latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
+- [红果 TV 全部下载文件与说明](https://github.com/{DISTRIBUTION_REPOSITORY}/tree/main/{DISTRIBUTION_DIRECTORY})
+
+## 应用目录
+
+- `hongguoTV/`：红果 TV 安装包与应用内更新清单
+
+## 分发规则
+
+- APK 文件名包含版本号，每个应用只保留当前最新 APK。
+- 每个应用使用固定的 `latest.json` 更新清单地址。
+- APK、更新清单及本说明由对应应用源码仓库的 GitHub Actions 自动更新。
+- 本仓库不存放签名私钥、密码或访问令牌。
+"""
+upload_text("README.md", homepage_readme,
+            f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
+print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，目录说明与仓库首页均已更新")
