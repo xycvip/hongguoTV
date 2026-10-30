@@ -2581,7 +2581,7 @@ class MainActivity: Activity() {
         outroSkipSeconds=skipMark?.outroSeconds ?: 0; outroTriggered=false; ffActive=false
         if(autoplay) sleepStopped=false
         screen="player"; episodeIndex=selectedIndex; group=episodeIndex/20
-        if(commentPanel!=null) { commentPanel?.setEpisode(data.series.title,episodeIndex+1); loadOfficialComments(false) }
+        if(commentPanel!=null) { commentReplyCursors.clear(); commentPanel?.setEpisode(data.series.title,episodeIndex+1); loadOfficialComments(false) }
         if(isStartupPreview) {
             startupPreviewEpisodeId=data.episodes[selectedIndex]
             startupPreviewPlayedMs=0L
