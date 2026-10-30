@@ -44,7 +44,7 @@ internal class OfficialCommentPanel(
         addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
     }
     private val countLabel = label("本集评论", 17f, true)
-    private val statusLabel = label("", 13f, false, mutedColor)
+    private val statusLabel = label("", 13f, false, mutedColor).apply { isFocusable = true }
     private val composerLabel = label("", 12f, false, mutedColor)
     private val input = EditText(context).apply {
         setTextColor(textColor)
@@ -123,6 +123,7 @@ internal class OfficialCommentPanel(
     }
 
     fun setPage(page: OfficialCommentPage, append: Boolean, replies: Map<String, List<OfficialComment>> = currentReplies) {
+        loading = false
         currentItems = if (append) currentItems + page.items else page.items
         currentReplies = replies
         hasMore = page.hasMore
@@ -180,7 +181,7 @@ internal class OfficialCommentPanel(
     fun focusCommentArea() {
         val target = list.getChildAt(0)
         target?.let { firstFocusable(it)?.requestFocus() }
-            ?: actionFocusFallback()
+            ?: statusLabel.requestFocus()
     }
 
     private fun actionFocusFallback() {
