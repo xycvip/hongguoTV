@@ -1610,7 +1610,7 @@ class MainActivity: Activity() {
         val hot=catalog.filterNot { it.id in library.hidden() }
         home.render(homeShelves(),catalogFocus,!focusNav && !focusType,null,homePosition)
         homeRefreshControl?.text="刷新"
-        homeRefreshControl?.setOnClickListener { refreshAllHome() }
+        homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
         homeRefreshControl?.nextFocusDownId=home.firstId()
         if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: home.firstId() }
         if(focusNav) nav[0].requestFocus() else if(focusType) homeRefreshControl?.requestFocus()
