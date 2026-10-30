@@ -37,6 +37,10 @@ class OfficialCommentRepositoryTest {
         assertFalse(reply.liked)
     }
 
+    @Test fun malformedOfficialIdsAreIgnoredInsteadOfDisplayedAsComments() {
+        assertNull(repository.parseComment(JSONObject("""{"comment_id":"not-a-platform-id","common":{"content":{"text":"无效"}}}""")))
+    }
+
     @Test fun invalidCommentRowsAreSkipped() {
         assertNull(repository.parseComment(JSONObject("""{"comment_id":"0","common":{"content":{"text":"无效"}}}""")))
         assertNull(repository.parseComment(JSONObject("""{"comment_id":"123","common":{"content":{"text":" "}}}""")))
