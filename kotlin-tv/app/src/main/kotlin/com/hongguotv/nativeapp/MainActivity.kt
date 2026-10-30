@@ -140,6 +140,7 @@ class MainActivity: Activity() {
     private var commentAnchor: View?=null
     private var commentCursor="0"
     private var commentGeneration=0
+    private var commentListScope: RequestScope?=null
     private lateinit var favoriteMonitor: FavoriteMonitor
     private val favoriteBadges=mutableMapOf<String,TextView>()
     private var favoriteStatus: TextView?=null
@@ -3401,6 +3402,7 @@ class MainActivity: Activity() {
     private fun closeOfficialComments() {
         val view=commentPanel ?: return
         commentGeneration++
+        commentListScope?.cancel(); commentListScope=null
         if(view.parent===root) {
             view.animate().translationX(view.width.toFloat()).setDuration(180).withEndAction {
                 if(view.parent===root) root.removeView(view)
@@ -3428,13 +3430,17 @@ class MainActivity: Activity() {
         val vid=data.episodes.getOrNull(episodeIndex) ?: return
         val cursor=if(append) commentCursor else "0"
         val token=++commentGeneration
+        commentListScope?.cancel()
+        val scope=RequestScope()
+        commentListScope=scope
         if(!append) commentCursor="0"
         view.showLoading(if(append) "正在加载更多评论…" else "正在加载本集评论…")
         val credentials=runCatching { currentOfficialCommentCredentials() }
         if(credentials.isFailure) { view.showError(credentials.exceptionOrNull()?.message ?: "账号状态暂不可用"); return }
         io.execute {
-            val result=runCatching { officialCommentRepository.list(credentials.getOrNull(),seriesId,vid,cursor) }
+            val result=runCatching { scope.run { officialCommentRepository.list(credentials.getOrNull(),seriesId,vid,cursor) } }
             main.post {
+                if(commentListScope===scope) commentListScope=null
                 if(token!=commentGeneration || commentPanel!==view || screen!="player" ||
                     detail?.series?.id!=seriesId || detail?.episodes?.getOrNull(episodeIndex)!=vid) return@post
                 result.fold({ page ->
@@ -3514,6 +3520,7 @@ class MainActivity: Activity() {
     }
     private fun releasePlayer() {
         commentGeneration++
+        commentListScope?.cancel(); commentListScope=null
         commentPanel?.let { if(it.parent===root) root.removeView(it) }
         commentPanel=null; commentAnchor=null
         hideBootSplash()
