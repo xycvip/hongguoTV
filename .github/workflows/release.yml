@@ -146,4 +146,4 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.p12"
 
 # Release trigger marker: account artwork refresh [skip-tests]
-# Manual release trigger for the latest focus and account-status fixes. [release] [skip-tests] Fix reset default map type
+# Manual release trigger: publish current custom build without tests or lint. [release] [skip-tests]
