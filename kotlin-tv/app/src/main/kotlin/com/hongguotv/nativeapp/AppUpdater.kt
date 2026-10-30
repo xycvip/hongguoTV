@@ -43,6 +43,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
     private var dialog: AlertDialog? = null
     val showing get() = dialog?.isShowing == true
     private var statusView: TextView? = null
+    private var statusDetailsView: TextView? = null
     private var anchor: View? = null
     private var actionButton: android.widget.Button? = null
     private var status = "当前版本 ${BuildConfig.VERSION_NAME}"
@@ -93,7 +94,15 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
     }
     private fun updateStatus(text: String) {
         status = text
-        statusView?.apply { this.text = text; visibility = View.VISIBLE }
+        val parts = text.split("\n", limit = 2)
+        statusView?.apply {
+            this.text = parts.firstOrNull().orEmpty()
+            visibility = View.VISIBLE
+        }
+        statusDetailsView?.apply {
+            this.text = parts.getOrNull(1).orEmpty()
+            visibility = if (text.contains("\n")) View.VISIBLE else View.GONE
+        }
     }
     private fun renderActions() {
         actionButton?.apply {
@@ -113,15 +122,31 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val body = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; setPadding((24*dp).toInt(), (12*dp).toInt(), (24*dp).toInt(), 0) }
         body.addView(TvDialog.title(activity, if (aboutMode) "关于软件" else "版本与更新 · ${BuildConfig.VERSION_NAME}"))
         statusView = TextView(activity).apply {
-            text = status
-            textSize = 17f
-            setTextColor(TvStyle.text)
+            text = status.substringBefore("\n")
+            textSize = 18f
+            setTypeface(null, android.graphics.Typeface.BOLD)
+            setTextColor(TvStyle.accent)
             setTextIsSelectable(false)
             setLineSpacing(0f, 1.12f)
+            setPadding((14 * dp).toInt(), (12 * dp).toInt(), (14 * dp).toInt(), (12 * dp).toInt())
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(TvStyle.surface)
+                cornerRadius = (12 * dp).toFloat()
+                setStroke((1 * dp).toInt(), TvStyle.outline)
+            }
             if (aboutMode && status == "当前版本 ${BuildConfig.VERSION_NAME}") visibility = View.GONE
         }
-        // 更新说明可能包含较长的提交记录。单独放入有上限的滚动区域，
-        // 不能让说明把“稍后/下载新版/立即安装”按钮挤到屏幕外。
+        statusDetailsView = TextView(activity).apply {
+            text = status.substringAfter("\n", "")
+            textSize = 15f
+            setTextColor(TvStyle.muted)
+            setLineSpacing(0f, 1.2f)
+            setPadding(0, (8 * dp).toInt(), 0, (12 * dp).toInt())
+            visibility = if (status.contains("\n")) View.VISIBLE else View.GONE
+            setTextIsSelectable(false)
+        }
+        // 状态标题固定在滚动区外，检查结果和下载进度始终醒目可见；
+        // 较长的更新说明放入滚动区，底部操作按钮不会被挤出屏幕。
         val statusScroll = ScrollView(activity).apply {
             isFillViewport = false
             isVerticalScrollBarEnabled = true
@@ -145,7 +170,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                             "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
                     ))
                 }
-                addView(statusView, LinearLayout.LayoutParams(-1, -2))
+                addView(statusDetailsView, LinearLayout.LayoutParams(-1, -2))
             }
             addView(statusContent, FrameLayout.LayoutParams(-1, -2))
         }
@@ -153,6 +178,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         body.layoutParams = LinearLayout.LayoutParams(
             -1, (activity.resources.displayMetrics.heightPixels * 0.72f).toInt()
         )
+        body.addView(statusView, LinearLayout.LayoutParams(-1, -2).apply {
+            bottomMargin = (10 * dp).toInt()
+        })
         body.addView(statusScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         if (!updatePending) {
             body.addView(CheckBox(activity).apply {
@@ -183,7 +211,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         TvDialog.styleWindow(activity,next)
         dialog = next
         next.setOnDismissListener {
-            if (dialog === next) { dialog = null; statusView = null; actionButton = null }
+            if (dialog === next) { dialog = null; statusView = null; statusDetailsView = null; actionButton = null }
             if (from?.isAttachedToWindow == true) from.requestFocus()
         }
         next.show()
