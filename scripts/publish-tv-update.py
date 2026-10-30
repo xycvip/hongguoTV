@@ -129,6 +129,8 @@ def github_contents_request(path, method="GET", payload=None):
             return json.loads(body.decode("utf-8")) if body else {}
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        if method == "GET" and exc.code == 404:
+            return {}
         raise RuntimeError(f"AppDownload 上传失败（HTTP {exc.code}）：{detail}") from exc
 
 def upload_file(path, local_path, message):
@@ -161,7 +163,7 @@ def upload_text(path, content, message):
 upload_file(f"{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME}", apk_path,
             f"发布红果TV {VERSION_NAME} APK")
 with open(json_path, "r", encoding="utf-8") as manifest_file:
-    manifest_text = manifest_file.read() + "\\n"
+    manifest_text = manifest_file.read() + "\n"
 upload_text(f"{DISTRIBUTION_DIRECTORY}/latest.json", manifest_text,
             f"更新红果TV {VERSION_NAME} 版本信息")
 print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}")
