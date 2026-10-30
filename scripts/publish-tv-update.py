@@ -32,14 +32,49 @@ def run_text(command):
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def translate_note(line):
+    """Translate known release-note phrases into concise Chinese."""
+    original = re.sub(r"^[-*•]+\\s*", "", line).strip()
+    normalized = re.sub(r"\\s+", " ", original).strip().lower()
+    translations = {
+        "add account api connectivity check": "新增账号接口连通性检测",
+        "preserve refresh focus and show account api status": "刷新后保留焦点，并显示账号接口状态",
+        "restore focus to selected ranking action after reload": "重新加载后恢复到已选排行榜操作项",
+        "complete focus restoration for catalog refresh actions": "完善片单刷新操作后的焦点恢复",
+        "restore focus after failed catalog refresh": "片单刷新失败后恢复焦点",
+        "return focus to surviving filters after clearing genres": "清空分类后将焦点返回可用筛选项",
+        "keep homepage refresh button focus after reload": "首页重新加载后保留刷新按钮焦点",
+        "build latest custom apk": "构建最新定制版安装包",
+    }
+    if normalized in translations:
+        return translations[normalized]
+    # Chinese commit subjects are already suitable for display.
+    if re.search(r"[\\u4e00-\\u9fff]", original):
+        return original
+    # Avoid exposing untranslated English commit subjects to users.
+    return "其他功能优化（详情见本次版本提交记录）"
+
+
+def translate_notes(notes_text):
+    translated = []
+    seen = set()
+    for raw in notes_text.splitlines():
+        item = raw.strip()
+        if not item:
+            continue
+        chinese = translate_note(item)
+        if chinese not in seen:
+            seen.add(chinese)
+            translated.append(f"- {chinese}")
+    return "\\n".join(translated) or "- 本次版本更新（具体变更见提交记录）。"
+
+
 def changelog():
-    """Build release notes from commits since the previous published release."""
+    """Build concise Chinese release notes from commits since the previous release."""
     current_commit = os.environ.get("GITHUB_SHA", "HEAD")
-    # The previous stable release remains available until this script creates the new one.
     previous_tag = run_text(
         ["gh", "release", "view", "--json", "tagName", "--jq", ".tagName"]
     )
-
     if previous_tag:
         subjects = run_text([
             "git", "log", "--no-merges", "--reverse", "--format=%s",
@@ -50,33 +85,20 @@ def changelog():
             "git", "log", "-1", "--no-merges", "--format=%s", current_commit
         ]).splitlines()
 
-    notes = []
-    seen = set()
+    cleaned = []
     for subject in subjects:
         line = subject.strip()
         if not line:
             continue
-        # Remove workflow control markers and conventional commit prefixes.
-        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
+        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
         line = re.sub(
-            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
             "", line, flags=re.I
         )
-        line = re.sub(r"\s+", " ", line).strip(" -—:;")
-        if not line or line.lower() in seen:
-            continue
-        seen.add(line.lower())
-        # Keep each change on one concise line.
-        if len(line) > 90:
-            line = line[:87].rstrip() + "..."
-        notes.append(f"- {line}")
+        cleaned.append(line)
+    return translate_notes("\\n".join(cleaned))
 
-    if not notes:
-        return "- 本次版本更新（具体变更见提交记录）。"
-    return "\n".join(notes)
-
-
-notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
+notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
     "schema": 1,
     "packageName": "com.x.hongguotv",
@@ -186,18 +208,25 @@ readme_text = f"""# 红果 TV 分发目录
 - APK 安装包：[下载 {DISTRIBUTION_APK_NAME}](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME})
 - 应用内更新清单：[latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
 
+## 本次更新说明
+
+{notes}
+
 APK 文件名带版本号。每次成功发布后，工作流会自动更新本说明、APK 和 latest.json。
 """
 upload_text(f"{DISTRIBUTION_DIRECTORY}/README.md", readme_text,
             f"更新红果TV {VERSION_NAME} 下载说明")
 
-# Also keep the AppDownload repository homepage README in sync with the newest app release.
-homepage_readme = f"""# AppDownload
+# Update only the HongguoTV section on the AppDownload homepage.
+# Content outside these markers belongs to other apps or shared repository guidance.
+homepage_path = "README.md"
+try:
+    homepage_current = github_contents_request(homepage_path)
+    homepage_text = base64.b64decode(homepage_current["content"]).decode("utf-8")
+except (KeyError, ValueError):
+    homepage_text = "# AppDownload\\n\\n应用安装包与版本更新信息的集中分发仓库。\\n"
 
-应用安装包与版本更新信息的集中分发仓库。
-
-## 最新版本
-
+section = f"""<!-- BEGIN APP: hongguoTV -->
 ### 红果 TV
 
 当前版本：**{VERSION_NAME}**
@@ -206,17 +235,30 @@ homepage_readme = f"""# AppDownload
 - [应用内更新清单 latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
 - [红果 TV 全部下载文件与说明](https://github.com/{DISTRIBUTION_REPOSITORY}/tree/main/{DISTRIBUTION_DIRECTORY})
 
-## 应用目录
+**本次更新说明**
 
-- `hongguoTV/`：红果 TV 安装包与应用内更新清单
+{notes}
+<!-- END APP: hongguoTV -->"""
 
-## 分发规则
+begin_marker = "<!-- BEGIN APP: hongguoTV -->"
+end_marker = "<!-- END APP: hongguoTV -->"
+if begin_marker in homepage_text and end_marker in homepage_text:
+    before = homepage_text.split(begin_marker, 1)[0]
+    after = homepage_text.split(end_marker, 1)[1]
+    homepage_text = before + section + after
+else:
+    # Migrate the old single-app homepage section while retaining shared text.
+    latest_heading = "## 最新版本"
+    apps_heading = "## 应用目录"
+    if latest_heading in homepage_text and apps_heading in homepage_text:
+        before = homepage_text.split(latest_heading, 1)[0] + latest_heading + "\\n\\n"
+        after = apps_heading + homepage_text.split(apps_heading, 1)[1]
+        homepage_text = before + section + "\\n\\n" + after
+    else:
+        if "## 最新版本" not in homepage_text:
+            homepage_text = homepage_text.rstrip() + "\\n\\n## 最新版本\\n\\n"
+        homepage_text = homepage_text.rstrip() + "\\n\\n" + section + "\\n"
 
-- APK 文件名包含版本号，每个应用只保留当前最新 APK。
-- 每个应用使用固定的 `latest.json` 更新清单地址。
-- APK、更新清单及本说明由对应应用源码仓库的 GitHub Actions 自动更新。
-- 本仓库不存放签名私钥、密码或访问令牌。
-"""
-upload_text("README.md", homepage_readme,
+upload_text(homepage_path, homepage_text,
             f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
-print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，目录说明与仓库首页均已更新")
+print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，中文更新说明与红果TV首页区域均已更新")
