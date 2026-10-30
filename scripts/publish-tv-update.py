@@ -22,18 +22,14 @@ size = os.path.getsize(apk_path)
 
 def run_text(command):
     """Run a command and return stripped stdout; return an empty string on failure."""
-    result = subprocess.run(
-        command, check=False, capture_output=True, text=True
-    )
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def changelog():
     """Build release notes from commits since the previous published release."""
     current_commit = os.environ.get("GITHUB_SHA", "HEAD")
-
-    # The previous stable release is still present when this script runs.
-    # Its tag is removed only after the new release has been published.
+    # The previous stable release remains available until this script creates the new one.
     previous_tag = run_text(
         ["gh", "release", "view", "--json", "tagName", "--jq", ".tagName"]
     )
@@ -55,12 +51,12 @@ def changelog():
         if not line:
             continue
         # Remove workflow control markers and conventional commit prefixes.
-        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
+        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
         line = re.sub(
-            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
             "", line, flags=re.I
         )
-        line = re.sub(r"\\s+", " ", line).strip(" -—:;")
+        line = re.sub(r"\s+", " ", line).strip(" -—:;")
         if not line or line.lower() in seen:
             continue
         seen.add(line.lower())
@@ -71,7 +67,7 @@ def changelog():
 
     if not notes:
         return "- 本次版本更新（具体变更见提交记录）。"
-    return "\\n".join(notes)
+    return "\n".join(notes)
 
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
@@ -91,13 +87,13 @@ with open(json_path, "w", encoding="utf-8") as f:
 
 sha_path = os.path.join(OUTPUTS, "SHA256SUMS")
 with open(sha_path, "w", encoding="utf-8") as f:
-    f.write(f"{sha256}  {APK_NAME}\\n")
+    f.write(f"{sha256}  {APK_NAME}\n")
 
 subprocess.run([
     "gh", "release", "create", TAG,
     "--target", os.environ["GITHUB_SHA"],
     "--title", f"红果 TV {VERSION_NAME}",
-    "--notes", f"红果 TV {VERSION_NAME}\\n\\n{notes}",
+    "--notes", f"红果 TV {VERSION_NAME}\n\n{notes}",
     "--latest"
 ], check=True)
 for asset in [apk_path, json_path, sha_path]:
