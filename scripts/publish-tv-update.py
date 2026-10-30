@@ -34,8 +34,8 @@ def run_text(command):
 
 def translate_note(line):
     """Translate known release-note phrases into concise Chinese."""
-    original = re.sub(r"^[-*•]+\\s*", "", line).strip()
-    normalized = re.sub(r"\\s+", " ", original).strip().lower()
+    original = re.sub(r"^[-*•]+\s*", "", line).strip()
+    normalized = re.sub(r"\s+", " ", original).strip().lower()
     translations = {
         "add account api connectivity check": "新增账号接口连通性检测",
         "preserve refresh focus and show account api status": "刷新后保留焦点，并显示账号接口状态",
@@ -49,7 +49,7 @@ def translate_note(line):
     if normalized in translations:
         return translations[normalized]
     # Chinese commit subjects are already suitable for display.
-    if re.search(r"[\\u4e00-\\u9fff]", original):
+    if re.search(r"[\u4e00-\u9fff]", original):
         return original
     # Avoid exposing untranslated English commit subjects to users.
     return "其他功能优化（详情见本次版本提交记录）"
@@ -66,7 +66,7 @@ def translate_notes(notes_text):
         if chinese not in seen:
             seen.add(chinese)
             translated.append(f"- {chinese}")
-    return "\\n".join(translated) or "- 本次版本更新（具体变更见提交记录）。"
+    return "\n".join(translated) or "- 本次版本更新（具体变更见提交记录）。"
 
 
 def changelog():
@@ -90,13 +90,13 @@ def changelog():
         line = subject.strip()
         if not line:
             continue
-        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
+        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
         line = re.sub(
-            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
             "", line, flags=re.I
         )
         cleaned.append(line)
-    return translate_notes("\\n".join(cleaned))
+    return translate_notes("\n".join(cleaned))
 
 notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
@@ -224,7 +224,7 @@ try:
     homepage_current = github_contents_request(homepage_path)
     homepage_text = base64.b64decode(homepage_current["content"]).decode("utf-8")
 except (KeyError, ValueError):
-    homepage_text = "# AppDownload\\n\\n应用安装包与版本更新信息的集中分发仓库。\\n"
+    homepage_text = "# AppDownload\n\n应用安装包与版本更新信息的集中分发仓库。\n"
 
 section = f"""<!-- BEGIN APP: hongguoTV -->
 ### 红果 TV
@@ -251,13 +251,13 @@ else:
     latest_heading = "## 最新版本"
     apps_heading = "## 应用目录"
     if latest_heading in homepage_text and apps_heading in homepage_text:
-        before = homepage_text.split(latest_heading, 1)[0] + latest_heading + "\\n\\n"
+        before = homepage_text.split(latest_heading, 1)[0] + latest_heading + "\n\n"
         after = apps_heading + homepage_text.split(apps_heading, 1)[1]
-        homepage_text = before + section + "\\n\\n" + after
+        homepage_text = before + section + "\n\n" + after
     else:
         if "## 最新版本" not in homepage_text:
-            homepage_text = homepage_text.rstrip() + "\\n\\n## 最新版本\\n\\n"
-        homepage_text = homepage_text.rstrip() + "\\n\\n" + section + "\\n"
+            homepage_text = homepage_text.rstrip() + "\n\n## 最新版本\n\n"
+        homepage_text = homepage_text.rstrip() + "\n\n" + section + "\n"
 
 upload_text(homepage_path, homepage_text,
             f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
