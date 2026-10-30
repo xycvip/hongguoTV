@@ -128,9 +128,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 if (aboutMode) {
                     addView(TvDialog.body(
                         activity,
-                        "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\\n\\n" +
-                            "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\\n" +
-                            "AndroidX Media3 / OkHttp：Apache-2.0\\nKotlin：Apache-2.0\\nBouncy Castle：MIT。\\n\\n" +
+                        "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\n\n" +
+                            "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\n" +
+                            "AndroidX Media3 / OkHttp：Apache-2.0\nKotlin：Apache-2.0\nBouncy Castle：MIT。\n\n" +
                             "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
                     ))
                 }
