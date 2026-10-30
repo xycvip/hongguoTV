@@ -68,7 +68,7 @@ class MainActivity: Activity() {
     private var randomDialog: AlertDialog?=null
     private var exitDialog: AlertDialog?=null
     private var killOnDestroy=false
-    private var resettingAllData=false
+    @Volatile private var resettingAllData=false
     private val danmakuRepo=DanmakuRepository(repository.http)
     private val networkCleanup=Executors.newSingleThreadExecutor()
     private val prefetchWorker=Executors.newSingleThreadExecutor()
@@ -460,7 +460,7 @@ class MainActivity: Activity() {
         io.execute {
             val loaded=runCatching { repository.home(1,type,null) }
             main.post {
-                if(isDestroyed) return@post
+                if(isDestroyed || resettingAllData) return@post
                 loaded.onSuccess { resultPage ->
                     library.cacheHome(type,resultPage.items,resultPage.hasMore)
                     if(library.contentType==type && tab==0 && collection==null && genre==null) {
@@ -1733,7 +1733,7 @@ class MainActivity: Activity() {
             val result=runCatching { if(type==ContentType.AI) repository.ranking(RankBoard.AI,1) else repository.home(1,type,null) }
             main.post {
                 homeShelfLoads.remove(type)
-                if(isDestroyed) return@post
+                if(isDestroyed || resettingAllData) return@post
                 val refreshAgain=queuedHomeShelfRefresh.remove(type)
                 result.onSuccess { loaded ->
                     library.cacheHome(type,loaded.items,loaded.hasMore)
@@ -2191,13 +2191,23 @@ class MainActivity: Activity() {
         if(searchHotLoaded || searchHotLoading || tab!=1 || query.isNotBlank() || isDestroyed) return
         searchHotLoading=true
         io.execute {
-            val result=runCatching { repository.ranking(RankBoard.AI,1) }
+            val result=runCatching {
+                val real=runCatching { repository.ranking(RankBoard.REAL,1) }.getOrNull()
+                val comic=runCatching { repository.ranking(RankBoard.COMIC,1) }.getOrNull()
+                check(real!=null || comic!=null) { "暂时无法获取热搜推荐" }
+                val mixed=mutableListOf<Series>()
+                repeat(maxOf(real?.items?.size ?: 0,comic?.items?.size ?: 0)) { index ->
+                    real?.items?.getOrNull(index)?.let { mixed+=it.copy(badge="短剧") }
+                    comic?.items?.getOrNull(index)?.let { mixed+=it.copy(badge="漫剧") }
+                }
+                CatalogPage(mixed.distinctBy { it.id },false,real?.ranking ?: comic?.ranking)
+            }
             main.post {
                 searchHotLoading=false
-                if(isDestroyed || tab!=1 || query.isNotBlank() || screen!="catalog") return@post
+                if(isDestroyed || resettingAllData || tab!=1 || query.isNotBlank() || screen!="catalog") return@post
                 searchHotLoaded=true
                 result.onSuccess { hot ->
-                    catalog=hot.items.distinctBy { it.id }; ranking=hot.ranking; hasMore=false
+                    catalog=hot.items; ranking=hot.ranking; hasMore=false
                     showCatalog()
                 }.onFailure { android.util.Log.i("HongguoTV","Hot search recommendations unavailable: ${it.message}") }
             }
@@ -2381,7 +2391,7 @@ class MainActivity: Activity() {
     private fun showGenrePicker() {
         if (tab != 0) return
         val anchor = genreButton ?: return
-        var selectedType = ContentType.SHORT
+        var selectedType = library.contentType
         var requestId = 0
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2412,8 +2422,25 @@ class MainActivity: Activity() {
             selectedType = type
             val ticket = ++requestId
             typeRow.removeAllViews()
+            val dialogWidth=(resources.displayMetrics.widthPixels*0.72f).toInt().coerceAtLeast(dp(240))
+            val typeGap=(dialogWidth*0.018f).toInt().coerceIn(dp(4),dp(12))
             listOf(ContentType.SHORT, ContentType.COMIC, ContentType.AI).forEach { item ->
-                addButton(typeRow, item.label, item == type) { loadGenres(item) }
+                val typeButton=button(item.label,item==type) {
+                    if(library.contentType!=item) {
+                        library.contentType=item
+                        genre=null
+                        page=1
+                        catalogFocus=""
+                    }
+                    loadGenres(item)
+                }.apply {
+                    textSize=14f
+                    setPadding(dp(4),dp(10),dp(4),dp(10))
+                }
+                typeRow.addView(typeButton,LinearLayout.LayoutParams(0,dp(42),1f).apply {
+                    leftMargin=typeGap/2
+                    rightMargin=typeGap/2
+                })
             }
             grid.removeAllViews()
             loading.text = "正在读取${type.label}题材…"
@@ -4363,7 +4390,7 @@ class MainActivity: Activity() {
         cancelWork(); cancelPrefetch()
         player?.pause(); releasePlayer()
         Toast.makeText(this,"正在清除本机数据…",Toast.LENGTH_SHORT).show()
-        io.execute {
+        Thread({
             val drained=runCatching { library.closeAndAwait(20) }.getOrDefault(false)
             if(!drained) {
                 main.post {
@@ -4373,12 +4400,23 @@ class MainActivity: Activity() {
                 return@execute
             }
             runCatching {
-                databaseList().forEach { deleteDatabase(it) }
-                val appRoot=filesDir.parentFile
-                java.io.File(appRoot,"shared_prefs").listFiles()?.forEach { it.deleteRecursively() }
+                // 先停止所有后台请求和任务，避免它们在清理完成后又把缓存写回来。
+                repository.http.dispatcher.cancelAll()
+                io.shutdownNow()
+                check(io.awaitTermination(15,java.util.concurrent.TimeUnit.SECONDS)) { "后台任务仍在退出，请稍后重试" }
+                databaseList().forEach { name -> check(deleteDatabase(name)) { "无法删除数据库：$name" } }
+                val prefsDir=java.io.File(filesDir.parentFile,"shared_prefs")
+                val preferenceNames=(prefsDir.listFiles()?.filter { it.isFile && it.name.endsWith(".xml") }
+                    ?.map { it.name.removeSuffix(".xml") } ?: emptyList()) + listOf(
+                    "native-library-v1","native-home-cache-v1","cloud_account_secure",
+                    "playback-extras-v1","third-sources-v1","startup_playback","app_updates","random_pool"
+                )
+                preferenceNames.distinct().forEach { name ->
+                    check(getSharedPreferences(name,MODE_PRIVATE).edit().clear().commit()) { "无法清除本机设置：$name" }
+                }
                 listOf(filesDir,cacheDir,codeCacheDir,noBackupFilesDir,externalCacheDir)
-                    .filterNotNull().forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
-                getExternalFilesDirs(null).filterNotNull().forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
+                    .filterNotNull().forEach { dir -> dir.listFiles()?.forEach { check(it.deleteRecursively()) { "无法删除文件：${it.name}" } } }
+                getExternalFilesDirs(null).filterNotNull().forEach { dir -> dir.listFiles()?.forEach { check(it.deleteRecursively()) { "无法删除外部文件：${it.name}" } } }
             }.onFailure { error ->
                 main.post {
                     resettingAllData=false
@@ -4404,7 +4442,7 @@ class MainActivity: Activity() {
                     Toast.makeText(this,"数据已清除，但自动重启失败：${error.message ?: "请手动打开"}",Toast.LENGTH_LONG).show()
                 }
             }
-        }
+        },"hongguotv-clear-data").start()
     }
 
     override fun onPause() {
