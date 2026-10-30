@@ -162,6 +162,26 @@ class AccountController(private val activity: Activity, private val play: (Cloud
 
     fun historyRows(): List<CloudProgress> = if (signedIn) history.toList() else emptyList()
 
+    /** Read-only connectivity check for the signed-in account API. */
+    fun checkConnection(done: (Boolean, String) -> Unit) {
+        val account = credentials
+        if (account == null || closed) {
+            done(false, "未登录")
+            return
+        }
+        val token = generation
+        worker.execute {
+            val result = runCatching { client.profile(account) }
+            main.post {
+                if (closed || token != generation) return@post
+                result.fold(
+                    { done(true, "连接成功") },
+                    { done(false, safeError(it)) },
+                )
+            }
+        }
+    }
+
     fun refreshHistory() {
         refresh(false)
     }
