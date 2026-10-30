@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Publish signed APK, update manifest, and checksums as a GitHub release."""
+"""Publish signed APK to GitHub Release and the central AppDownload repository."""
 import hashlib
 import json
 import os
 import re
 import subprocess
+import base64
+import urllib.error
+import urllib.request
 
 TAG = os.environ["UPDATE_TAG"]
 VERSION_NAME = os.environ["HONGGUOTV_VERSION_NAME"]
 VERSION_CODE = int(os.environ["HONGGUOTV_VERSION_CODE"])
 APK_SRC = "kotlin-tv/app/build/outputs/apk/release/app-release.apk"
 APK_NAME = f"HongguoTV-{VERSION_NAME}.apk"
+DISTRIBUTION_APK_NAME = "hongguoTV.apk"
+DISTRIBUTION_REPOSITORY = "xycvip/AppDownload"
+DISTRIBUTION_DIRECTORY = "hongguoTV"
 OUTPUTS = "outputs"
 os.makedirs(OUTPUTS, exist_ok=True)
 apk_path = os.path.join(OUTPUTS, APK_NAME)
@@ -78,7 +84,7 @@ manifest = {
     "versionName": VERSION_NAME,
     "minSdk": 26,
     "tag": TAG,
-    "apk": {"name": APK_NAME, "size": size, "sha256": sha256},
+    "apk": {"name": DISTRIBUTION_APK_NAME, "size": size, "sha256": sha256},
     "notes": notes,
 }
 json_path = os.path.join(OUTPUTS, "update.json")
@@ -99,3 +105,63 @@ subprocess.run([
 for asset in [apk_path, json_path, sha_path]:
     subprocess.run(["gh", "release", "upload", TAG, asset, "--clobber"], check=True)
 print(f"Published {TAG}: {APK_NAME} ({size} bytes, sha256={sha256[:16]}...)")
+
+# Publish the same verified APK and manifest to the central download repository.
+# The APK is replaced first; latest.json is updated last so clients never see new
+# metadata pointing at an APK that has not finished uploading.
+token = os.environ.get("APPDOWNLOAD_TOKEN", "").strip()
+if not token:
+    raise SystemExit("缺少 APPDOWNLOAD_TOKEN：请在 hongguoTV 仓库 Actions Secrets 中配置。")
+
+def github_contents_request(path, method="GET", payload=None):
+    url = f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/contents/{path}"
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(url, data=data, method=method, headers={
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "HongguoTV-AppDownload-Publisher",
+        **({"Content-Type": "application/json"} if data is not None else {}),
+    })
+    try:
+        with urllib.request.urlopen(request, timeout=180) as response:
+            body = response.read()
+            return json.loads(body.decode("utf-8")) if body else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(f"AppDownload 上传失败（HTTP {exc.code}）：{detail}") from exc
+
+def upload_file(path, local_path, message):
+    # Contents API requires the current blob SHA when replacing an existing file.
+    try:
+        current = github_contents_request(path)
+        current_sha = current.get("sha")
+    except urllib.error.HTTPError:
+        current_sha = None
+    with open(local_path, "rb") as source:
+        encoded = base64.b64encode(source.read()).decode("ascii")
+    payload = {"message": message, "content": encoded, "branch": "main"}
+    if current_sha:
+        payload["sha"] = current_sha
+    result = github_contents_request(path, "PUT", payload)
+    print(f"Uploaded {path}: {result.get('commit', {}).get('sha', 'committed')}")
+
+def upload_text(path, content, message):
+    try:
+        current = github_contents_request(path)
+        current_sha = current.get("sha")
+    except urllib.error.HTTPError:
+        current_sha = None
+    payload = {"message": message, "content": base64.b64encode(content.encode("utf-8")).decode("ascii"), "branch": "main"}
+    if current_sha:
+        payload["sha"] = current_sha
+    result = github_contents_request(path, "PUT", payload)
+    print(f"Uploaded {path}: {result.get('commit', {}).get('sha', 'committed')}")
+
+upload_file(f"{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME}", apk_path,
+            f"发布红果TV {VERSION_NAME} APK")
+with open(json_path, "r", encoding="utf-8") as manifest_file:
+    manifest_text = manifest_file.read() + "\\n"
+upload_text(f"{DISTRIBUTION_DIRECTORY}/latest.json", manifest_text,
+            f"更新红果TV {VERSION_NAME} 版本信息")
+print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}")
