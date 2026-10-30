@@ -672,8 +672,9 @@ class AccountController(private val activity: Activity, private val play: (Cloud
                 val density = activity.resources.displayMetrics.density
                 fun dp(value: Int) = (value * density).toInt()
                 val metrics = activity.resources.displayMetrics
-                val maxQrWidth = (metrics.widthPixels - dp(88)).coerceAtLeast(dp(96))
-                val maxQrHeight = (metrics.heightPixels - dp(230)).coerceAtLeast(dp(96))
+                // 预留标题、说明、按钮和卡片边距；短屏手机优先缩小二维码，避免弹窗超出屏幕。
+                val maxQrWidth = (metrics.widthPixels - dp(88)).coerceAtLeast(dp(56))
+                val maxQrHeight = (metrics.heightPixels - dp(172)).coerceAtLeast(dp(56))
                 val size = minOf(dp(300), maxQrWidth, maxQrHeight)
                 val image =
                     android.widget.ImageView(activity).apply {

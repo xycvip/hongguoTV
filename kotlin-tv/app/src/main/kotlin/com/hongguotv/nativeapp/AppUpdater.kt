@@ -91,7 +91,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         // TLS socket close may send close_notify; it must not run on Android's main thread.
         Thread({ repository.close() }, "hongguotv-update-cleanup").start()
     }
-    private fun updateStatus(text: String) { status = text; statusView?.text = text }
+    private fun updateStatus(text: String) {
+        status = text
+        statusView?.apply { this.text = text; visibility = View.VISIBLE }
+    }
     private fun renderActions() {
         actionButton?.apply {
             text = when { busy -> "处理中…"; ready -> "立即安装"; available != null -> "下载新版"; else -> "检查更新" }
@@ -115,6 +118,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             setTextColor(TvStyle.text)
             setTextIsSelectable(false)
             setLineSpacing(0f, 1.12f)
+            if (aboutMode && status == "当前版本 ${BuildConfig.VERSION_NAME}") visibility = View.GONE
         }
         // 更新说明可能包含较长的提交记录。单独放入有上限的滚动区域，
         // 不能让说明把“稍后/下载新版/立即安装”按钮挤到屏幕外。
@@ -126,6 +130,13 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             val statusContent = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 if (aboutMode) {
+                    addView(TextView(activity).apply {
+                        text = "当前版本  ${BuildConfig.VERSION_NAME}"
+                        textSize = 14f
+                        setTextColor(TvStyle.accent)
+                        setPadding(0, 0, 0, (10 * dp).toInt())
+                        setTextIsSelectable(false)
+                    }, LinearLayout.LayoutParams(-1, -2))
                     addView(TvDialog.body(
                         activity,
                         "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\n\n" +

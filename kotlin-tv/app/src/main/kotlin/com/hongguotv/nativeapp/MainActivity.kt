@@ -759,9 +759,9 @@ class MainActivity: Activity() {
                     tvTools.choose(
                         "选择恢复方式",
                         listOf(
-                            "恢复备份并重置播放偏好设置",
-                            "恢复备份并保留当前播放偏好设置",
-                            "恢复备份中的播放偏好设置"
+                            "恢复记录并重置播放偏好设置",
+                            "恢复记录并保留当前播放偏好设置",
+                            "恢复记录及备份中的播放偏好设置"
                         ),
                         anchor,
                         { choice ->
@@ -2381,7 +2381,7 @@ class MainActivity: Activity() {
     private fun showGenrePicker() {
         if (tab != 0) return
         val anchor = genreButton ?: return
-        var selectedType = library.contentType
+        var selectedType = ContentType.SHORT
         var requestId = 0
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -2425,7 +2425,7 @@ class MainActivity: Activity() {
                         loading.text = if (genres.isEmpty()) "暂无可选题材" else "选择${type.label}题材"
                         val labels = listOf("全部题材") + genres.map { it.name }
                         labels.forEachIndexed { index, name ->
-                            val chosen = if (type == library.contentType) (if (index == 0) genre == null else genre?.name == name) else index == 0
+                            val chosen = if (type == library.contentType && type == selectedType) (if (index == 0) genre == null else genre?.name == name) else index == 0
                             val item = button(name, chosen) {
                                 library.contentType = type
                                 genre = if (index == 0) null else genres[index - 1]
@@ -4405,8 +4405,12 @@ class MainActivity: Activity() {
                         runCatching {
                             alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
                         }.onFailure {
-                            // 精确闹钟受系统限制时，退回允许待机唤醒的闹钟，仍自动拉起应用。
-                            alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                            // 精确闹钟受系统限制时，先退回待机唤醒闹钟；若设备仍拒绝，再退回普通闹钟。
+                            runCatching {
+                                alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                            }.onFailure {
+                                alarm.set(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
+                            }
                         }
                     } else {
                         alarm.setExact(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
