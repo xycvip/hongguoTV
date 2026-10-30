@@ -4395,24 +4395,9 @@ class MainActivity: Activity() {
                     return@post
                 }
                 runCatching {
-                    val flags=android.app.PendingIntent.FLAG_UPDATE_CURRENT or
-                        if(Build.VERSION.SDK_INT>=23) android.app.PendingIntent.FLAG_IMMUTABLE else 0
-                    val pending=android.app.PendingIntent.getActivity(this,9917,
-                        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK),flags)
-                    val alarm=getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
-                    val triggerAt=android.os.SystemClock.elapsedRealtime()+2500L
-                    if(Build.VERSION.SDK_INT>=23) {
-                        runCatching {
-                            alarm.setExactAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
-                        }.onFailure {
-                            // 精确闹钟受系统限制时，退回允许待机唤醒的闹钟。
-                            alarm.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
-                        }
-                    } else {
-                        alarm.setExact(android.app.AlarmManager.ELAPSED_REALTIME_WAKEUP,triggerAt,pending)
-                    }
-                    // 等旧 Activity 完整销毁后再由系统拉起新进程，避免旧实例关闭共享资源时影响新实例。
-                    killOnDestroy=true
+                    // 清理已完成，直接清空旧任务栈并启动全新的首页，不再通过闹钟延迟重启。
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    startActivity(launch)
                     finishAffinity()
                 }.onFailure { error ->
                     resettingAllData=false
