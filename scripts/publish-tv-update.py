@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Publish signed APK, update manifest, and checksums as a GitHub release."""
-import hashlib, json, os, subprocess
+import hashlib
+import json
+import os
+import re
+import subprocess
 
 TAG = os.environ["UPDATE_TAG"]
 VERSION_NAME = os.environ["HONGGUOTV_VERSION_NAME"]
@@ -15,16 +19,60 @@ with open(apk_path, "rb") as apk_file:
     sha256 = hashlib.sha256(apk_file.read()).hexdigest()
 size = os.path.getsize(apk_path)
 
+
+def run_text(command):
+    """Run a command and return stripped stdout; return an empty string on failure."""
+    result = subprocess.run(
+        command, check=False, capture_output=True, text=True
+    )
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
 def changelog():
-    # One concise change per line; use real newlines in release notes and update manifest.
-    return "\n".join([
-        "- 登录入口仅保留二维码登录，移除手机号登录。",
-        "- 优化「红果账户」页面，集中展示历史、收藏和预约状态。",
-        "- 调整手机端二维码卡片尺寸与居中布局，减少页面裁切。",
-        "- 缩小系统时间字号并优化手机、电视端位置。",
-        "- 本地备份新增明文账户凭据恢复；云端观影资料不写入备份，恢复后可刷新同步。",
-        "- 保留原有本机收藏、观看记录、设置及备份合并逻辑。"
-    ])
+    """Build release notes from commits since the previous published release."""
+    current_commit = os.environ.get("GITHUB_SHA", "HEAD")
+
+    # The previous stable release is still present when this script runs.
+    # Its tag is removed only after the new release has been published.
+    previous_tag = run_text(
+        ["gh", "release", "view", "--json", "tagName", "--jq", ".tagName"]
+    )
+
+    if previous_tag:
+        subjects = run_text([
+            "git", "log", "--no-merges", "--reverse", "--format=%s",
+            f"{previous_tag}..{current_commit}",
+        ]).splitlines()
+    else:
+        subjects = run_text([
+            "git", "log", "-1", "--no-merges", "--format=%s", current_commit
+        ]).splitlines()
+
+    notes = []
+    seen = set()
+    for subject in subjects:
+        line = subject.strip()
+        if not line:
+            continue
+        # Remove workflow control markers and conventional commit prefixes.
+        line = re.sub(r"\\[(?:release|skip-tests)\\]", "", line, flags=re.I).strip()
+        line = re.sub(
+            r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\\([^)]*\\))?:\\s*",
+            "", line, flags=re.I
+        )
+        line = re.sub(r"\\s+", " ", line).strip(" -—:;")
+        if not line or line.lower() in seen:
+            continue
+        seen.add(line.lower())
+        # Keep each change on one concise line.
+        if len(line) > 90:
+            line = line[:87].rstrip() + "..."
+        notes.append(f"- {line}")
+
+    if not notes:
+        return "- 本次版本更新（具体变更见提交记录）。"
+    return "\\n".join(notes)
+
 
 notes = os.environ.get("RELEASE_NOTES", "").strip() or changelog()
 manifest = {
@@ -43,13 +91,13 @@ with open(json_path, "w", encoding="utf-8") as f:
 
 sha_path = os.path.join(OUTPUTS, "SHA256SUMS")
 with open(sha_path, "w", encoding="utf-8") as f:
-    f.write(f"{sha256}  {APK_NAME}\n")
+    f.write(f"{sha256}  {APK_NAME}\\n")
 
 subprocess.run([
     "gh", "release", "create", TAG,
     "--target", os.environ["GITHUB_SHA"],
     "--title", f"红果 TV {VERSION_NAME}",
-    "--notes", f"红果 TV {VERSION_NAME}\n\n{notes}",
+    "--notes", f"红果 TV {VERSION_NAME}\\n\\n{notes}",
     "--latest"
 ], check=True)
 for asset in [apk_path, json_path, sha_path]:
