@@ -623,9 +623,16 @@ class MainActivity: Activity() {
 
     /** 将备份保存到共享存储根目录/HongGuoTV，卸载应用后文件仍可保留。 */
     private fun restoreBackupAccount(data: BackupData, anchor: View?) {
-        val payload = data.accountState?.takeIf { it.isNotBlank() } ?: return
+        val payload = data.accountState?.takeIf { it.isNotBlank() }
+        if (payload == null) {
+            // 备份没有账户信息时，沿用当前登录账号，只把本机收藏补充到该账号。
+            cloudAccount.syncLocalFavorites(library.favorites())
+            return
+        }
+        // 先恢复备份所属账号，再同步收藏，避免误传到恢复前登录的旧账号。
         cloudAccount.restoreJson(payload) { success, message ->
             if (isDestroyed) return@restoreJson
+            if (success) cloudAccount.syncLocalFavorites(library.favorites())
             tvTools.info(if (success) "账户已恢复" else "账户恢复提示", message, anchor)
         }
     }
@@ -782,7 +789,6 @@ class MainActivity: Activity() {
                                     }
                                     tabState.clear(); tabFocus.clear(); catalogFocus = ""; page = 1
                                     showCatalog()
-                                    cloudAccount.syncLocalFavorites(library.favorites())
                                     favoriteMonitor.check()
                                     Toast.makeText(this, "备份记录已恢复", Toast.LENGTH_LONG).show()
                                     restoreBackupAccount(data, anchor)
@@ -1988,7 +1994,6 @@ class MainActivity: Activity() {
                     }
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                     showCatalog()
-                    cloudAccount.syncLocalFavorites(library.favorites())
                     favoriteMonitor.check()
                     Toast.makeText(this,"备份记录已恢复",Toast.LENGTH_LONG).show()
                     restoreBackupAccount(data, backup)
