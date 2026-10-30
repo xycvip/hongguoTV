@@ -3444,8 +3444,8 @@ class MainActivity: Activity() {
                 setPadding(dp(2), dp(2), dp(2), dp(8))
             }
             val line = row().apply { gravity = Gravity.TOP }
-            val cardWidth = ((resources.displayMetrics.widthPixels * .9f - dp(70)) / 6)
-                .coerceAtLeast(dp(100))
+            val cardWidth = ((resources.displayMetrics.widthPixels * .9f - dp(70)) / 6f)
+                .coerceAtLeast(dp(100).toFloat()).toInt()
             val posterHeight = ((cardWidth - dp(8)) / TvStyle.POSTER_ASPECT).toInt()
             entries.forEachIndexed { index, entry ->
                 val (series, subtitle, click) = entry
