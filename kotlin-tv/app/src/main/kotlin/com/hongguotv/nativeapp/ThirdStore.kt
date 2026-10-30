@@ -41,6 +41,12 @@ data class ThirdSkipMark(val intro: Int, val outro: Int)
 class ThirdStore(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** Reset local playback preferences/cache without touching source lists, history or favorites. */
+    fun resetPlaybackSettings() {
+        prefs.edit().remove(KEY_SPEED).remove(KEY_RESIZE).remove(KEY_SKIP)
+            .remove(KEY_SEARCH_ALL).remove(KEY_PROBES).apply()
+    }
+
     /** 首次启动为空源：不预置任何片源，由用户自行添加或导入；此后完全以用户列表为准。 */
     fun ensureSources(): List<ThirdSource> {
         val initialized = prefs.getBoolean(KEY_INITIALIZED, false)
