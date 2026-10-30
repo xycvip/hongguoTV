@@ -3387,7 +3387,7 @@ class MainActivity: Activity() {
             override fun openReplies(comment: OfficialComment)=loadOfficialCommentReplies(comment)
             override fun send(text: String)=sendOfficialComment(text)
             override fun login()=requireOfficialCommentLogin()
-        })
+        }, avatarLoader={ image, url -> artwork.load(image,url,ArtworkLoader.PRIORITY_VISIBLE,dp(34),dp(34)) })
         commentPanel=view
         val width=(resources.displayMetrics.widthPixels*.42f).toInt().coerceAtLeast(dp(360))
         root.addView(view,FrameLayout.LayoutParams(width,-1,Gravity.END))
