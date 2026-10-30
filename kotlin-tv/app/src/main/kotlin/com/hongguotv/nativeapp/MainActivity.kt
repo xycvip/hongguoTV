@@ -4390,14 +4390,14 @@ class MainActivity: Activity() {
         cancelWork(); cancelPrefetch()
         player?.pause(); releasePlayer()
         Toast.makeText(this,"正在清除本机数据…",Toast.LENGTH_SHORT).show()
-        Thread({
+        Thread(clearTask@{
             val drained=runCatching { library.closeAndAwait(20) }.getOrDefault(false)
             if(!drained) {
                 main.post {
                     resettingAllData=false
                     Toast.makeText(this,"本机记录仍在保存，暂未清除。请稍后再试。",Toast.LENGTH_LONG).show()
                 }
-                return@Thread
+                return@clearTask
             }
             runCatching {
                 // 先停止所有后台请求和任务，避免它们在清理完成后又把缓存写回来。
@@ -4422,7 +4422,7 @@ class MainActivity: Activity() {
                     resettingAllData=false
                     Toast.makeText(this,"清理未完成：${error.message ?: "存储访问失败"}",Toast.LENGTH_LONG).show()
                 }
-                return@Thread
+                return@clearTask
             }
             main.post {
                 val launch=packageManager.getLaunchIntentForPackage(packageName)
