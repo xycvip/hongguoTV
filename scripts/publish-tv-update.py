@@ -303,3 +303,87 @@ else:
 upload_text(homepage_path, homepage_text,
             f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
 print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，中文更新说明与红果TV首页区域均已更新")
+
+# Also publish the exact same verified build to the source repository Releases.
+# Keep the historical source-release tag namespace (kotlin-vX.Y.Z); AppDownload
+# continues using hongguotv-vX.Y.Z and remains the in-app updater's source of truth.
+SOURCE_REPOSITORY = "xycvip/hongguoTV"
+SOURCE_RELEASE_TAG = f"kotlin-v{VERSION_NAME}"
+source_token = os.environ.get("GH_TOKEN", "").strip()
+if not source_token:
+    raise SystemExit("缺少 GH_TOKEN：无法在源码仓库创建 Release。")
+
+source_headers = {
+    "Authorization": f"Bearer {source_token}",
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "HongguoTV-Source-Release-Publisher",
+}
+
+def source_api(method, url, payload=None):
+    data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = dict(source_headers)
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            raw = response.read()
+            return json.loads(raw.decode("utf-8")) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        if method == "GET" and exc.code == 404:
+            return None
+        raise RuntimeError(f"源码仓库 Release 操作失败（HTTP {exc.code}）：{detail}") from exc
+
+source_release = source_api(
+    "GET",
+    f"https://api.github.com/repos/{SOURCE_REPOSITORY}/releases/tags/{SOURCE_RELEASE_TAG}",
+)
+if source_release is None:
+    source_release = source_api(
+        "POST",
+        f"https://api.github.com/repos/{SOURCE_REPOSITORY}/releases",
+        {
+            "tag_name": SOURCE_RELEASE_TAG,
+            "target_commitish": os.environ.get("GITHUB_SHA", "custom"),
+            "name": f"红果 TV {VERSION_NAME}",
+            "body": f"红果 TV {VERSION_NAME}\\n\\n{notes}",
+            "draft": False,
+            "prerelease": False,
+            "make_latest": "true",
+        },
+    )
+
+# A retry replaces only this release's three assets; it never touches other releases.
+for asset in source_release.get("assets", []):
+    if asset.get("name") in (APK_NAME, "SHA256SUMS", "update.json"):
+        source_api("DELETE", asset["url"])
+
+source_upload_url = source_release["upload_url"].split("{", 1)[0]
+
+def upload_source_asset(local_path, asset_name, content_type):
+    with open(local_path, "rb") as source:
+        data = source.read()
+    request = urllib.request.Request(
+        f"{source_upload_url}?name={urllib.parse.quote(asset_name)}",
+        data=data,
+        method="POST",
+        headers={**source_headers, "Content-Type": content_type},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=300) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:1000]
+        raise RuntimeError(f"源码仓库 Release 附件上传失败（HTTP {exc.code}）：{detail}") from exc
+    print(f"Uploaded source Release asset: {result.get('name')}")
+
+upload_source_asset(apk_path, APK_NAME, "application/vnd.android.package-archive")
+upload_source_asset(sha_path, "SHA256SUMS", "text/plain")
+upload_source_asset(json_path, "update.json", "application/json")
+print(
+    f"源码仓库 Release 已同步发布："
+    f"https://github.com/{SOURCE_REPOSITORY}/releases/tag/{SOURCE_RELEASE_TAG}"
+)
+
