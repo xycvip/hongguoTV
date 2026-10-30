@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish signed APK to GitHub Release and the central AppDownload repository."""
+"""Publish signed APK to the central AppDownload repository only."""
 import hashlib
 import json
 import os
@@ -106,7 +106,7 @@ manifest = {
     "versionCode": VERSION_CODE,
     "versionName": VERSION_NAME,
     "minSdk": 26,
-    "tag": TAG,
+    "tag": f"hongguotv-v{VERSION_NAME}",
     "apk": {"name": DISTRIBUTION_APK_NAME, "size": size, "sha256": sha256},
     "notes": notes,
 }
@@ -117,17 +117,6 @@ with open(json_path, "w", encoding="utf-8") as f:
 sha_path = os.path.join(OUTPUTS, "SHA256SUMS")
 with open(sha_path, "w", encoding="utf-8") as f:
     f.write(f"{sha256}  {APK_NAME}\n")
-
-subprocess.run([
-    "gh", "release", "create", TAG,
-    "--target", os.environ["GITHUB_SHA"],
-    "--title", f"红果 TV {VERSION_NAME}",
-    "--notes", f"红果 TV {VERSION_NAME}\n\n{notes}",
-    "--latest"
-], check=True)
-for asset in [apk_path, json_path, sha_path]:
-    subprocess.run(["gh", "release", "upload", TAG, asset, "--clobber"], check=True)
-print(f"Published {TAG}: {APK_NAME} ({size} bytes, sha256={sha256[:16]}...)")
 
 # Publish the same verified APK and manifest to the central download repository.
 # The APK is replaced first; latest.json is updated last so clients never see new
@@ -283,7 +272,7 @@ section = f"""<!-- BEGIN APP: hongguoTV -->
 
 当前版本：**{VERSION_NAME}**
 
-- [下载最新版 {DISTRIBUTION_APK_NAME}](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/{DISTRIBUTION_APK_NAME})
+- [下载最新版 {DISTRIBUTION_APK_NAME}](https://github.com/{DISTRIBUTION_REPOSITORY}/releases/download/hongguotv-v{VERSION_NAME}/{DISTRIBUTION_APK_NAME})
 - [应用内更新清单 latest.json](https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/{DISTRIBUTION_DIRECTORY}/latest.json)
 - [红果 TV 全部下载文件与说明](https://github.com/{DISTRIBUTION_REPOSITORY}/tree/main/{DISTRIBUTION_DIRECTORY})
 
