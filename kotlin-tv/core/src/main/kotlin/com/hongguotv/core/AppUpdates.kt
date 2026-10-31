@@ -19,6 +19,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
         const val REPOSITORY = "xycvip/hongguoTV"
         const val RELEASES = "https://github.com/$REPOSITORY/releases"
         const val DOWNLOAD_REPOSITORY = "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV"
+        const val API_RELEASES = "https://api.github.com/repos/xycvip/AppDownload/releases?per_page=100"
         const val LATEST_MANIFEST = "$DOWNLOAD_REPOSITORY/latest.json"
         const val MAX_APK_BYTES = 80L * 1024 * 1024
         /**
@@ -37,6 +38,7 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
         /** All hosts we ever send HTTPS traffic to — the interceptor whitelist. */
         val ALLOWED_HOSTS = setOf(
             "github.com",
+            "api.github.com",
             "raw.githubusercontent.com",
             "release-assets.githubusercontent.com",
             "objects.githubusercontent.com",
@@ -139,15 +141,79 @@ class AppUpdateRepository : java.io.Closeable {
 
     private fun hostOf(url: String) = url.removePrefix("https://").substringBefore("/")
 
-    fun latest(): AppUpdate {
-        val base = "${AppUpdate.LATEST_MANIFEST}?cachebust=${System.currentTimeMillis()}"
-        return tryMirrors(base, 12) { response, _ ->
+    /**
+     * Prefer the AppDownload Releases API so each app can identify its own release
+     * by tag prefix. If the API or its update.json asset is unavailable, fall back
+     * to the stable Raw manifest URL and then its configured proxy mirrors.
+     */
+    private fun latestFromApi(): AppUpdate {
+        val apiUrl = "${AppUpdate.API_RELEASES}&cachebust=${System.currentTimeMillis()}"
+        val releasesJson = http.newCall(request(apiUrl).newBuilder()
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .build()).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("GitHub API HTTP${response.code}")
+            val body = response.body ?: throw IOException("GitHub API 响应为空")
+            if (body.contentLength() > 2L * 1024 * 1024) throw IOException("GitHub API 响应过大")
+            body.string().also { if (it.length > 2 * 1024 * 1024) throw IOException("GitHub API 响应过大") }
+        }
+
+        val releases = org.json.JSONArray(releasesJson)
+        var updateJsonUrl: String? = null
+        for (i in 0 until releases.length()) {
+            val release = releases.optJSONObject(i) ?: continue
+            if (release.optBoolean("draft", false)) continue
+            if (!release.optString("tag_name").startsWith("hongguotv-v")) continue
+            val assets = release.optJSONArray("assets") ?: continue
+            for (j in 0 until assets.length()) {
+                val asset = assets.optJSONObject(j) ?: continue
+                if (asset.optString("name") == "update.json") {
+                    updateJsonUrl = asset.optString("browser_download_url").takeIf { it.isNotBlank() }
+                    break
+                }
+            }
+            if (updateJsonUrl != null) break
+        }
+        val assetUrl = updateJsonUrl ?: throw IOException("未找到红果TV更新清单")
+        val manifestUrl = "${assetUrl}?cachebust=${System.currentTimeMillis()}"
+        return tryMirrors(manifestUrl, 12) { response, _ ->
             val bytes = response.body?.byteStream()?.use { input ->
                 val out = ByteArrayOutputStream(); val buffer = ByteArray(4096)
-                while (true) { val n = input.read(buffer); if (n < 0) break; if (out.size() + n > 65536) throw IOException("更新信息过大"); out.write(buffer, 0, n) }
+                while (true) {
+                    val n = input.read(buffer); if (n < 0) break
+                    if (out.size() + n > 65536) throw IOException("更新信息过大")
+                    out.write(buffer, 0, n)
+                }
                 out.toByteArray()
             } ?: throw IOException("更新信息为空")
-            try { AppUpdate.parse(bytes.toString(Charsets.UTF_8)) } catch (_: Exception) { throw IOException("更新信息格式不正确") }
+            try { AppUpdate.parse(bytes.toString(Charsets.UTF_8)) }
+            catch (_: Exception) { throw IOException("Release 更新信息格式不正确") }
+        }
+    }
+
+    /** Read the Release API first; preserve the existing Raw URL as a full fallback. */
+    fun latest(): AppUpdate {
+        try {
+            return latestFromApi()
+        } catch (apiError: Exception) {
+            val base = "${AppUpdate.LATEST_MANIFEST}?cachebust=${System.currentTimeMillis()}"
+            try {
+                return tryMirrors(base, 12) { response, _ ->
+                    val bytes = response.body?.byteStream()?.use { input ->
+                        val out = ByteArrayOutputStream(); val buffer = ByteArray(4096)
+                        while (true) {
+                            val n = input.read(buffer); if (n < 0) break
+                            if (out.size() + n > 65536) throw IOException("更新信息过大")
+                            out.write(buffer, 0, n)
+                        }
+                        out.toByteArray()
+                    } ?: throw IOException("更新信息为空")
+                    try { AppUpdate.parse(bytes.toString(Charsets.UTF_8)) }
+                    catch (_: Exception) { throw IOException("Raw 更新信息格式不正确") }
+                }
+            } catch (rawError: Exception) {
+                throw IOException("更新检查失败（API 与 Raw/代理均不可用）：${apiError.message ?: "API异常"}；${rawError.message ?: "Raw异常"}", rawError)
+            }
         }
     }
 
