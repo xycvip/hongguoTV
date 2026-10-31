@@ -21,7 +21,7 @@ class RemoteVideo(
     @Volatile private var closed=false
     private val calls=mutableSetOf<Call>()
     data class Range(val bytes: ByteArray,val total: Long)
-    var total: Long=0; private set
+    @Volatile var total: Long=0; private set
     private lateinit var prepared: MediaCrypto.Prepared
     private val lock=Object()
     private val cache=HashMap<Long,ByteArray>()
@@ -63,11 +63,17 @@ class RemoteVideo(
                 val match=Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(response.header("Content-Range").orEmpty()) ?: throw IOException("视频分段响应异常")
                 val (begin,finish,size)=match.destructured
                 val full=size.toLong(); val last=minOf(end,full-1)
-                if(begin.toLong()!=start || finish.toLong()!=last || full<=0) throw IOException("视频分段范围不匹配")
-                if(total!=0L && full!=total) throw IOException("视频资源已变化，请重试")
-                val n=(last-start+1).toInt(); val body=response.body ?: throw IOException("视频分段为空")
+                if(begin.toLong()!=start || finish.toLong()!=last || full<=start || full<=0) throw IOException("视频分段范围不匹配")
+                val n=(last-start+1).toInt()
+                if(n<=0) throw IOException("视频分段长度无效")
+                val body=response.body ?: throw IOException("视频分段为空")
+                if(body.contentLength()>=0 && body.contentLength()!=n.toLong()) throw IOException("视频分段长度与响应头不一致")
                 val bytes=body.source().readByteArray(n.toLong())
                 if(bytes.size!=n) throw IOException("视频分段长度不完整：期望 ${n} 字节，实际 ${bytes.size} 字节")
+                synchronized(lock) {
+                    if(total==0L) total=full
+                    else if(full!=total) throw IOException("视频资源已变化，请重试")
+                }
                 Range(bytes,full)
             }
         } catch(error: Exception) {
