@@ -42,6 +42,7 @@ data class StreamInfo(val url: String, val key: ByteArray?, val quality: String,
 class SearchSessionExpiredException: IOException("搜索结果已过期，请从第 1 页重新搜索")
 /** 平台对该集只产出了 ByteVC2 等电视无法解码的编码，重试与换清晰度都不会成功。 */
 class UnplayableVideoException(message: String): IOException(message)
+class UnsupportedVideoFormatException(message: String): IOException(message)
 /** 播放信息接口返回了 HTTP 200 空体；已按有界退避重读仍未成功。 */
 class EmptyPlaybackResponseException: IOException("播放接口暂时返回空响应，请稍后重试")
 
@@ -533,10 +534,10 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         // Do not mislabel an HLS playlist or another container as MP4: that path needs a different
         // data source and media-source pipeline, so fail clearly until that pipeline is implemented.
         if(declaredMime.contains("mpegurl") || declaredMime.contains("m3u8") || urlPath.endsWith(".m3u8")) {
-            throw IOException("当前片源为 HLS 格式，现有加密分段播放链路暂不支持")
+            throw UnsupportedVideoFormatException("当前片源为 HLS 格式，现有加密分段播放链路暂不支持")
         }
         if(declaredMime.isNotBlank() && !declaredMime.contains("mp4") && !declaredMime.contains("octet-stream")) {
-            throw IOException("当前片源格式暂不支持：$declaredMime")
+            throw UnsupportedVideoFormatException("当前片源格式暂不支持：$declaredMime")
         }
         val mimeType="video/mp4"
         val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
