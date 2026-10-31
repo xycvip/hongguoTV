@@ -6,7 +6,8 @@ import java.math.BigInteger
 
 object MediaCrypto {
     data class Sample(val start: Long, val end: Long, val iv: ByteArray, val encryptedOffset: Long = 0)
-    data class Prepared(val header: ByteArray, val samples: List<Sample>)
+    data class Prepared(val header: ByteArray, val samples: List<Sample>, val headerOffset: Long = 0)
+    data class TopLevelBox(val offset: Long, val size: Long, val headerSize: Int, val type: String) { val end: Long get() = offset + size }
     fun deriveKey(value: String): ByteArray {
         val raw=decode64(value); require(raw.size>=3) { "内容密钥格式异常" }
         val length=minOf(raw.size-(raw[0].u() xor raw[1].u() xor raw[2].u())+47,raw.size-1)
@@ -36,6 +37,21 @@ object MediaCrypto {
     private fun find(data: ByteArray,type: String,start: Int,limit: Int): Box? {
         for(at in start..limit-8) if(data[at+4].toInt()==type[0].code) { val b=box(data,at,limit); if(b?.type==type) return b }
         return null
+    }
+    /** Parse a top-level ISO BMFF box header from a range whose first byte is [offset]. */
+    fun topLevelBoxHeader(bytes: ByteArray, offset: Long, total: Long): TopLevelBox {
+        if (offset < 0 || total <= offset || bytes.size < 8) throw IOException("视频区块头不完整")
+        val size32 = bytes.u32(0)
+        val type = String(bytes, 4, 4, Charsets.US_ASCII)
+        val header = if (size32 == 1L) 16 else 8
+        if (bytes.size < header) throw IOException("视频区块扩展头不完整")
+        val size = when (size32) {
+            0L -> total - offset
+            1L -> bytes.i64(8).also { if (it < 0) throw IOException("视频区块大小异常") }
+            else -> size32
+        }
+        if (size < header || size > total - offset) throw IOException("视频区块范围异常")
+        return TopLevelBox(offset, size, header, type)
     }
     /** Locate a front-loaded moov box while safely skipping ordinary top-level boxes.
      *  A moov after mdat is deliberately rejected: loading it requires a separate range
@@ -74,7 +90,7 @@ object MediaCrypto {
         val (_, end) = locateMoov(first,total,false)
         return end.toInt()
     }
-    fun prepare(data: ByteArray,key: ByteArray?): Prepared {
+    fun prepare(data: ByteArray,key: ByteArray?, auxiliaryReader: ((Long, Int) -> ByteArray)? = null): Prepared {
         if(key==null) return Prepared(data.copyOf(),emptyList())
         val (moovOffset, _) = locateMoov(data,data.size.toLong(),true)
         val moov=box(data,moovOffset) ?: throw IOException("视频索引不完整")
@@ -110,8 +126,13 @@ object MediaCrypto {
             val offsetWidth=if(data[saio.body].u()==1) 8 else 4
             if(count(offsetBase,saio.end)!=1 || offsetBase+4+offsetWidth>saio.end) throw IOException("不支持的辅助索引布局")
             var aux=if(offsetWidth==8) data.i64(offsetBase+4) else data.u32(offsetBase+4)
-            val auxEnd=aux+auxSizes.sumOf { it.toLong() }
-            if(aux<0 || auxEnd>data.size) throw IOException("辅助数据超出索引范围")
+            val auxLengthLong=auxSizes.sumOf { it.toLong() }
+            if(aux<0 || auxLengthLong>8L*1024L*1024L || aux>Long.MAX_VALUE-auxLengthLong) throw IOException("辅助数据范围异常")
+            val auxEnd=aux+auxLengthLong
+            val auxBytes=if(auxEnd<=data.size) data.copyOfRange(aux.toInt(),auxEnd.toInt()) else
+                auxiliaryReader?.invoke(aux,auxLengthLong.toInt()) ?: throw IOException("辅助数据超出索引范围")
+            if(auxBytes.size!=auxLengthLong.toInt()) throw IOException("辅助数据读取不完整")
+            var auxCursor=0
             var sampleIndex=0; var entry=0
             for(chunk in offsets.indices) {
                 while(entry+1<entries.size && entries[entry+1].first<=chunk+1) entry++
@@ -121,15 +142,15 @@ object MediaCrypto {
                 repeat(count.toInt()) {
                     val length=sizes[sampleIndex]; val auxSize=auxSizes[sampleIndex]
                     if(position<0 || length<=0 || position>Long.MAX_VALUE-length || auxSize<8) throw IOException("样本索引异常")
-                    val iv=data.copyOfRange(aux.toInt(),aux.toInt()+8)+ByteArray(8)
+                    val iv=auxBytes.copyOfRange(auxCursor,auxCursor+8)+ByteArray(8)
                     if(auxSize==8) samples+=Sample(position,position+length,iv)
                     else {
                         if(auxSize<10) throw IOException("不支持的加密样本格式")
-                        val subs=(data[aux.toInt()+8].u() shl 8) or data[aux.toInt()+9].u()
+                        val subs=(auxBytes[auxCursor+8].u() shl 8) or auxBytes[auxCursor+9].u()
                         if(auxSize!=10+subs*6) throw IOException("加密子样本索引异常")
                         var offset=position; var encrypted=0L
                         for(sub in 0 until subs) {
-                            val at=aux.toInt()+10+sub*6; val clear=(data[at].u() shl 8) or data[at+1].u(); val size=data.u32(at+2)
+                            val at=auxCursor+10+sub*6; val clear=(auxBytes[at].u() shl 8) or auxBytes[at+1].u(); val size=data.u32(at+2)
                             offset+=clear
                             if(offset+size>position+length) throw IOException("加密子样本越界")
                             if(size>0) samples+=Sample(offset,offset+size,iv,encrypted)
@@ -137,7 +158,7 @@ object MediaCrypto {
                         }
                         if(offset!=position+length) throw IOException("加密子样本长度异常")
                     }
-                    position+=length; aux+=auxSize; sampleIndex++
+                    position+=length; auxCursor+=auxSize; sampleIndex++
                 }
             }
             if(sampleIndex!=n) throw IOException("视频样本不完整")
@@ -161,10 +182,24 @@ object MediaCrypto {
         if(sorted.zipWithNext().any { (a,b) -> a.end>b.start }) throw IOException("视频样本重叠")
         return Prepared(header,sorted)
     }
+    /** Prepare a moov box fetched independently from its original file position. */
+    fun prepareMoov(ftyp: ByteArray, moov: ByteArray, moovFileOffset: Long, key: ByteArray,
+                    auxiliaryReader: (Long, Int) -> ByteArray): Prepared {
+        if (ftyp.isEmpty() || moov.isEmpty() || moovFileOffset < ftyp.size) throw IOException("视频索引位置异常")
+        val parsed=prepare(ftyp+moov,key,auxiliaryReader)
+        val patchedMoov=parsed.header.copyOfRange(ftyp.size,ftyp.size+moov.size)
+        return Prepared(patchedMoov,parsed.samples,moovFileOffset)
+    }
     fun decrypt(data: ByteArray,start: Long,key: ByteArray?,prepared: Prepared): ByteArray {
         require(start>=0)
         val result=data.copyOf(); val end=start+data.size
-        if(start<prepared.header.size) prepared.header.copyInto(result,0,start.toInt(),minOf(end,prepared.header.size.toLong()).toInt())
+        val patchStart=prepared.headerOffset
+        val patchEnd=patchStart+prepared.header.size
+        val overlapStart=maxOf(start,patchStart)
+        val overlapEnd=minOf(end,patchEnd)
+        if(overlapStart<overlapEnd) prepared.header.copyInto(
+            result,(overlapStart-start).toInt(),(overlapStart-patchStart).toInt(),(overlapEnd-patchStart).toInt()
+        )
         if(key==null) return result
         val samples=prepared.samples
         var low=0; var high=samples.size
