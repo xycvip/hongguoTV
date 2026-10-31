@@ -1047,10 +1047,8 @@ class MainActivity: Activity() {
         aiCatalog=false; aiGenre=null
         showCatalog(load=(next==7 || (next<=2 && catalog.isEmpty() && (next!=1 || query.isNotBlank()))))
         if(next==0) {
-            // 首页先显示本地缓存，再静默更新主内容及其他剧集类型，不阻塞页面操作。
-            refreshHomeDataInBackground(force=true)
-            loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true)
-            loadHomeShelf(ContentType.AI,true)
+            // 每次点击首页都执行原“刷新”按钮的完整刷新流程；先显示缓存，不阻塞页面。
+            refreshAllHome()
         }
         // 切回搜索页时焦点落输入框，避免页面重建后焦点丢失
         if(next==1) searchInput?.requestFocus()
@@ -1226,18 +1224,12 @@ class MainActivity: Activity() {
         }
         if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
-            homeRefreshControl=addButton(types,"刷新") {
-                pendingRefreshFocus="home"
-                refreshAllHome()
-            }.apply {
-                tag="home:refresh"
-                nextFocusUpId=navForTab().id
-            }
+            homeRefreshControl=null
             genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=navForTab().id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=navForTab().id }
-            // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
+            // 首页不再显示独立刷新按钮；点击首页导航即执行完整刷新。
             container.addView(types)
-            nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: navForTab().id }
+            nav.forEach { it.nextFocusDownId=genreButton?.id ?: navForTab().id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -1886,8 +1878,8 @@ class MainActivity: Activity() {
         homeRefreshControl?.text="刷新"
         homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
         homeRefreshControl?.nextFocusDownId=home.firstId()
-        if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: home.firstId() }
-        if(focusNav) nav[0].requestFocus() else if(focusType) homeRefreshControl?.requestFocus()
+        if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=genreButton?.id ?: home.firstId() }
+        if(focusNav) nav[0].requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
         loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,false)
         loadHomeShelf(ContentType.AI,false)
         if(hot.isNotEmpty() && !homeContentLogged) {
