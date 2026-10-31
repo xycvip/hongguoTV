@@ -4024,7 +4024,6 @@ class MainActivity: Activity() {
             refreshDanmakuLabel()
         }
         val mark=library.skipMark(seriesId)
-        fun skipButtonLabel(intro: Boolean,seconds: Int)=if(seconds>0) "跳过${if(intro) "片头" else "片尾"} ${seconds}秒" else if(intro) "片头" else "片尾"
         lateinit var introButton: TextView
         introButton=addButton(transport,skipButtonLabel(true,mark?.introSeconds ?: 0)) { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
         lateinit var outroButton: TextView
@@ -4077,6 +4076,7 @@ class MainActivity: Activity() {
         line.getChildAt(0)?.requestFocus()
         showHud()
     }
+    private fun skipButtonLabel(intro: Boolean,seconds: Int)=if(seconds>0) "跳过${if(intro) "片头" else "片尾"} ${seconds}秒" else if(intro) "片头" else "片尾"
     private fun showSkipPicker(anchor: TextView,intro: Boolean) {
         val data=detail ?: return
         val options=listOf(0,15,30,45,60,90,120)
