@@ -56,7 +56,8 @@ class RemoteVideoRangeTest {
         try {
             video.prepare()
             assertEquals(bytes.size.toLong(), video.total)
-            assertArrayEquals(bytes.copyOfRange(21, 58), video.read(21, 37))
+            assertArrayEquals(bytes.copyOfRange(21, 53), video.read(21, 32))
+            assertArrayEquals(bytes.copyOfRange(53, 58), video.read(53, 5))
             assertArrayEquals(bytes.copyOfRange(88, bytes.size), video.read(88, 20))
             assertTrue(video.read(bytes.size.toLong(), 10).isEmpty())
             assertTrue(video.stats().fetchedBytes > 0)
