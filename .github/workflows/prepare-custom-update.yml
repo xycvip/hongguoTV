@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   review:
+    name: 分析上游更新并生成报告
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -87,7 +88,7 @@ jobs:
       - name: 上传上游更新报告和补丁文件
         uses: actions/upload-artifact@v4
         with:
-          name: upstream-review-${{ github.run_number }}
+          name: 上游更新检查报告-${{ github.run_number }}
           if-no-files-found: error
           path: |
             upstream-review-report.md
