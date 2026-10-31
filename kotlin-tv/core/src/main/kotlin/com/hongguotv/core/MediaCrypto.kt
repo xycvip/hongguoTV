@@ -38,6 +38,28 @@ object MediaCrypto {
         for(at in start..limit-8) if(data[at+4].toInt()==type[0].code) { val b=box(data,at,limit); if(b?.type==type) return b }
         return null
     }
+    data class EncryptionConfig(val ivSize: Int, val constantIv: ByteArray? = null)
+    private fun encryptionConfig(data: ByteArray, stbl: Box): EncryptionConfig {
+        val sinf=find(data,"sinf",stbl.body,stbl.end) ?: return EncryptionConfig(8)
+        val schi=find(data,"schi",sinf.body,sinf.end) ?: return EncryptionConfig(8)
+        val tenc=find(data,"tenc",schi.body,schi.end) ?: return EncryptionConfig(8)
+        if(tenc.body+7>tenc.end) throw IOException("加密参数不完整")
+        val version=data[tenc.body].u()
+        if(version>1) throw IOException("不支持的加密参数版本")
+        val protectedAt=tenc.body+5
+        val ivSizeAt=tenc.body+6
+        val isProtected=data[protectedAt].u()
+        val ivSize=data[ivSizeAt].u()
+        if(isProtected!=1) throw IOException("轨道未启用样本加密")
+        if(ivSize==8 || ivSize==16) return EncryptionConfig(ivSize)
+        if(ivSize!=0) throw IOException("不支持的样本 IV 长度：$ivSize")
+        val kidEnd=tenc.body+23
+        if(kidEnd>=tenc.end) throw IOException("固定 IV 参数缺失")
+        val constantSize=data[kidEnd].u()
+        if(constantSize !in 8..16) throw IOException("固定 IV 长度无效")
+        if(kidEnd+1+constantSize>tenc.end) throw IOException("固定 IV 数据不完整")
+        return EncryptionConfig(0,data.copyOfRange(kidEnd+1,kidEnd+1+constantSize))
+    }
     /** Parse a top-level ISO BMFF box header from a range whose first byte is [offset]. */
     fun topLevelBoxHeader(bytes: ByteArray, offset: Long, total: Long): TopLevelBox {
         if (offset < 0 || total <= offset || bytes.size < 8) throw IOException("视频区块头不完整")
@@ -122,6 +144,7 @@ object MediaCrypto {
             val auxDefault=data[sizeBase].u(); val auxCount=count(sizeBase+1,saiz.end)
             if(auxCount!=n || (auxDefault==0 && sizeBase+5+n>saiz.end)) throw IOException("辅助索引数量不一致")
             val auxSizes=IntArray(n) { if(auxDefault>0) auxDefault else data[sizeBase+5+it].u() }
+            val encryption=encryptionConfig(data,stbl)
             val offsetBase=saio.body+4+(if(data.i32(saio.body) and 1 != 0) 8 else 0)
             val offsetWidth=if(data[saio.body].u()==1) 8 else 4
             if(count(offsetBase,saio.end)!=1 || offsetBase+4+offsetWidth>saio.end) throw IOException("不支持的辅助索引布局")
@@ -142,16 +165,21 @@ object MediaCrypto {
                 var position=offsets[chunk]
                 repeat(count.toInt()) {
                     val length=sizes[sampleIndex]; val auxSize=auxSizes[sampleIndex]
-                    if(position<0 || length<=0 || position>Long.MAX_VALUE-length || auxSize<8) throw IOException("样本索引异常")
-                    val iv=auxBytes.copyOfRange(auxCursor,auxCursor+8)+ByteArray(8)
-                    if(auxSize==8) samples+=Sample(position,position+length,iv)
+                    if(position<0 || length<=0 || position>Long.MAX_VALUE-length) throw IOException("样本索引异常")
+                    val ivLength=if(encryption.ivSize==0) 0 else encryption.ivSize
+                    if(auxSize<ivLength) throw IOException("样本 IV 数据不完整")
+                    val iv=if(ivLength>0) auxBytes.copyOfRange(auxCursor,auxCursor+ivLength)
+                        else encryption.constantIv ?: throw IOException("固定 IV 缺失")
+                    val subsampleAt=auxCursor+ivLength
+                    val remaining=auxSize-ivLength
+                    if(remaining==0) samples+=Sample(position,position+length,iv)
                     else {
-                        if(auxSize<10) throw IOException("不支持的加密样本格式")
-                        val subs=(auxBytes[auxCursor+8].u() shl 8) or auxBytes[auxCursor+9].u()
-                        if(auxSize!=10+subs*6) throw IOException("加密子样本索引异常")
+                        if(remaining<2) throw IOException("加密子样本索引异常")
+                        val subs=(auxBytes[subsampleAt].u() shl 8) or auxBytes[subsampleAt+1].u()
+                        if(remaining!=2+subs*6) throw IOException("加密子样本索引异常")
                         var offset=position; var encrypted=0L
                         for(sub in 0 until subs) {
-                            val at=auxCursor+10+sub*6; val clear=(auxBytes[at].u() shl 8) or auxBytes[at+1].u(); val size=auxBytes.u32(at+2)
+                            val at=subsampleAt+2+sub*6; val clear=(auxBytes[at].u() shl 8) or auxBytes[at+1].u(); val size=auxBytes.u32(at+2)
                             offset+=clear
                             if(offset+size>position+length) throw IOException("加密子样本越界")
                             if(size>0) samples+=Sample(offset,offset+size,iv,encrypted)
@@ -209,7 +237,8 @@ object MediaCrypto {
             val sample=samples[i]; if(sample.start>=end) break
             val begin=maxOf(start,sample.start); val stop=minOf(end,sample.end); if(begin>=stop) continue
             val relative=begin-sample.start+sample.encryptedOffset; val skip=(relative%16).toInt()
-            val counter=(BigInteger(1,sample.iv)+BigInteger.valueOf(relative/16)).and(BigInteger.ONE.shiftLeft(128)-BigInteger.ONE).toByteArray()
+            val initialCounter=if(sample.iv.size==8) sample.iv+ByteArray(8) else sample.iv
+            val counter=(BigInteger(1,initialCounter)+BigInteger.valueOf(relative/16)).and(BigInteger.ONE.shiftLeft(128)-BigInteger.ONE).toByteArray()
             val iv=ByteArray(16); counter.copyInto(iv,maxOf(0,16-counter.size),maxOf(0,counter.size-16),counter.size)
             val decrypted=aes("CTR",key,iv,ByteArray(skip)+result.copyOfRange((begin-start).toInt(),(stop-start).toInt()))
             decrypted.copyInto(result,(begin-start).toInt(),skip)
