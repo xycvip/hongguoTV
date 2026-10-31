@@ -58,13 +58,25 @@ object MediaCrypto {
     private fun child(data: ByteArray,type: String,start: Int,limit: Int): Box? {
         if(start<0 || limit>data.size || start>limit) throw IOException("MP4 盒子范围异常")
         var at=start
+        var found: Box?=null
         while(at<limit) {
             val item=box(data,at,limit) ?: throw IOException("MP4 子盒结构异常")
-            if(item.type==type) return item
+            if(item.type==type) {
+                if(found!=null) throw IOException("MP4 子盒重复：$type")
+                found=item
+            }
             at=item.end
         }
         if(at!=limit) throw IOException("MP4 子盒边界异常")
-        return null
+        return found
+    }
+    private fun fullBox(data: ByteArray,box: Box,versions: Set<Int>,allowedFlags: Long=0L): Pair<Int,Long> {
+        if(box.body+4>box.end) throw IOException("MP4 FullBox 头不完整：${box.type}")
+        val value=data.u32(box.body)
+        val version=(value ushr 24).toInt()
+        val flags=value and 0x00ffffffL
+        if(version !in versions || flags!=allowedFlags) throw IOException("MP4 FullBox 版本或标志不支持：${box.type}")
+        return version to flags
     }
     private fun trackSampleTable(data: ByteArray,track: Box): Box? {
         val mdia=child(data,"mdia",track.body,track.end) ?: return null
@@ -74,6 +86,7 @@ object MediaCrypto {
     private fun encryptedSampleEntry(data: ByteArray,stbl: Box): Pair<Box,Box> {
         val stsd=child(data,"stsd",stbl.body,stbl.end) ?: throw IOException("样本描述缺失")
         if(stsd.body+8>stsd.end) throw IOException("样本描述不完整")
+        fullBox(data,stsd,setOf(0))
         val count=data.u32(stsd.body+4)
         if(count !in 1L..64L) throw IOException("样本描述数量异常")
         var at=stsd.body+8
@@ -87,7 +100,15 @@ object MediaCrypto {
         val entry=first ?: throw IOException("样本描述为空")
         val childStart=when(entry.type) {
             "encv" -> entry.body+78
-            "enca" -> entry.body+28
+            "enca" -> {
+                if(entry.body+10>entry.end) throw IOException("音频样本描述不完整")
+                when(data.u16(entry.body+8)) {
+                    0 -> entry.body+28
+                    1 -> entry.body+44
+                    2 -> entry.body+64
+                    else -> throw IOException("不支持的音频样本描述版本")
+                }
+            }
             else -> throw IOException("样本描述未启用受支持的加密格式")
         }
         if(childStart>entry.end) throw IOException("加密样本描述不完整")
@@ -178,6 +199,7 @@ object MediaCrypto {
         val moov=box(data,moovOffset) ?: throw IOException("视频索引不完整")
         require(moov.type=="moov")
         val samples=mutableListOf<Sample>(); val header=data.copyOf()
+        if(child(data,"mvex",moov.body,moov.end)!=null) throw IOException("暂不支持 fragmented MP4")
         var cursor=moov.body
         while(cursor<moov.end) {
             val track=box(data,cursor,moov.end) ?: throw IOException("视频轨道格式异常"); cursor=track.end
@@ -192,32 +214,37 @@ object MediaCrypto {
             val chunks=stco ?: co64 ?: throw IOException("块偏移缺失")
             val (sampleEntry,sinf)=encryptedSampleEntry(data,stbl)
             fun count(at: Int,limit: Int): Int { if(at+4>limit) throw IOException("索引越界"); return data.u32(at).also { if(it>200000) throw IOException("索引数量过大") }.toInt() }
+            fullBox(data,stsz,setOf(0))
             val n=count(stsz.body+8,stsz.end); val defaultSize=data.u32(stsz.body+4)
-            if(defaultSize==0L && stsz.body+12+n.toLong()*4>stsz.end) throw IOException("样本索引截断")
+            val stszEnd=stsz.body+12+(if(defaultSize==0L) n.toLong()*4 else 0L)
+            if(stszEnd!=stsz.end) throw IOException("样本索引长度异常")
             val sizes=LongArray(n) { if(defaultSize>0) defaultSize else data.u32(stsz.body+12+it*4) }
+            val (chunkVersion,chunkFlags)=fullBox(data,chunks,setOf(0))
+            if(chunkVersion!=0 || chunkFlags!=0L) throw IOException("块偏移标志不支持")
             val chunkCount=count(chunks.body+4,chunks.end); val width=if(chunks.type=="co64") 8 else 4
-            if(chunks.body+8+chunkCount.toLong()*width>chunks.end) throw IOException("块偏移截断")
+            if(chunks.body+8+chunkCount.toLong()*width!=chunks.end) throw IOException("块偏移长度异常")
             val offsets=LongArray(chunkCount) { if(width==8) data.i64(chunks.body+8+it*width) else data.u32(chunks.body+8+it*width) }
+            if(offsets.any { it<0 } || offsets.zipWithNext().any { (a,b)->b<=a }) throw IOException("块偏移顺序异常")
+            if(stco!=null && co64!=null) throw IOException("stco 与 co64 不应同时存在")
+            fullBox(data,stsc,setOf(0))
             val entryCount=count(stsc.body+4,stsc.end)
-            if(stsc.body+8+entryCount.toLong()*12>stsc.end || entryCount==0) throw IOException("块索引截断")
+            if(stsc.body+8+entryCount.toLong()*12!=stsc.end || entryCount==0) throw IOException("块索引长度异常")
             if(n==0 || chunkCount==0) throw IOException("视频样本索引为空")
             val entries=(0 until entryCount).map { index ->
                 val at=stsc.body+8+index*12
                 Triple(data.u32(at),data.u32(at+4),data.u32(at+8))
             }
             if(entries.first().first!=1L || entries.any { it.first==0L || it.second==0L || it.third!=1L } ||
-                entries.zipWithNext().any { (a,b) -> b.first<=a.first } || entries.last().first>chunkCount) {
+                entries.zipWithNext().any { (a,b) -> b.first<=a.first } || entries.last().first>chunkCount ||
+                entries.any { it.first>Int.MAX_VALUE || it.second>n.toLong() }) {
                 throw IOException("块映射索引不受支持")
             }
             if(saiz.body+4>saiz.end) throw IOException("辅助索引头不完整")
-            val saizFull=data.u32(saiz.body)
-            val saizVersion=(saizFull ushr 24).toInt()
-            val saizFlags=saizFull and 0x00ffffffL
-            if(saizVersion!=0 || saizFlags and 0xfffffeL!=0L) throw IOException("不支持的辅助索引版本或标志")
-            val sizeBase=saiz.body+4+(if(saizFlags and 1L != 0L) 8 else 0)
+            val (_,saizFlags)=fullBox(data,saiz,setOf(0),0L)
+            val sizeBase=saiz.body+4
             if(sizeBase+5>saiz.end) throw IOException("辅助索引截断")
             val auxDefault=data[sizeBase].u(); val auxCount=count(sizeBase+1,saiz.end)
-            if(auxCount!=n || (auxDefault==0 && sizeBase+5+n>saiz.end)) throw IOException("辅助索引数量不一致")
+            if(auxCount!=n || sizeBase+5+(if(auxDefault==0) n else 0)!=saiz.end) throw IOException("辅助索引数量或长度不一致")
             val auxSizes=IntArray(n) { if(auxDefault>0) auxDefault else data[sizeBase+5+it].u() }
             // Sample-group encryption entries (seig) can override the track's default
             // KID/IV/protection settings on a per-sample basis. This parser currently
@@ -231,14 +258,11 @@ object MediaCrypto {
                 }
             }
             if(saio.body+4>saio.end) throw IOException("辅助偏移头不完整")
-            val saioFull=data.u32(saio.body)
-            val saioVersion=(saioFull ushr 24).toInt()
-            val saioFlags=saioFull and 0x00ffffffL
-            if(saioVersion !in 0..1 || saioFlags and 0xfffffeL!=0L) throw IOException("不支持的辅助偏移版本或标志")
+            val (saioVersion,saioFlags)=fullBox(data,saio,setOf(0,1),0L)
             val encryption=encryptionConfig(data,sinf)
-            val offsetBase=saio.body+4+(if(saioFlags and 1L != 0L) 8 else 0)
+            val offsetBase=saio.body+4
             val offsetWidth=if(saioVersion==1) 8 else 4
-            if(count(offsetBase,saio.end)!=1 || offsetBase+4+offsetWidth>saio.end) throw IOException("不支持的辅助索引布局")
+            if(count(offsetBase,saio.end)!=1 || offsetBase+4+offsetWidth!=saio.end) throw IOException("不支持的辅助索引布局")
             var aux=if(offsetWidth==8) data.i64(offsetBase+4) else data.u32(offsetBase+4)
             val auxLengthLong=auxSizes.sumOf { it.toLong() }
             if(aux<0 || auxLengthLong>8L*1024L*1024L || aux>Long.MAX_VALUE-auxLengthLong) throw IOException("辅助数据范围异常")
