@@ -202,6 +202,9 @@ class MainActivity: Activity() {
     private lateinit var updater: AppUpdater
     private lateinit var mediaSession: TvMediaSession
     private val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
+    private val sleepActionMode: Int
+        get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).coerceIn(0, 2)
+    private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("暂停播放", "退出软件", "关闭电视")[mode.coerceIn(0, 2)]
     private var sleepStopped=false
     private var playerView: PlayerView?=null
     private var danmakuView: DanmakuView?=null
@@ -2326,6 +2329,11 @@ class MainActivity: Activity() {
             paintStartupAutoplayButton(focused)
             if(focused) markFocusedCategory(0)
         }
+        val sleepActionButton=setting(playback,0,"定时关闭 · ${sleepActionLabel()}") {
+            val next=(sleepActionMode+1)%3
+            getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().putInt("sleep_action_mode",next).apply()
+            sleepActionButton.text="定时关闭 · ${sleepActionLabel(next)}"
+        }
         qualityButton=setting(playback,0,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
         defaultSpeed=setting(playback,0,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
         frame=setting(playback,0,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
@@ -3564,9 +3572,45 @@ class MainActivity: Activity() {
         sleepStopped=true; requestedAutoplay=false; retryAutoplay=false; pausedForLifecycle=true
         cancelRecovery(); player?.pause(); saveProgress()
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        playbackText.text="定时停止已生效 · 观看位置已保存 · 按播放可继续"
-        showHud(); if(!playError && episodePanel==null) showPanel(); syncMediaSession()
-        Toast.makeText(this,"定时停止已生效",Toast.LENGTH_LONG).show()
+        when (sleepActionMode) {
+            1 -> {
+                Toast.makeText(this,"定时关闭：正在退出红果TV",Toast.LENGTH_LONG).show()
+                library.flush(); killOnDestroy=true; finish()
+            }
+            2 -> requestTvShutdown()
+            else -> {
+                playbackText.text="定时关闭已生效 · 已暂停播放 · 观看位置已保存"
+                showHud(); if(!playError && episodePanel==null) showPanel(); syncMediaSession()
+                Toast.makeText(this,"定时关闭已生效，播放已暂停",Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    /**
+     * Android 普通应用没有直接断电视电源的系统权限。
+     * 先请求系统关机界面；部分电视固件会拒绝第三方应用，此时尝试设备已授权的 su 电源键操作。
+     */
+    private fun requestTvShutdown() {
+        val shutdownIntent=Intent("android.intent.action.ACTION_REQUEST_SHUTDOWN")
+            .putExtra("android.intent.extra.KEY_CONFIRM", false)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            startActivity(shutdownIntent)
+            Toast.makeText(this,"已向电视系统发送关机请求",Toast.LENGTH_LONG).show()
+        } catch (_: Exception) {
+            io.execute {
+                val succeeded=runCatching {
+                    val process=Runtime.getRuntime().exec(arrayOf("su","-c","input keyevent 26"))
+                    process.waitFor() == 0
+                }.getOrDefault(false)
+                main.post {
+                    if(!succeeded && !isDestroyed) {
+                        playbackText.text="设备不支持应用直接关机，播放已暂停"
+                        showHud(); if(!playError && episodePanel==null) showPanel(); syncMediaSession()
+                        Toast.makeText(this,"电视系统未授权关机；已暂停播放。若设备支持 Root，可启用后再试",Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+        }
     }
     private fun showSleepPicker(anchor: TextView) {
         val labels=listOf("关闭定时停止","15 分钟后","30 分钟后","60 分钟后","90 分钟后","本集播完","再播完 3 集","再播完 5 集")
@@ -4985,6 +5029,7 @@ class MainActivity: Activity() {
         getSharedPreferences("third-sources-v1", MODE_PRIVATE).edit()
             .remove("playbackSpeed").remove("resizeMode").remove("skipMarks").apply()
         getSharedPreferences("startup_playback", MODE_PRIVATE).edit().clear().apply()
+        getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().remove("sleep_action_mode").apply()
     }
 
     private fun showResetOptions(anchor: View) {
