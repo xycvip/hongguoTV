@@ -1951,7 +1951,8 @@ class MainActivity: Activity() {
             HomeScreen.Shelf("hot-comic","热门发现 · 漫剧",comicItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
                 { showCollection("hot-comic") }),
             HomeScreen.Shelf("hot-ai","热门发现 · AI剧",aiItems.take(10).map { HomeScreen.Entry(it,it.badge.ifBlank { "查看剧集" }) },
-                { showCollection("hot-ai") }))
+                { showCollection("hot-ai") }),
+            HomeScreen.Shelf("random","不知道看什么·随便点一下",emptyList(),{ showRandomPicks() }))
     }
     private fun refreshLibraryCards(changedId: String,removed: Boolean=false) {
         if(screen!="catalog") return
