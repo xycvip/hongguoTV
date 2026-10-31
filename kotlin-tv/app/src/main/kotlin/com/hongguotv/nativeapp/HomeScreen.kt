@@ -134,7 +134,7 @@ class HomeScreen(
                             intArrayOf(TvStyle.surface,TvStyle.background)
                         ).apply {
                             cornerRadius=dp(8).toFloat()
-                            setStroke(dp(1),accent)
+                            setStroke(dp(1),TvStyle.outline)
                         }
                     }
                     if(shelf.key=="random") {
