@@ -293,6 +293,18 @@ except urllib.error.HTTPError as exc:
     with urllib.request.urlopen(request, timeout=60) as response:
         release = json.loads(response.read().decode("utf-8"))
 
+# This repository distributes multiple apps. Keep HongguoTV Releases out of
+# GitHub's repository-wide "Latest" slot, including when retrying an older tag.
+release_id = release.get("id")
+if release_id:
+    latest_payload = json.dumps({"make_latest": "false"}).encode("utf-8")
+    latest_request = urllib.request.Request(
+        f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases/{release_id}",
+        data=latest_payload, method="PATCH",
+        headers={**api_headers, "Content-Type": "application/json"})
+    with urllib.request.urlopen(latest_request, timeout=60) as response:
+        release = json.loads(response.read().decode("utf-8"))
+
 # Delete same-name assets when retrying an interrupted publication.
 for asset in release.get("assets", []):
     if asset.get("name") in (DISTRIBUTION_APK_NAME, "latest.json", "update.json", "SHA256SUMS"):
