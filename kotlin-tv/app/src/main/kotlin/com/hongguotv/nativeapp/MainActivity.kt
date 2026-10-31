@@ -1689,10 +1689,10 @@ class MainActivity: Activity() {
         catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:${if(tab==7) theaterFilterKey(theaterContentType)+theaterSelections.toSortedMap() else ""}:$page:$query"
         if(tab==0 && genre!=null) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
-            bar.addView(text(if(tab==7) "筛选 · ${theaterFilterSummary()}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-            genreClear=addButton(bar,if(tab==7) "清除筛选" else "全部题材") {
-                pendingRefreshFocus=if(tab==7) null else "focus:home:genre"
-                if(tab==7) theaterSelections.clear() else genre=null; page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
+            bar.addView(text("题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
+            genreClear=addButton(bar,"全部题材") {
+                pendingRefreshFocus="focus:home:genre"
+                genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true)
             }.apply {
                 tag="home:genre-clear"
                 nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: navForTab().id
