@@ -195,6 +195,13 @@ class Library(context: Context) {
     var showClock: Boolean
         get() = state().settings.showClock
         set(value) { if (value != showClock) { state().settings = state().settings.copy(showClock = value); put("showClock", value) } }
+    /** Player overlays are device-local display preferences, independent of playback and clock visibility. */
+    var videoInfoMode: Int
+        get() = prefs.getInt("videoInfoMode", 0).coerceIn(0, 2)
+        set(value) { prefs.edit().putInt("videoInfoMode", value.coerceIn(0, 2)).apply() }
+    var showNetworkSpeed: Boolean
+        get() = prefs.getBoolean("showNetworkSpeed", false)
+        set(value) { prefs.edit().putBoolean("showNetworkSpeed", value).apply() }
     var theme: String
         get() = prefs.getString("theme", null) ?: "NIGHT"
         set(value) { prefs.edit().putString("theme", value).apply() }
@@ -272,7 +279,7 @@ class Library(context: Context) {
         val defaults = LibraryDisk.decode(emptyMap<String, Any?>()).settings
         state().settings = defaults
         marksCache = linkedMapOf()
-        prefs.edit().remove("theme").remove("skipMarks").apply()
+        prefs.edit().remove("theme").remove("skipMarks").remove("videoInfoMode").remove("showNetworkSpeed").apply()
         writes.submit(mapOf(
             "quality" to { defaults.quality }, "playbackSpeed" to { defaults.speed },
             "autoNext" to { defaults.autoNext }, "contentType" to { defaults.type.storedValue },
