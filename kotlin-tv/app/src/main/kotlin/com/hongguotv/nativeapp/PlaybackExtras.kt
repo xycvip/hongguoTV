@@ -124,10 +124,11 @@ class PlaybackExtras(context: Context) {
         const val REMOTE_COMMENTS = "comments"
         const val REMOTE_PLAY_PAUSE = "play_pause"
         const val REMOTE_EPISODES = "episodes"
+        const val REMOTE_SLEEP_TIMER = "sleep_timer"
         const val REMOTE_NONE = "none"
         private val REMOTE_ACTIONS = listOf(
             REMOTE_PREVIOUS, REMOTE_NEXT, REMOTE_MENU, REMOTE_COMMENTS,
-            REMOTE_PLAY_PAUSE, REMOTE_EPISODES, REMOTE_NONE
+            REMOTE_PLAY_PAUSE, REMOTE_EPISODES, REMOTE_SLEEP_TIMER, REMOTE_NONE
         )
         val SEEK_STEPS = listOf(10, 15, 30, 60)
         val FAST_SPEEDS = listOf(2f, 3f, 4f)
