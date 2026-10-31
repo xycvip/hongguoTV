@@ -1866,16 +1866,6 @@ class MainActivity: Activity() {
         val categoryNames=listOf("播放","弹幕","遥控器","外观","数据","关于")
         val columns=if(widthDp()<1000f) 3 else 4
 
-        parent.addView(text("设置中心",24f).apply {
-            typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-            maxLines=1; ellipsize=TextUtils.TruncateAt.END
-            setPadding(0,dp(12),0,dp(10))
-        })
-        parent.addView(text("按使用习惯调整播放、显示与设备功能",13f,muted).apply {
-            maxLines=1; ellipsize=TextUtils.TruncateAt.END
-            setPadding(0,0,0,dp(14))
-        })
-
         val categoryBar=row().apply {
             gravity=Gravity.CENTER_VERTICAL
             setPadding(0,0,0,dp(14))
