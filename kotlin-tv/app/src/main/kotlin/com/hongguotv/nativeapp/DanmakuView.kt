@@ -93,7 +93,7 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         running = true
         playbackActive = playing
         visibility = VISIBLE
-        if(playbackActive) postOnAnimation(frame)
+        if(playbackActive) scheduleFrame()
         invalidate()
     }
 
@@ -103,7 +103,7 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         playbackActive=active
         if(active) {
             lastPumpAt=0L
-            postOnAnimation(frame)
+            scheduleFrame()
         } else {
             removeCallbacks(frame)
             invalidate()
@@ -143,11 +143,18 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         lastEmit = -1L
     }
 
+    private fun scheduleFrame() {
+        if(!running || !playbackActive) return
+        // Full frame rate is needed only while comments are moving; otherwise poll the media
+        // clock at 4 Hz so upcoming comments still enter on time without burning idle CPU.
+        if(active.isEmpty()) postDelayed(frame,250L) else postOnAnimation(frame)
+    }
+
     private val frame = object : Runnable {
         override fun run() {
             if (!running || !playbackActive) return
             step()
-            if(running && playbackActive) postOnAnimation(this)
+            scheduleFrame()
         }
     }
 
@@ -176,7 +183,8 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         }
         val widthF = width.toFloat()
         if (active.removeAll { x(it, position) + it.width < 0 }) dirty = true
-        if (dirty) {
+        // Active comments move with the media clock every frame, even when no new comment enters.
+        if (dirty || active.isNotEmpty()) {
             dirty = false
             invalidate()
         }
