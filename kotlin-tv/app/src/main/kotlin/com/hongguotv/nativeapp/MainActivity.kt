@@ -1566,13 +1566,25 @@ class MainActivity: Activity() {
                 }
             }, { result ->
                 if(requestTab==7 && responseTheaterFilters.isNotEmpty()) {
-                    theaterFiltersByType[theaterFilterKey(requestTheaterType)]=responseTheaterFilters
-                    theaterFilterHost?.takeIf { it.isAttachedToWindow }?.let { host ->
-                        renderTheaterFilters(host)
-                        // 官方筛选条件异步刷新会重建标签，同样保持当前焦点，不让焦点跳回导航栏。
-                        theaterFocusTag?.let { focusTag ->
-                            root.post {
-                                if(screen=="catalog" && tab==7) root.findViewWithTag<View>(focusTag)?.requestFocus()
+                    val filterKey=theaterFilterKey(requestTheaterType)
+                    val previousFilters=theaterFiltersByType[filterKey]
+                    theaterFiltersByType[filterKey]=responseTheaterFilters
+                    // 筛选标签定义没有变化时，不要 removeAllViews 后整组重建。
+                    // 否则用户刚点中的标签会被销毁，焦点短暂掉到导航栏，再被异步拉回，表现为闪烁。
+                    if(previousFilters!=responseTheaterFilters) {
+                        theaterFilterHost?.takeIf { it.isAttachedToWindow }?.let { host ->
+                            renderTheaterFilters(host)
+                            val focusTag=theaterFocusTag
+                            if(!focusTag.isNullOrBlank()) {
+                                root.post {
+                                    if(screen=="catalog" && tab==7) {
+                                        val target=root.findViewWithTag<View>(focusTag)
+                                        if(target?.isAttachedToWindow==true) {
+                                            if(!target.hasFocus()) target.requestFocus()
+                                            theaterFocusTag=null
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
