@@ -1939,6 +1939,7 @@ class MainActivity: Activity() {
 
         var activeCategory=0
         val categoryButtons=mutableListOf<TextView>()
+        var rechainSettings:()->Unit={}
         fun paintCategories() {
             categoryButtons.forEachIndexed { index,button ->
                 val selected=index==activeCategory
@@ -1983,7 +1984,6 @@ class MainActivity: Activity() {
         lateinit var autoSeasonButton:TextView
         val danmakuPrefRows=mutableListOf<TextView>()
         var danmakuExpanded=false
-        var rechainSettings:()->Unit={}
         lateinit var danmakuToggle:TextView
         lateinit var danmakuButton:TextView
         lateinit var danmakuOpacity:TextView
