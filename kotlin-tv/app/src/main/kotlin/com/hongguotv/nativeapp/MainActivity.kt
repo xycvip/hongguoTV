@@ -2041,7 +2041,33 @@ class MainActivity: Activity() {
         blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         syncDanmakuRows()
 
-        keySettings=setting(remote,2,"遥控器按键自定义") { showKeySettings(keySettings) }
+        val remoteActions=listOf(
+            PlaybackExtras.REMOTE_PREVIOUS,
+            PlaybackExtras.REMOTE_NEXT,
+            PlaybackExtras.REMOTE_MENU,
+            PlaybackExtras.REMOTE_COMMENTS,
+            PlaybackExtras.REMOTE_PLAY_PAUSE,
+            PlaybackExtras.REMOTE_EPISODES,
+            PlaybackExtras.REMOTE_NONE
+        )
+        val remoteActionLabels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","无")
+        fun remoteActionLabel(value:String)=remoteActionLabels.getOrNull(remoteActions.indexOf(value)) ?: "无"
+        fun remoteKeySetting(title:String,current:()->String,update:(String)->Unit):TextView {
+            lateinit var item:TextView
+            fun sync() { item.text="$title  ·  ${remoteActionLabel(current())}" }
+            item=setting(remote,2,"$title  ·  ${remoteActionLabel(current())}") {
+                TvDialog.choose(this,"${title}功能",remoteActionLabels,{ index ->
+                    update(remoteActions[index])
+                    sync()
+                    item.requestFocus()
+                }).show()
+            }
+            return item
+        }
+        remoteKeySetting("上方向键",{ extras.remoteUpAction },{ extras.remoteUpAction=it })
+        remoteKeySetting("下方向键",{ extras.remoteDownAction },{ extras.remoteDownAction=it })
+        remoteKeySetting("确认键",{ extras.remoteConfirmAction },{ extras.remoteConfirmAction=it })
+        remoteKeySetting("菜单键",{ extras.remoteMenuAction },{ extras.remoteMenuAction=it })
 
         themeButton=setting(appearance,3,"系统风格  ·  ${TvStyle.theme.label}") {
             library.theme=TvStyle.toggle().name
