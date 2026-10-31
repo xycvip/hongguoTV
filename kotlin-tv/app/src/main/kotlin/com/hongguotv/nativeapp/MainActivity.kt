@@ -291,6 +291,7 @@ class MainActivity: Activity() {
     private var genreButton: View?=null
     private var genreClear: View?=null
     private var theaterFilterHost: LinearLayout?=null
+    private var theaterFocusTag: String?=null
     private val theaterFiltersByType=mutableMapOf<String,List<TheaterFilterGroup>>()
     private var theaterContentType: ContentType?=null
     private val theaterSelections=mutableMapOf<String,String>()
@@ -1083,12 +1084,20 @@ class MainActivity: Activity() {
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
         val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
-        addButton(types,"全部体裁",theaterContentType==null) {
-            if(theaterContentType!=null) { theaterContentType=null; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+        addButton(types,"全部体裁",theaterContentType==null).apply {
+            tag="theater-filter:type:all"
+            setOnClickListener {
+                theaterFocusTag=tag.toString()
+                if(theaterContentType!=null) { theaterContentType=null; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            }
         }
         listOf(ContentType.SHORT to "真人剧",ContentType.COMIC to "漫剧",ContentType.AI to "AI剧").forEach { (type,label) ->
-            addButton(types,label,theaterContentType==type) {
-                if(theaterContentType!=type) { theaterContentType=type; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            addButton(types,label,theaterContentType==type).apply {
+                tag="theater-filter:type:${type.name}"
+                setOnClickListener {
+                    theaterFocusTag=tag.toString()
+                    if(theaterContentType!=type) { theaterContentType=type; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+                }
             }
         }
         host.addView(types)
@@ -1100,29 +1109,30 @@ class MainActivity: Activity() {
             val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
             val selected=theaterSelections[group.type]
             val allLabel=if(group.label.startsWith("全部")) group.label else "全部${group.label}"
-            addButton(choices,allLabel,selected.isNullOrBlank()) {
-                if(theaterSelections.remove(group.type)!=null) { page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            addButton(choices,allLabel,selected.isNullOrBlank()).apply {
+                tag="theater-filter:${group.type}:all"
+                setOnClickListener {
+                    theaterFocusTag=tag.toString()
+                    if(theaterSelections.remove(group.type)!=null) { page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+                }
             }
             group.options.forEach { option ->
-                addButton(choices,option.label,selected==option.id) {
-                    if(selected!=option.id) {
-                        if(group.type in setOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status")) {
-                            listOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status").forEach { theaterSelections.remove(it) }
+                addButton(choices,option.label,selected==option.id).apply {
+                    tag="theater-filter:${group.type}:${option.id}"
+                    setOnClickListener {
+                        theaterFocusTag=tag.toString()
+                        if(selected!=option.id) {
+                            if(group.type in setOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status")) {
+                                listOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status").forEach { theaterSelections.remove(it) }
+                            }
+                            theaterSelections[group.type]=option.id; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
                         }
-                        theaterSelections[group.type]=option.id; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
                     }
                 }
             }
             scroll.addView(choices,ViewGroup.LayoutParams(-2,dp(40)))
             line.addView(scroll,lp(0,dp(40)).apply { weight=1f })
             host.addView(line)
-        }
-        if(theaterSelections.isNotEmpty()) {
-            val control=row().apply { gravity=Gravity.CENTER; setPadding(0,dp(4),0,dp(8)) }
-            addButton(control,"清空筛选") {
-                theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
-            }
-            host.addView(control)
         }
     }
     private fun localCatalog()=tab==3 || tab==4 || collection!=null
@@ -1506,6 +1516,13 @@ class MainActivity: Activity() {
                     val keepNav=nav.any { it.hasFocus() }; val keepType=typeButtons.values.any { it.hasFocus() }
                     if(requestTab==2) rankSubtitle?.text=if(requestAi) "来源：红果AI剧分类" else ranking?.updatedText?.ifBlank { "来源：红果${rankBoard.label}热播榜" } ?: "来源：红果${rankBoard.label}热播榜"
                     body.removeAllViews(); catalogGrid(body,keepNav || focusNav,keepType || focusType)
+                    if(requestTab==7) {
+                        theaterFocusTag?.let { focusTag ->
+                            root.post {
+                                if(screen=="catalog" && tab==7) root.findViewWithTag<View>(focusTag)?.requestFocus()
+                            }
+                        }
+                    }
                     pendingRefreshFocus?.let { restore ->
                         pendingRefreshFocus=null
                         root.post {
