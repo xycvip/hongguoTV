@@ -154,6 +154,17 @@ object MediaCrypto {
             val auxDefault=data[sizeBase].u(); val auxCount=count(sizeBase+1,saiz.end)
             if(auxCount!=n || (auxDefault==0 && sizeBase+5+n>saiz.end)) throw IOException("辅助索引数量不一致")
             val auxSizes=IntArray(n) { if(auxDefault>0) auxDefault else data[sizeBase+5+it].u() }
+            // Sample-group encryption entries (seig) can override the track's default
+            // KID/IV/protection settings on a per-sample basis. This parser currently
+            // supports only the track-level tenc defaults, so fail closed rather than
+            // silently decrypting those samples with the wrong parameters.
+            for (groupType in listOf("sgpd", "sbgp")) {
+                val group=find(data,groupType,stbl.body,stbl.end) ?: continue
+                if (group.body+8<=group.end &&
+                    String(data,group.body+4,4,Charsets.US_ASCII)=="seig") {
+                    throw IOException("暂不支持 seig 样本组加密参数")
+                }
+            }
             val encryption=encryptionConfig(data,stbl)
             val offsetBase=saio.body+4+(if(data.i32(saio.body) and 1 != 0) 8 else 0)
             val offsetWidth=if(data[saio.body].u()==1) 8 else 4
