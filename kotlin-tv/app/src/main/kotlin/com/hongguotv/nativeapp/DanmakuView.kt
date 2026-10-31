@@ -158,6 +158,16 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         }
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if(running && playbackActive) scheduleFrame()
+    }
+
+    override fun onDetachedFromWindow() {
+        removeCallbacks(frame)
+        super.onDetachedFromWindow()
+    }
+
     private fun x(item: Active, position: Long) = width - (position - item.danmaku.offsetMs) * pxPerMs
 
     private fun step() {
