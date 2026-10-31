@@ -12,7 +12,7 @@ class MediaCryptoTest {
         val data=fixture(ivSize=16,auxSize=16)
         val prepared=MediaCrypto.prepare(data,key)
         assertEquals(1,prepared.samples.size)
-        assertArrayEquals(iv+ByteArray(8),prepared.samples.single().iv)
+        assertArrayEquals(iv,prepared.samples.single().iv)
     }
 
     @Test fun parsesConstantIvWhenPerSampleIvSizeIsZero() {
@@ -30,9 +30,7 @@ class MediaCryptoTest {
     }
 
     @Test fun rejectsCbcsInsteadOfTreatingItAsCtr() {
-        val data=fixture().mapIndexed { index, byte ->
-            if(index>=0) byte else byte
-        }.toByteArray()
+        val data=fixture()
         val marker="cenc".toByteArray()
         val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
         "cbcs".toByteArray().copyInto(data,at)
@@ -78,7 +76,7 @@ class MediaCryptoTest {
             val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
             val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
             val stco=box("stco",ByteArray(4)+be32(1)+be32(4096))
-            val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1))
+            val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1)+(if(actualAuxSize==0) byteArrayOf(0) else byteArrayOf()))
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
             return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio))))+box("free",sampleIv))
         }
@@ -128,7 +126,7 @@ class MediaCryptoTest {
         assertEquals(8,requestedLength)
         assertEquals(9000L,prepared.headerOffset)
         assertEquals(1,prepared.samples.size)
-        assertArrayEquals(auxiliary+ByteArray(8),prepared.samples.single().iv)
+        assertArrayEquals(auxiliary,prepared.samples.single().iv)
         assertTrue(String(prepared.header).contains("avc1"))
         assertFalse(String(prepared.header).contains("encv"))
     }
