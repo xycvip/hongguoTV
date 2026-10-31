@@ -1415,9 +1415,7 @@ class MainActivity: Activity() {
             // 键盘末行先指向历史（结果区建立后由 wireSearchPanel 补全联想与网格指向）
             azLastRow.forEach { it.nextFocusDownId=historyFirst?.id ?: View.NO_ID }
         } else if(tab==2) {
-            val heading=row().apply { setPadding(0,dp(8),0,dp(6)); gravity=Gravity.CENTER_VERTICAL }
-            heading.addView(text("热播榜",25f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-            container.addView(heading)
+            // 排行榜页直接从榜单筛选栏开始，不再显示重复的「热播榜」标题及其占位空间。
             val boardRow=row().apply { setPadding(0,0,0,dp(8)) }
             listOf(RankBoard.REAL, RankBoard.COMIC, RankBoard.AI).forEach { board ->
                 val focusTag = "rank:board:${board.name}"
