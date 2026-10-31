@@ -355,7 +355,7 @@ class ContentRepositoryTest {
                 {"video_data":{"series_id":"123","series_name":"测试剧 第二季","genre":"203"}}]}"""
         }
         val detail=repo.detail("123")
-        assertEquals(listOf("333","222","444"),detail.sameName.map { it.id })
+        assertEquals(listOf("333","222","444"),repo.sameNameSeasons(detail.series,detail.related).map { it.id })
     }
 
     @Test fun detailFillsMissingSeasonsFromSuggestionsLikeSearch() {
@@ -378,7 +378,8 @@ class ContentRepositoryTest {
             }
         }
         // 网站只返回季 1，联想给出的季 2、季 3 需要回查补齐
-        assertEquals(listOf("222","333"),repo.detail("123").sameName.map { it.id })
+        val detail=repo.detail("123")
+        assertEquals(listOf("222","333"),repo.sameNameSeasons(detail.series,detail.related).map { it.id })
     }
 
     private fun currentRealRank(payload: JSONObject) = script("mergeLoaderData",JSONArray()
