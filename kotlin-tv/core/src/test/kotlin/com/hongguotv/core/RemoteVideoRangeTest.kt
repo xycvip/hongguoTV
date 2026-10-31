@@ -141,6 +141,42 @@ class RemoteVideoRangeTest {
         }
     }
 
+    @Test fun concurrentReadsAtDifferentOffsetsDoNotOverwriteInFlightState() {
+        val bytes=ByteArray(4096) { (it%239).toByte() }
+        val server=MockWebServer()
+        val active=java.util.concurrent.atomic.AtomicInteger()
+        val maximum=java.util.concurrent.atomic.AtomicInteger()
+        server.dispatcher=object: Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                val now=active.incrementAndGet()
+                maximum.updateAndGet { old -> maxOf(old,now) }
+                try {
+                    Thread.sleep(80)
+                    val match=Regex("bytes=(\\d+)-(\\d+)").matchEntire(request.getHeader("Range").orEmpty()) ?: return MockResponse().setResponseCode(400)
+                    val start=match.groupValues[1].toInt()
+                    val end=minOf(match.groupValues[2].toInt(),bytes.lastIndex)
+                    return MockResponse().setResponseCode(206)
+                        .setHeader("Content-Range","bytes $start-$end/${bytes.size}")
+                        .setBody(Buffer().write(bytes.copyOfRange(start,end+1)))
+                } finally { active.decrementAndGet() }
+            }
+        }
+        server.start()
+        val video=RemoteVideo(OkHttpClient(),StreamInfo(server.url("/video").toString(),null,"test"),chunkBytes=256,aheadBytes=0)
+        try {
+            video.prepare()
+            val pool=java.util.concurrent.Executors.newFixedThreadPool(2)
+            try {
+                val a=pool.submit<ByteArray> { video.read(512,128) }
+                val b=pool.submit<ByteArray> { video.read(2048,128) }
+                assertArrayEquals(bytes.copyOfRange(512,640),a.get(5,java.util.concurrent.TimeUnit.SECONDS))
+                assertArrayEquals(bytes.copyOfRange(2048,2176),b.get(5,java.util.concurrent.TimeUnit.SECONDS))
+                assertTrue("different ranges should be fetched concurrently",maximum.get()>=2)
+            } finally { pool.shutdownNow() }
+            assertTrue(video.stats().rangeRequests>=3)
+        } finally { video.close(); server.shutdown() }
+    }
+
     @Test fun rejectsResourceWhoseLengthChangesBetweenRanges() {
         val original = fixture()
         val changed = original + byteArrayOf(99)
