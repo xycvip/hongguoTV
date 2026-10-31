@@ -236,9 +236,12 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             if (aboutMode || busy || !active || !idle()) return@setOnClickListener
             manualMirrorIndex = (manualMirrorIndex + 1) % AppUpdate.MIRRORS.size
             val mirrorName = AppUpdate.MIRROR_NAMES[manualMirrorIndex]
-            if (available != null) download(manualMirrorIndex)
-            else check(true, manualMirrorIndex)
-            updateStatus("准备通过 $mirrorName 获取最新版…")
+            if (available != null) {
+                download(manualMirrorIndex)
+            } else {
+                check(true, manualMirrorIndex)
+                updateStatus("正在通过 $mirrorName 检查最新版…")
+            }
         }
         action.setOnClickListener {
             if (aboutMode) {
