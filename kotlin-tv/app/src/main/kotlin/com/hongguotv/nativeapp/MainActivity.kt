@@ -1243,7 +1243,24 @@ class MainActivity: Activity() {
             val searchRow=row(); val input=EditText(this).apply { id=View.generateViewId(); hint="输入剧名，或用字母键拼首拼"; setText(query); textSize=16f; setTextColor(white); setHintTextColor(muted); isSingleLine=true; maxLines=1; filters=arrayOf(android.text.InputFilter.LengthFilter(80)); imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH }
             searchRow.addView(input,lp(0,dp(45)).apply { weight=1f; rightMargin=dp(10) })
             fun search() { val next=input.text.toString().trim(); if(next.isBlank()) { input.requestFocus(); return }; runSearch(next) }
-            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }; input.nextFocusUpId=navForTab().id; searchButton?.nextFocusUpId=input.id
+            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }
+            // 搜索栏右边缘与左侧键盘最右侧对齐；搜索按钮文字贴右，避免宽屏下搜索栏横跨整个页面。
+            val searchRowWidth=when(mode) {
+                3 -> dp((if(roomy) 430 else 360)-10)
+                2 -> dp(360-10)
+                else -> -1
+            }
+            searchRow.layoutParams=lp(searchRowWidth)
+            searchButton?.apply {
+                gravity=Gravity.CENTER_VERTICAL or Gravity.END
+                setPadding(paddingLeft,paddingTop,0,paddingBottom)
+                (layoutParams as? LinearLayout.LayoutParams)?.let { params ->
+                    params.rightMargin=0
+                    layoutParams=params
+                }
+                nextFocusUpId=input.id
+            }
+            input.nextFocusUpId=navForTab().id
             nav.forEach { it.nextFocusDownId=input.id }
             if(mode==0) {
                 lateinit var recent: TextView
