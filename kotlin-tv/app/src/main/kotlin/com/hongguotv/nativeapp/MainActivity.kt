@@ -2049,17 +2049,10 @@ class MainActivity: Activity() {
             focusedCategory=category
             categoryIndicators.forEachIndexed { index,indicator ->
                 val active=index==focusedCategory
-                indicator.setTextColor(if(active) accent else white)
-                indicator.setTypeface(
-                    Typeface.create("sans-serif-medium",if(active) Typeface.BOLD else Typeface.NORMAL)
-                )
-                // Match the top navigation tabs exactly: focused = white surface,
-                // active category = selected surface, otherwise transparent.
                 val focused=indicator.hasFocus()
-                indicator.setTextColor(if(focused) bg else if(active) accent else muted)
-                indicator.background=rounded(
-                    if(focused) white else if(active) TvStyle.selectedSurface else Color.TRANSPARENT
-                )
+                // Reuse the same focus-card drawable as the content cards throughout the app.
+                indicator.background=TvStyle.card(this@MainActivity,focused)
+                indicator.setTextColor(if(focused || active) white else muted)
                 indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
             }
         }
