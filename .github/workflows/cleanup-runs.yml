@@ -36,7 +36,7 @@ jobs:
             let failed = 0;
             const active = targets.filter(run => run.status !== 'completed');
 
-            // 删除 API 只接受已完成的运行记录；先取消其他仍在排队或运行中的记录。
+            // 删除接口只接受已完成的运行记录；先取消其他仍在排队或运行中的记录。
             for (const run of active) {
               try {
                 await github.rest.actions.cancelWorkflowRun({
@@ -89,7 +89,7 @@ jobs:
               core.setFailed('部分运行记录未能删除，请查看上方日志后重新运行清理工作流。');
             }
 
-            // 历史 Tag：按其指向提交的提交时间排序，只保留最新的一个。
+            // 历史标签：按其指向提交的提交时间排序，只保留最新的一个。
             core.info('正在读取仓库全部 Tag……');
             const tags = await github.paginate(
               github.rest.repos.listTags,
