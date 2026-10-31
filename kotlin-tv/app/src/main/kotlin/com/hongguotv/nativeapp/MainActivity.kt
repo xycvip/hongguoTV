@@ -1971,42 +1971,46 @@ class MainActivity: Activity() {
         val categoryItems=mutableListOf<MutableList<TextView>>()
         val categoryPanels=mutableListOf<LinearLayout>()
         val categoryNames=listOf("播放","弹幕","遥控器","外观","数据","关于")
-        val columns=if(widthDp()<1000f) 3 else 4
-
-        val categoryBar=row().apply {
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(0,0,0,dp(14))
+        val columns=when {
+            widthDp()<600f -> 2
+            widthDp()<1100f -> 3
+            else -> 4
         }
-        parent.addView(categoryBar,lp())
-        val contentHost=FrameLayout(this)
+        val contentHost=column()
         parent.addView(contentHost,lp())
 
         fun section(title:String,subtitle:String): Pair<LinearLayout,GridLayout> {
-            val panel=column().apply {
-                setPadding(dp(16),dp(15),dp(16),dp(16))
+            val panel=row().apply {
+                gravity=Gravity.CENTER_VERTICAL
+                setPadding(dp(12),dp(10),dp(12),dp(10))
                 background=rounded(surface)
             }
-            panel.addView(text(title,18f).apply {
-                typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-                maxLines=1; ellipsize=TextUtils.TruncateAt.END
-            })
-            panel.addView(text(subtitle,12f,muted).apply {
-                maxLines=1; ellipsize=TextUtils.TruncateAt.END
-                setPadding(0,dp(4),0,dp(13))
-            })
+            val heading=column().apply {
+                gravity=Gravity.CENTER_VERTICAL
+                addView(text(title,if(widthDp()<600f) 14f else 17f).apply {
+                    typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                    maxLines=1; ellipsize=TextUtils.TruncateAt.END
+                })
+                addView(text(subtitle,11f,muted).apply {
+                    maxLines=2; ellipsize=TextUtils.TruncateAt.END
+                    setPadding(0,dp(4),dp(4),0)
+                })
+            }
+            val headingWidth=if(widthDp()<600f) 82 else 126
+            panel.addView(heading,lp(dp(headingWidth),-2).apply { rightMargin=dp(10) })
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
-            panel.addView(grid,lp())
-            contentHost.addView(panel,FrameLayout.LayoutParams(-1,-2))
+            panel.addView(grid,LinearLayout.LayoutParams(0,-2,1f))
+            contentHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
             categoryPanels+=panel
             categoryItems+=mutableListOf<TextView>()
             return panel to grid
         }
-        val playback=section("播放体验","清晰度、倍速与连续播放").second
-        val danmaku=section("弹幕设置","调整弹幕显示效果与屏蔽内容").second
-        val remote=section("遥控器设置","自定义方向键与确认键操作").second
-        val appearance=section("外观与显示","调整界面风格和时间显示").second
-        val data=section("片单与数据","备份记录、统计与缓存管理").second
-        val system=section("系统与关于","恢复设置与查看应用信息").second
+        val playback=section("播放","清晰度、倍速与连续播放").second
+        val danmaku=section("弹幕","弹幕显示效果与屏蔽内容").second
+        val remote=section("遥控器","自定义方向键与确认键操作").second
+        val appearance=section("外观","界面风格与播放画面显示").second
+        val data=section("数据","备份记录、统计与缓存管理").second
+        val system=section("关于","软件信息与恢复设置").second
 
         fun setting(group:GridLayout,category:Int,label:String,action:()->Unit):TextView {
             val view=button(label,onClick=action).apply {
@@ -2034,44 +2038,8 @@ class MainActivity: Activity() {
             return view
         }
 
-        var activeCategory=0
-        val categoryButtons=mutableListOf<TextView>()
         var rechainSettings:()->Unit={}
-        fun paintCategories() {
-            categoryButtons.forEachIndexed { index,button ->
-                val selected=index==activeCategory
-                button.background=rounded(
-                    if(button.hasFocus()) TvStyle.raised else if(selected) TvStyle.selectedSurface else surface,
-                    if(button.hasFocus() || selected) accent else Color.TRANSPARENT
-                )
-                button.setTextColor(if(selected) white else muted)
-            }
-        }
-        fun selectCategory(index:Int,focusFirst:Boolean=false) {
-            activeCategory=index.coerceIn(categoryPanels.indices)
-            categoryPanels.forEachIndexed { i,panel -> panel.visibility=if(i==activeCategory) View.VISIBLE else View.GONE }
-            paintCategories()
-            rechainSettings()
-            if(focusFirst) categoryItems[activeCategory].firstOrNull { it.visibility==View.VISIBLE }?.requestFocus()
-        }
-        categoryNames.forEachIndexed { index,name ->
-            val item=text(name,14f).apply {
-                gravity=Gravity.CENTER
-                maxLines=1
-                ellipsize=TextUtils.TruncateAt.END
-                setPadding(dp(5),dp(12),dp(5),dp(12))
-                isFocusable=true; isFocusableInTouchMode=true
-                id=View.generateViewId()
-                background=rounded(surface)
-                setOnClickListener { selectCategory(index,true) }
-                setOnFocusChangeListener { _,focused ->
-                    if(focused) selectCategory(index)
-                    paintCategories()
-                }
-            }
-            categoryButtons+=item
-            categoryBar.addView(item,lp(0,dp(48)).apply { width=0; weight=1f; if(index>0) leftMargin=dp(6) })
-        }
+
 
         lateinit var startupAutoplayButton:TextView
         lateinit var qualityButton:TextView
@@ -2271,41 +2239,32 @@ class MainActivity: Activity() {
         aboutButton=setting(system,5,"关于软件") { updater.show(aboutButton,aboutMode=true) }
 
         rechainSettings={
-            categoryButtons.forEachIndexed { index,button ->
-                button.nextFocusLeftId=categoryButtons.getOrNull(index-1)?.id ?: button.id
-                button.nextFocusRightId=categoryButtons.getOrNull(index+1)?.id ?: button.id
-                button.nextFocusUpId=nav[tab].id
-                button.nextFocusDownId=categoryItems[index].firstOrNull { it.visibility==View.VISIBLE }?.id ?: button.id
-            }
-            categoryItems.forEachIndexed { category,all ->
-                val visible=all.filter { it.visibility==View.VISIBLE }
+            val visibleByCategory=categoryItems.map { items -> items.filter { it.visibility==View.VISIBLE } }
+            visibleByCategory.forEachIndexed { category,visible ->
                 visible.forEachIndexed { index,view ->
-                    val row=index/columns
                     val col=index%columns
                     val rowStart=(index/columns)*columns
                     val rowEnd=minOf(rowStart+columns,visible.size)-1
                     view.nextFocusLeftId=if(col>0) visible[index-1].id else view.id
                     view.nextFocusRightId=if(index<rowEnd) visible[index+1].id else view.id
-                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: categoryButtons[category].id
-                    view.nextFocusDownId=visible.getOrNull(index+columns)?.id ?: View.NO_ID
+                    val previous=visibleByCategory.getOrNull(category-1).orEmpty()
+                    val next=visibleByCategory.getOrNull(category+1).orEmpty()
+                    val up=previous.getOrNull((index%columns).coerceAtMost((previous.size-1).coerceAtLeast(0)))
+                    val down=next.getOrNull((index%columns).coerceAtMost((next.size-1).coerceAtLeast(0)))
+                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: up?.id ?: nav[tab].id
+                    view.nextFocusDownId=visible.getOrNull(index+columns)?.id ?: down?.id ?: view.id
                 }
             }
-            nav[tab].nextFocusDownId=categoryButtons.first().id
+            nav[tab].nextFocusDownId=settingRows.firstOrNull()?.id ?: nav[tab].id
         }
         rechainSettings()
 
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
         if(target!=null) {
-            val category=categoryItems.indexOfFirst { target in it }.coerceAtLeast(0)
-            selectCategory(category)
             target.requestFocus()
-        } else if(tab==5) {
-            selectCategory(0)
-            startupAutoplayButton.requestFocus()
         } else {
-            selectCategory(0)
-            categoryButtons.firstOrNull()?.requestFocus() ?: startupAutoplayButton.requestFocus()
+            settingRows.firstOrNull()?.requestFocus()
         }
     }
     private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=true) {
