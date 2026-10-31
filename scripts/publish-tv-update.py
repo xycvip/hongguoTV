@@ -129,7 +129,11 @@ def changelog():
         line = subject.strip()
         if not line:
             continue
-        line = re.sub(r"\[(?:release|skip-tests)\]", "", line, flags=re.I).strip()
+        if re.match(r"^(?:test|ci|build)(?:\([^)]*\))?:", line, flags=re.I):
+            continue
+        line = re.sub(r"\[(?:release|skip-tests|source-release-sync)\]", "", line, flags=re.I).strip()
+        if not line:
+            continue
         line = re.sub(
             r"^(?:feat|fix|perf|refactor|docs|style|test|build|ci|chore)(?:\([^)]*\))?:\s*",
             "", line, flags=re.I
