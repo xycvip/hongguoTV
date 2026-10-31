@@ -150,7 +150,7 @@ object MediaCrypto {
                         if(auxSize!=10+subs*6) throw IOException("加密子样本索引异常")
                         var offset=position; var encrypted=0L
                         for(sub in 0 until subs) {
-                            val at=auxCursor+10+sub*6; val clear=(auxBytes[at].u() shl 8) or auxBytes[at+1].u(); val size=data.u32(at+2)
+                            val at=auxCursor+10+sub*6; val clear=(auxBytes[at].u() shl 8) or auxBytes[at+1].u(); val size=auxBytes.u32(at+2)
                             offset+=clear
                             if(offset+size>position+length) throw IOException("加密子样本越界")
                             if(size>0) samples+=Sample(offset,offset+size,iv,encrypted)
