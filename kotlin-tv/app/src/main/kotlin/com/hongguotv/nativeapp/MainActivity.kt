@@ -2118,13 +2118,13 @@ class MainActivity: Activity() {
         fun markFocusedCategory(category:Int) {
             if(category !in categoryIndicators.indices) return
             focusedCategory=category
-            categoryIndicators.forEachIndexed { index,indicator ->
-                val active=index==focusedCategory
+            categoryIndicators.forEach { indicator ->
                 val focused=indicator.hasFocus()
-                // 右侧设置项获得焦点时，对应的左侧分类同步保留底色；左侧自身聚焦时也显示底色。
-                indicator.background=TvStyle.card(this@MainActivity,focused || active)
-                indicator.setTextColor(if(focused || active) white else muted)
-                indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
+                // 左侧分类只有实际获得焦点时才显示选中效果；右侧设置项移动焦点时，
+                // 左侧对应分类保持普通底色，不额外伪装成已选中状态。
+                indicator.background=TvStyle.card(this@MainActivity,focused)
+                indicator.setTextColor(if(focused) white else muted)
+                indicator.setTypeface(null,if(focused) Typeface.BOLD else Typeface.NORMAL)
             }
         }
         // Settings sections are listed in the same order as the left navigation.
