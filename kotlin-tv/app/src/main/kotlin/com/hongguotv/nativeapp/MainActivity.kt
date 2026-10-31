@@ -3185,6 +3185,10 @@ class MainActivity: Activity() {
                 minBuffer=10_000; maxBuffer=25_000; startBuffer=1_000; rebuffer=2_000
                 targetBytes=6*1024*1024
             }
+            metered && slowNetwork -> {
+                minBuffer=18_000; maxBuffer=40_000; startBuffer=1_500; rebuffer=3_000
+                targetBytes=8*1024*1024
+            }
             metered -> {
                 minBuffer=12_000; maxBuffer=30_000; startBuffer=1_000; rebuffer=2_000
                 targetBytes=8*1024*1024
