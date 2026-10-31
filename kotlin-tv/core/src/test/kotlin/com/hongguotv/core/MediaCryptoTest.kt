@@ -22,7 +22,9 @@ class MediaCryptoTest {
         assertArrayEquals(expected.copyOfRange(22,47),MediaCrypto.decrypt(source.copyOfRange(22,47),22,key,prepared))
     }
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false): ByteArray {
+    private fun extendedBox(type: String, body: ByteArray): ByteArray =
+        be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
         fun moov(offset: Int): ByteArray {
             val entry=box("encv",ByteArray(78)+box("sinf",box("frma",codec.toByteArray())))
@@ -34,7 +36,7 @@ class MediaCryptoTest {
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
             return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio))))+box("free",iv.copyOf(8)))
         }
-        val padding=if(spacer) box("free",byteArrayOf(1,2,3,4)) else byteArrayOf()
+        val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
         return ftyp+padding+moov(initial.size-8)
     }
@@ -52,6 +54,21 @@ class MediaCryptoTest {
         assertEquals(1,prepared.samples.size)
         assertEquals(4096L,prepared.samples[0].start)
         assertTrue(String(prepared.header).contains("avc1"))
+    }
+
+    @Test fun headerSkipsExtendedSizeTopLevelPaddingBeforeMoov() {
+        val data=fixture(extendedSpacer=true)
+        val end=MediaCrypto.headerEnd(data,5000)
+        assertEquals(data.size,end)
+        val prepared=MediaCrypto.prepare(data,key)
+        assertEquals(1,prepared.samples.size)
+        assertEquals(4096L,prepared.samples[0].start)
+    }
+    @Test(expected=java.io.IOException::class) fun moovAfterMdatIsRejectedWithoutReadingMediaPayload() {
+        val ftyp=box("ftyp","isom0000".toByteArray())
+        val mdat=box("mdat",ByteArray(128){it.toByte()})
+        val moov=box("moov",byteArrayOf())
+        MediaCrypto.headerEnd(ftyp+mdat+moov,ftyp.size.toLong()+mdat.size+moov.size)
     }
     @Test(expected=java.io.IOException::class) fun truncatedAuxiliaryDataFailsClosed() { MediaCrypto.prepare(fixture(auxSize=16),key) }
     @Test(expected=java.io.IOException::class) fun oversizedMoovRejected() { MediaCrypto.headerEnd(box("ftyp","isom0000".toByteArray())+be32(9000000)+"moov".toByteArray(),10000000) }
