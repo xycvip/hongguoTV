@@ -344,6 +344,13 @@ class MainActivity: Activity() {
     /** 设置页重建后要恢复焦点的设置项标签前缀。 */
     private var settingsFocusKey: String?=null
     private var detail: Detail?=null
+    // Same-name seasons are fetched after the detail page is visible; these views are filled in place.
+    private var detailSeasonLine: LinearLayout?=null
+    private var detailSeasonSection: LinearLayout?=null
+    private val detailEpisodeButtons=mutableListOf<View>()
+    private val detailRelatedCards=mutableListOf<View>()
+    private var sameNameLoadingId=""
+
     private var episodeIndex=0
     private var group=0
     private var synopsisExpanded=false
@@ -2940,7 +2947,11 @@ class MainActivity: Activity() {
             pendingCloudProgress = null
             val target=ResumePlayback.target(result.episodes,cloud?.episodeId ?: progress?.episodeId,cloud?.position ?: progress?.position ?: 0,progress?.completed==true)
             episodeIndex=target.index; group=episodeIndex/20
-            if(resume) playEpisode(target.index,target.position,autoplay=detailAutoplay) else showDetail(false)
+            if(resume) playEpisode(target.index,target.position,autoplay=detailAutoplay)
+            else {
+                showDetail(false)
+                loadSameNameInBackground(result)
+            }
         }, { problem ->
             if(startupAttempt && startupRecommendationExpired) return@work
             if(startupAutoPlaybackActive) failStartupRecommendation()
@@ -2948,6 +2959,8 @@ class MainActivity: Activity() {
         })
     }
     private fun showDetail(focusEpisode: Boolean) {
+        detailSeasonLine=null; detailSeasonSection=null
+        detailEpisodeButtons.clear(); detailRelatedCards.clear()
         invalidatePage(); releaseCatalogViews(); screen="detail"; val data=detail ?: return showCatalog()
         val body=base("剧集详情")
         val scroll=ScrollView(this).apply { isVerticalScrollBarEnabled=false }; val content=column(); scroll.addView(content); body.addView(scroll,lp(-1,0).apply { weight=1f })
@@ -3029,9 +3042,10 @@ class MainActivity: Activity() {
             repeat(10-numbers.size) { line.addView(Space(this),lp(0,dp(42)).apply { weight=1f; rightMargin=dp(6) }) }
             content.addView(line,lp(-1,dp(49)))
         }
+        detailEpisodeButtons.addAll(episodes)
         val extraRows=mutableListOf<MutableList<View>>()
-        fun recommendationRow(title: String,items: List<Series>) {
-            if(items.isEmpty()) return
+        fun recommendationRow(title: String,items: List<Series>,seasonSection: Boolean=false) {
+            if(items.isEmpty() && !seasonSection) return
             val section=column()
             val heading=row(); heading.setPadding(0,dp(20),0,dp(9))
             heading.addView(View(this).apply { background=TvStyle.shape(this@MainActivity,TvStyle.accent,radius=2) },lp(dp(3),dp(14)).apply { rightMargin=dp(8) })
@@ -3058,8 +3072,14 @@ class MainActivity: Activity() {
             horizontal.addView(line); section.addView(horizontal)
             content.addView(section,lp(-1,-2).apply { topMargin=dp(4) })
             extraRows+=cards
+            if(seasonSection) {
+                detailSeasonLine=line
+                detailSeasonSection=section
+                if(items.isEmpty()) section.visibility=View.GONE
+            }
+            if(title=="相关推荐") detailRelatedCards.addAll(cards)
         }
-        recommendationRow("系列剧推荐",data.sameName)
+        recommendationRow("系列剧推荐",data.sameName,seasonSection=true)
         recommendationRow("相关推荐",data.related)
         val lastRowStart=((episodes.size-1)/10)*10
         val firstRow=extraRows.firstOrNull()
@@ -3084,6 +3104,82 @@ class MainActivity: Activity() {
         }
         if(focusEpisode) episodes.getOrNull((episodeIndex-group*20).coerceIn(0,episodes.lastIndex))?.requestFocus() else play.requestFocus()
     }
+    /** Search for other seasons only after the detail UI is on screen (or the user returns from playback). */
+    private fun loadSameNameInBackground(snapshot: Detail) {
+        val id=snapshot.series.id
+        if(snapshot.sameName.isNotEmpty() || sameNameLoadingId==id) return
+        sameNameLoadingId=id
+        io.execute {
+            val seasons=runCatching {
+                repository.sameNameSeasons(snapshot.series,snapshot.related)
+            }.getOrDefault(emptyList())
+            main.post {
+                if(sameNameLoadingId==id) sameNameLoadingId=""
+                if(isDestroyed || screen!="detail" || detail?.series?.id!=id || detailSeasonLine==null || seasons.isEmpty()) return@post
+                detail=detail?.copy(sameName=seasons)
+                appendSeasonRecommendations(seasons)
+            }
+        }
+    }
+
+    /** Add asynchronously discovered seasons without rebuilding the page or stealing remote focus. */
+    private fun appendSeasonRecommendations(items: List<Series>) {
+        val line=detailSeasonLine ?: return
+        if(line.childCount>0 || items.isEmpty()) return
+        val width=((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
+        val posterHeight=((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
+        val cards=mutableListOf<View>()
+        items.take(12).forEach { series ->
+            val card=LinearLayout(this).apply {
+                orientation=LinearLayout.VERTICAL; id=View.generateViewId()
+                isFocusable=true; isFocusableInTouchMode=true
+                setPadding(dp(4),dp(4),dp(4),dp(8))
+                background=TvStyle.card(this@MainActivity,false)
+                contentDescription="系列剧推荐，\${series.title}"
+            }
+            val image=ImageView(this).apply {
+                scaleType=ImageView.ScaleType.CENTER_CROP
+                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }
+            card.addView(image,lp(-1,posterHeight))
+            card.addView(text(series.title,14f).apply {
+                minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END
+                setPadding(dp(3),dp(5),dp(3),0)
+            })
+            card.addView(text(series.badge.ifBlank { series.tags },12f,muted).apply {
+                minLines=1; maxLines=1; ellipsize=TextUtils.TruncateAt.END
+                setPadding(dp(3),dp(2),0,0)
+            })
+            card.setOnFocusChangeListener { _,focused ->
+                card.background=TvStyle.card(this@MainActivity,focused)
+                if(focused) loadCover(image,series.cover)
+            }
+            card.setOnClickListener { openDetail(series) }
+            if(cards.size<6) loadCover(image,series.cover)
+            line.addView(card,lp(width,-2).apply { rightMargin=dp(14) })
+            cards+=card
+        }
+        detailSeasonSection?.visibility=View.VISIBLE
+        val lastRowStart=((detailEpisodeButtons.size-1)/10)*10
+        if(detailEpisodeButtons.isNotEmpty()) {
+            detailEpisodeButtons.forEachIndexed { index,episode ->
+                if(index>=lastRowStart) {
+                    val target=cards[(index-lastRowStart).coerceAtMost(cards.lastIndex)]
+                    episode.nextFocusDownId=target.id
+                }
+            }
+        }
+        cards.forEachIndexed { index,card ->
+            card.nextFocusLeftId=cards[(index-1).coerceAtLeast(0)].id
+            card.nextFocusRightId=cards[(index+1).coerceAtMost(cards.lastIndex)].id
+            card.nextFocusUpId=detailEpisodeButtons.getOrNull((lastRowStart+index).coerceAtMost(detailEpisodeButtons.lastIndex))?.id ?: View.NO_ID
+            card.nextFocusDownId=detailRelatedCards.getOrNull(index.coerceAtMost((detailRelatedCards.size-1).coerceAtLeast(0)))?.id ?: card.id
+        }
+        detailRelatedCards.forEachIndexed { index,card ->
+            card.nextFocusUpId=cards[index.coerceAtMost(cards.lastIndex)].id
+        }
+    }
+
     private fun showBootSplash() {
         // 首次启动已显示启动动画时复用同一层，避免自动播放切页时闪一下。
         if(bootSplash?.parent===root) return
@@ -4271,7 +4367,11 @@ class MainActivity: Activity() {
         if(directPlayback && !forceDetail) {
             showCatalog()
             if(tab==6) navForTab()?.post { if(tab==6 && screen=="catalog") navForTab()?.requestFocus() }
-        } else { directPlayback=false; showDetail(true) }
+        } else {
+            directPlayback=false
+            showDetail(true)
+            detail?.let { loadSameNameInBackground(it) }
+        }
     }
 
     /** 官方账号页：云端数据独立展示，不覆盖或清空本机收藏、历史。 */
