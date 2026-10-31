@@ -2249,8 +2249,9 @@ class MainActivity: Activity() {
                 GridLayout.spec(GridLayout.UNDEFINED),
                 GridLayout.spec(GridLayout.UNDEFINED,1f)
             ).apply {
-                width=0; height=dp(66)
-                setMargins(dp(5),dp(5),dp(5),dp(5))
+                width=0; height=dp(settingItemHeight)
+                val itemMargin=(5f*categoryScale).toInt().coerceIn(3,7)
+                setMargins(dp(itemMargin),dp(itemMargin),dp(itemMargin),dp(itemMargin))
             }
             group.addView(view,params)
             settingRows+=view
