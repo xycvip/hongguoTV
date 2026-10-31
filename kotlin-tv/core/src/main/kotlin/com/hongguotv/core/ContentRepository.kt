@@ -126,7 +126,9 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         else -> ""
     }
     private fun theaterValues():MutableMap<String,String> {
-        val values=searchValues()
+        // Unlike web SSR, the App catalog endpoint requires a server-registered anonymous device.
+        val profile=playbackSession.profile(http)
+        val values=VendorConstants.device.toMutableMap().apply { putAll(profile.values) }
         for(k in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[k]="73532"
         values["version_name"]="7.3.5.32"
         return values
@@ -138,13 +140,12 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         if(selected.keys.any { it !in allowed } || selected.values.any { it.isBlank() }) throw IOException("剧场筛选条件无效")
         val key=theaterKey(type,selected)
         val session=synchronized(theaterSessions) {
-            theaterSessions[key] ?: run {
-                if(page!=1) throw IOException("剧场分页已失效，请重新加载")
+            if(page==1) {
                 TheaterSession(emptyList(),mutableMapOf(1 to TheaterCursor(0,"")),linkedSetOf()).also {
                     theaterSessions[key]=it
                     while(theaterSessions.size>24) theaterSessions.remove(theaterSessions.keys.first())
                 }
-            }
+            } else theaterSessions[key] ?: throw IOException("剧场分页已失效，请重新加载")
         }
         val cursor=synchronized(theaterSessions) { session.cursors[page] } ?: throw IOException("剧场分页游标缺失，请重新加载")
         val values=theaterValues()
