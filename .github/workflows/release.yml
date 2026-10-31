@@ -207,4 +207,4 @@ jobs:
 
 # 只有定制分支验证通过后，才提交带有 [release] 标记的提交以启动正式发布。
 # 手动发布时可在提交说明中同时使用 [release] [skip tests]，仅跳过测试与 lint，保留正式 APK 构建、签名和发布。
-# 单元测试、代码检查、APK 签名验证和 AppDownload 发布均为正式发布的必经步骤。
+# 单元测试、代码检查可由 [skip tests] 跳过；APK 构建、签名验证和 AppDownload 发布仍为正式发布必经步骤。
