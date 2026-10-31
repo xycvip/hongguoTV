@@ -2005,6 +2005,7 @@ class MainActivity: Activity() {
             return panel to grid
         }
         val playback=section("播放","清晰度、倍速、连播与弹幕设置").second
+        val danmaku=playback
         val appearance=section("外观","界面风格与播放画面显示").second
         val data=section("数据","备份记录、统计与缓存管理").second
         val remote=section("遥控器","自定义方向键与确认键操作").second
