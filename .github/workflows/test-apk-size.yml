@@ -1,4 +1,4 @@
-name: 红果TV非正式APK体积验证
+name: 红果TV非正式APK验证
 
 on:
   push:
@@ -7,6 +7,9 @@ on:
     paths:
       - "kotlin-tv/app/build.gradle.kts"
       - "kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/OfficialCommentPanel.kt"
+      - "kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/AppUpdater.kt"
+      - "kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/MainActivity.kt"
+      - "kotlin-tv/core/src/main/kotlin/com/hongguotv/core/AppUpdates.kt"
       - ".github/workflows/test-apk-size.yml"
   workflow_dispatch:
 
@@ -75,7 +78,7 @@ jobs:
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: HongguoTV-Emoji2-removed-test
+          name: HongguoTV-nonformal-test
           if-no-files-found: error
           path: |
             kotlin-tv/app/build/outputs/apk/release/app-release.apk
