@@ -1443,13 +1443,22 @@ class MainActivity: Activity() {
                     else { favoriteMonitor.check(force=true); Toast.makeText(this,"开始检查收藏更新…",Toast.LENGTH_SHORT).show() }
                 }.apply { nextFocusUpId=navForTab().id }
             }
-            if(tab==4 && library.history().isNotEmpty()) {
-                historyManage=addButton(heading,"管理记录") {
+            if(tab==4) {
+                val stats=addButton(heading,"观看统计") { showWatchStats(stats) }.apply {
+                    tag="recent:watch-stats"
+                    nextFocusUpId=navForTab().id
+                }
+                if(library.history().isNotEmpty()) historyManage=addButton(heading,"管理记录") {
                     val rows=library.history()
                     tvTools.choose("选择要管理的观看记录",rows.map { it.series.title },historyManage,{ index -> manageHistory(rows[index].series,historyManage) },"清空记录") {
                         tvTools.confirm("清空观看记录","将删除本机所有观看进度，收藏会保留。",historyManage) { library.clearHistory(); catalogFocus=""; showCatalog() }
                     }
-                }.apply { nextFocusUpId=navForTab().id }
+                }.apply {
+                    tag="recent:manage-history"
+                    nextFocusUpId=stats.id
+                    nextFocusLeftId=stats.id
+                }
+                stats.nextFocusRightId=historyManage?.id ?: View.NO_ID
             }
             container.addView(heading)
             if(tab==3) {
@@ -2255,7 +2264,6 @@ class MainActivity: Activity() {
         lateinit var fileBackup:TextView
         lateinit var backup:TextView
         lateinit var hidden:TextView
-        lateinit var statsButton:TextView
         lateinit var clearCache:TextView
         lateinit var resetButton:TextView
         lateinit var aboutButton:TextView
@@ -2366,7 +2374,6 @@ class MainActivity: Activity() {
         hidden=setting(data,2,"恢复隐藏推荐  ·  ${library.hidden().size} 部") {
             library.unhideAll(); hidden.text="恢复隐藏推荐  ·  0 部"; Toast.makeText(this,"热门推荐已恢复",Toast.LENGTH_SHORT).show()
         }
-        statsButton=setting(data,2,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
         fun cacheBytes()=listOfNotNull(cacheDir,externalCacheDir).sumOf { dir -> dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }
         fun cacheLabel(bytes:Long?)="清理缓存  ·  ${when {
             bytes==null -> "计算中…"
