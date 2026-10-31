@@ -432,6 +432,7 @@ class MainActivity: Activity() {
     }
     private var launchRandomPlaybackStarted=false
     private var startupHomeRefreshStarted=false
+    private var homeRefreshInFlight=false
     /** 启动全屏推荐期间只保留过场；实际视频首帧出现后按正常播放规则记录进度。 */
     private var bootAutoPlaybackPending=false
     /** 整个开机推荐播放会话都使用静默失败回退；不影响用户手动发起的正常播放。 */
@@ -473,28 +474,31 @@ class MainActivity: Activity() {
         hideBootSplash()
         showCatalog(load=true)
     }
-    private fun refreshHomeDataInBackground() {
-        if(startupHomeRefreshStarted || isDestroyed || !library.isLoaded) return
-        startupHomeRefreshStarted=true
+    private fun refreshHomeDataInBackground(force:Boolean=false) {
+        if(isDestroyed || !library.isLoaded || homeRefreshInFlight) return
+        if(!force && startupHomeRefreshStarted) return
+        if(!force) startupHomeRefreshStarted=true
+        homeRefreshInFlight=true
         val type=library.contentType
         io.execute {
             val loaded=runCatching { repository.home(1,type,null) }
             main.post {
+                homeRefreshInFlight=false
                 if(isDestroyed || resettingAllData) return@post
                 loaded.onSuccess { resultPage ->
                     library.cacheHome(type,resultPage.items,resultPage.hasMore)
-                    if(library.contentType==type && tab==0 && collection==null && genre==null) {
-                        catalog=resultPage.items; hasMore=resultPage.hasMore; homeFromCache=false
-                        if(screen=="catalog" && page==1) {
+                    if(library.contentType==type && tab==0 && collection==null && genre==null && screen=="catalog") {
+                        if(page==1) {
+                            catalog=resultPage.items; hasMore=resultPage.hasMore; homeFromCache=false
                             homeScreen?.updateShelves(homeShelves(),requestFocus=false)
-                            homeRefreshControl?.text="刷新"
-                            homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
                         }
+                        homeRefreshControl?.text="刷新"
+                        homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
                     }
-                    android.util.Log.i("HongguoTV","Startup background home refresh completed items=${resultPage.items.size}")
+                    android.util.Log.i("HongguoTV","Background home refresh completed force=$force items=${resultPage.items.size}")
                 }.onFailure { problem ->
-                    // 保留已有缓存与首页模型；下次手动刷新仍可重新请求。
-                    android.util.Log.i("HongguoTV","Startup background home refresh failed; cached content retained: ${problem.message}")
+                    // 保留已有缓存与首页模型；后台刷新失败不打断用户操作。
+                    android.util.Log.i("HongguoTV","Background home refresh failed; cached content retained: ${problem.message}")
                 }
             }
         }
@@ -1042,6 +1046,12 @@ class MainActivity: Activity() {
         rankBoard=saved?.board ?: rankBoard; genre=saved?.genre ?: genre
         aiCatalog=false; aiGenre=null
         showCatalog(load=(next==7 || (next<=2 && catalog.isEmpty() && (next!=1 || query.isNotBlank()))))
+        if(next==0) {
+            // 首页先显示本地缓存，再静默更新主内容及其他剧集类型，不阻塞页面操作。
+            refreshHomeDataInBackground(force=true)
+            loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,true)
+            loadHomeShelf(ContentType.AI,true)
+        }
         // 切回搜索页时焦点落输入框，避免页面重建后焦点丢失
         if(next==1) searchInput?.requestFocus()
     }
