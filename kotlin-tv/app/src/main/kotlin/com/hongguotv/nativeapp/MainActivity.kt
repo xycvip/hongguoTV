@@ -3915,16 +3915,18 @@ class MainActivity: Activity() {
         val transport=row()
         strip.addView(transport,lp(-2,-2))
         controls.addView(strip,lp(-1,-2))
+        addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
         val play=addButton(transport,if(player?.playWhenReady==true) "暂停" else "播放") { togglePlayback() }.also { transportPlay=it }
-        addButton(transport,"从头播放") { seekTo(0); hidePanel() }
-        addButton(transport,"上一集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
-        addButton(transport,"下一集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
+        addButton(transport,"重播") { seekTo(0); hidePanel() }
+        addButton(transport,"上集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
+        addButton(transport,"下集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
+        fun speedLabel()="当前倍速 "+String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble())
         lateinit var speedButton: TextView
-        speedButton=addButton(transport,"倍速 ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(speedButton) }
+        speedButton=addButton(transport,speedLabel()) { showSpeedPicker(speedButton) }
         lateinit var qualityButton: TextView
-        qualityButton=addButton(transport,"清晰度 ${library.maxQuality}P") { showQualityPicker(qualityButton,true) }
+        qualityButton=addButton(transport,"画质 ${library.maxQuality}P") { showQualityPicker(qualityButton,true) }
         lateinit var timerButton: TextView
         timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
         val seriesId=detail?.series?.id.orEmpty()
@@ -3939,10 +3941,9 @@ class MainActivity: Activity() {
         val mark=library.skipMark(seriesId)
         fun skipLabel(seconds: Int)=if(seconds>0) "${seconds}秒" else "关闭"
         lateinit var introButton: TextView
-        introButton=addButton(transport,"跳过片头 ${skipLabel(mark?.introSeconds ?: 0)}") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
+        introButton=addButton(transport,"片头 ${skipLabel(mark?.introSeconds ?: 0)}") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
         lateinit var outroButton: TextView
-        outroButton=addButton(transport,"跳过片尾 ${skipLabel(mark?.outroSeconds ?: 0)}") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
-        addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
+        outroButton=addButton(transport,"片尾 ${skipLabel(mark?.outroSeconds ?: 0)}") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
         play.requestFocus()
     }
     /** Season finale auto-continues into the next season only when both the master autoplay and the season switch are on. */
@@ -4010,7 +4011,7 @@ class MainActivity: Activity() {
         tvTools.choose("全局默认倍速",speeds.map(PlaybackSpeed::label),anchor,{ index ->
             library.playbackSpeed=speeds[index]
             if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
-            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "倍速 " else "默认倍速  ·  ")+PlaybackSpeed.label(library.playbackSpeed)
+            if(anchor.tag!="playback-settings") anchor.text=if(inPlayer) "当前倍速 "+String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble()) else "默认倍速  ·  "+PlaybackSpeed.label(library.playbackSpeed)
             if(inPlayer) updatePlaybackText()
         })
     }
@@ -4020,7 +4021,7 @@ class MainActivity: Activity() {
             val target=options[index]
             val changed=library.maxQuality!=target
             library.maxQuality=target
-            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+ "${target}P"
+            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "画质 " else "默认清晰度  ·  ")+ "${target}P"
             if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
         })
     }
