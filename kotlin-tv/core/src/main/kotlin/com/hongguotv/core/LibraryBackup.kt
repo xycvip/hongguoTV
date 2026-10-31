@@ -10,9 +10,13 @@ data class BackupProgress(val series: Series,val episodeId: String,val episodeIn
 }
 data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext: Boolean=true,val type: ContentType=ContentType.SHORT,val frame: VideoFrameMode=VideoFrameMode.FIT,val autoSeason: Boolean=true,val danmaku: Boolean=true,
     val danmakuOpacity: Int=DanmakuPrefs.OPACITY_DEFAULT,val danmakuFont: Int=DanmakuPrefs.FONT_DEFAULT,val danmakuSpeed: Int=DanmakuPrefs.SPEED_DEFAULT,val danmakuRows: Int=DanmakuPrefs.ROWS_DEFAULT,
-    val showClock: Boolean=false,val sourceHidden: Boolean=false) {
+    val showClock: Boolean=false,val sourceHidden: Boolean=false,
+    val startupAutoplay: Boolean=true,val sleepActionMode: Int=0,val theme: String="NIGHT",
+    val videoInfoMode: Int=0,val showNetworkSpeed: Boolean=false) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("autoSeason",autoSeason).put("danmaku",danmaku)
         .put("danmakuOpacity",danmakuOpacity).put("danmakuFont",danmakuFont).put("danmakuSpeed",danmakuSpeed).put("danmakuRows",danmakuRows).put("showClock",showClock).put("sourceHidden",sourceHidden)
+        .put("startupAutoplay",startupAutoplay).put("sleepActionMode",sleepActionMode).put("theme",theme)
+        .put("videoInfoMode",videoInfoMode).put("showNetworkSpeed",showNetworkSpeed)
 }
 
 /** 本机播放增强与遥控器配置：随用户选择的播放设置一并备份。 */
@@ -187,6 +191,11 @@ object LibraryBackup {
         val showClock=settings.optBoolean("showClock",false)
         // 旧备份没有该字段时按默认「显示」处理
         val sourceHidden=settings.optBoolean("sourceHidden",false)
+        val startupAutoplay=settings.optBoolean("startupAutoplay",true)
+        val sleepActionMode=settings.optInt("sleepActionMode",0).also { require(it in 0..1) { "定时关闭方式无效" } }
+        val theme=settings.optString("theme","NIGHT").also { require(it in listOf("NIGHT","PORCELAIN")) { "系统风格无效" } }
+        val videoInfoMode=settings.optInt("videoInfoMode",0).also { require(it in 0..2) { "播放信息显示模式无效" } }
+        val showNetworkSpeed=settings.optBoolean("showNetworkSpeed",false)
         // 三方源：旧备份没有该字段时静默为空；非法接口直接跳过，不影响整体恢复
         val thirdSources=if(o.has("thirdSources")) o.rows("thirdSources",ThirdSourceConfig.MAX).mapNotNull { row ->
             val api=runCatching { row.string("api",500) }.getOrNull() ?: return@mapNotNull null
@@ -285,7 +294,7 @@ object LibraryBackup {
                 remoteConfirmAction, remoteMenuAction, skipMarks
             )
         } else null
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites,accountState,playbackExtras)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,autoSeason,danmaku,danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,showClock,sourceHidden,startupAutoplay,sleepActionMode,theme,videoInfoMode,showNetworkSpeed),later,hiddenIds,favoriteGroups,thirdSources,thirdHistory,thirdFavorites,accountState,playbackExtras)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {
