@@ -3167,6 +3167,10 @@ class MainActivity: Activity() {
         val manager=getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val lowRam=manager.isLowRamDevice || manager.memoryClass<=128
         val metered=runCatching { connectivity.isActiveNetworkMetered }.getOrDefault(false)
+        val downstreamKbps=runCatching {
+            connectivity.getNetworkCapabilities(connectivity.activeNetwork)?.linkDownstreamBandwidthKbps ?: 0
+        }.getOrDefault(0)
+        val slowNetwork=downstreamKbps in 1..5_000
         val minBuffer: Int
         val maxBuffer: Int
         val startBuffer: Int
@@ -3181,12 +3185,16 @@ class MainActivity: Activity() {
                 minBuffer=12_000; maxBuffer=30_000; startBuffer=1_000; rebuffer=2_000
                 targetBytes=8*1024*1024
             }
+            slowNetwork -> {
+                minBuffer=18_000; maxBuffer=45_000; startBuffer=1_500; rebuffer=3_500
+                targetBytes=8*1024*1024
+            }
             else -> {
                 minBuffer=15_000; maxBuffer=45_000; startBuffer=1_000; rebuffer=2_500
                 targetBytes=12*1024*1024
             }
         }
-        android.util.Log.i("HongguoTV","Playback buffer profile lowRam=$lowRam metered=$metered min=$minBuffer max=$maxBuffer target=${targetBytes/1024/1024}MB")
+        android.util.Log.i("HongguoTV","Playback buffer profile lowRam=$lowRam metered=$metered downstream=${downstreamKbps}kbps slow=$slowNetwork min=$minBuffer max=$maxBuffer target=${targetBytes/1024/1024}MB")
         return DefaultLoadControl.Builder()
             .setBufferDurationsMs(minBuffer,maxBuffer,startBuffer,rebuffer)
             .setTargetBufferBytes(targetBytes)
