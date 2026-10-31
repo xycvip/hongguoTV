@@ -2072,9 +2072,15 @@ class MainActivity: Activity() {
         val categoryCard=column()
         contentHost.addView(categoryCard,lp(dp(headingWidth),-2))
         val columnDivider=View(this).apply { setBackgroundColor(separatorColor) }
-        contentHost.addView(columnDivider,lp(dp(1),-1).apply {
+        contentHost.addView(columnDivider,lp(dp(1),dp(1)).apply {
             leftMargin=dp(10); rightMargin=dp(10)
         })
+        contentHost.addOnLayoutChangeListener { _,_,top,_,bottom,_,_,_,_ ->
+            val height=(bottom-top).coerceAtLeast(dp(1))
+            if(columnDivider.layoutParams.height!=height) {
+                columnDivider.layoutParams=columnDivider.layoutParams.apply { this.height=height }
+            }
+        }
         val sectionsHost=column()
         contentHost.addView(sectionsHost,LinearLayout.LayoutParams(0,-2,1f))
 
