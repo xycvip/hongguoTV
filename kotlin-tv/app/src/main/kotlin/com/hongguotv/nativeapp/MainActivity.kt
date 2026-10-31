@@ -1919,9 +1919,9 @@ class MainActivity: Activity() {
                 ellipsize=TextUtils.TruncateAt.END
                 setPadding(dp(9),dp(10),dp(9),dp(10))
                 minHeight=dp(66)
-                background=rounded(TvStyle.raised)
+                background=rounded(surface)
                 setOnFocusChangeListener { _,focused ->
-                    background=rounded(if(focused) TvStyle.raised else TvStyle.selectedSurface,if(focused) accent else TvStyle.outline)
+                    background=rounded(if(focused) TvStyle.raised else surface,if(focused) accent else Color.TRANSPARENT)
                 }
             }
             val params=GridLayout.LayoutParams(
