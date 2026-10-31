@@ -1419,7 +1419,7 @@ class MainActivity: Activity() {
                 }
                 val keyboardScroll=ScrollView(this).apply {
                     isVerticalScrollBarEnabled=false; clipToPadding=false; isFillViewport=true
-                    descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
+                    descendantFocusability=android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
                 }
                 keyboardScroll.addView(keyboard,lp(-1,-1))
                 leftColumn.addView(keyboardScroll,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
