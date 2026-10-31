@@ -1089,10 +1089,10 @@ class MainActivity: Activity() {
         if(groups.isEmpty()) host.addView(text("正在读取剧场筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
         else if(theaterExpanded) groups.forEach { group ->
             val line=row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(2),0,dp(2)) }
-            line.addView(text(group.label,14f,muted).apply { maxLines=1; ellipsize=TextUtils.TruncateAt.END },lp(dp(78),dp(38)))
             val scroll=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
             val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
-            addButton(choices,"全部",theaterGenre==null) { theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            val allLabel=if(group.label.startsWith("全部")) group.label else "全部${group.label}"
+            addButton(choices,allLabel,theaterGenre==null) { theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
             group.options.forEach { option -> addButton(choices,option.name,theaterGenre?.slug==option.slug) { theaterGenre=option; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) } }
             scroll.addView(choices,ViewGroup.LayoutParams(-2,dp(40)))
             line.addView(scroll,lp(0,dp(40)).apply { weight=1f })
