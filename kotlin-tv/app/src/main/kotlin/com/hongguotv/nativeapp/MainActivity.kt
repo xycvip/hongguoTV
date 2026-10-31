@@ -2066,7 +2066,7 @@ class MainActivity: Activity() {
             PlaybackExtras.REMOTE_SLEEP_TIMER,
             PlaybackExtras.REMOTE_NONE
         )
-        val remoteActionLabels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","定时停止","无")
+        val remoteActionLabels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","定时","无")
         fun remoteActionLabel(value:String)=remoteActionLabels.getOrNull(remoteActions.indexOf(value)) ?: "无"
         fun remoteKeySetting(title:String,current:()->String,update:(String)->Unit):TextView {
             lateinit var item:TextView
@@ -3403,7 +3403,7 @@ class MainActivity: Activity() {
             PlaybackExtras.REMOTE_SLEEP_TIMER,
             PlaybackExtras.REMOTE_NONE
         )
-        val labels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","定时停止","无")
+        val labels=listOf("切换上一集","切换下一集","播放菜单","评论","播放/暂停","选集","定时","无")
         fun labelFor(value: String)=labels.getOrNull(values.indexOf(value)) ?: "无"
         val rows=mutableListOf<TextView>()
         fun addKey(title: String, current: ()->String, update: (String)->Unit) {
