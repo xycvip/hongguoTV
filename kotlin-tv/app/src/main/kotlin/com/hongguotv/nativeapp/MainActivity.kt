@@ -1645,7 +1645,7 @@ class MainActivity: Activity() {
                 container.removeViewAt(fixedCount)
                 pageContent.addView(child)
             }
-            val viewportDp=(heightDp()-(if(compactHeader) 46+38+7 else 44+7)-24).coerceAtLeast(180)
+            val viewportDp=(heightDp()-(if(compactHeader) 91f else 51f)-24f).coerceAtLeast(180f)
             body.layoutParams=lp(-1,dp(viewportDp))
             val pageScroll=ScrollView(this).apply {
                 isVerticalScrollBarEnabled=false
