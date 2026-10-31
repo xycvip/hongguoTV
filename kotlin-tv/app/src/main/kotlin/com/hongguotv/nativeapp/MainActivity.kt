@@ -1223,12 +1223,8 @@ class MainActivity: Activity() {
             return
         }
         if(tab==0) {
-            val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
+            // 首页随机入口已移至内容列表底部，不再保留顶部重复按钮或占位布局。
             homeRefreshControl=null
-            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=navForTab().id }
-            // 首页不再显示独立刷新按钮；点击首页导航即执行完整刷新。
-            container.addView(types)
-            nav.forEach { it.nextFocusDownId=genreButton?.id ?: navForTab().id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -1881,7 +1877,8 @@ class MainActivity: Activity() {
         homeRefreshControl?.text="刷新"
         homeRefreshControl?.setOnClickListener { pendingRefreshFocus="home"; refreshAllHome() }
         homeRefreshControl?.nextFocusDownId=home.firstId()
-        if(inlineHomeFilters()) nav.forEach { it.nextFocusDownId=genreButton?.id ?: home.firstId() }
+        // 首页导航按下方向直接进入第一个内容栏目，避免焦点落到已移除的顶部随机按钮区域。
+        nav.forEach { it.nextFocusDownId=home.firstId() }
         if(focusNav) nav[0].requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
         loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,false)
         loadHomeShelf(ContentType.AI,false)
