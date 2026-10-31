@@ -2043,7 +2043,6 @@ class MainActivity: Activity() {
         val settingRows=mutableListOf<TextView>()
         val categoryItems=mutableListOf<MutableList<TextView>>()
         val categoryIndicators=mutableListOf<TextView>()
-        val categoryPanels=mutableListOf<LinearLayout>()
         var focusedCategory=-1
         fun markFocusedCategory(category:Int) {
             if(category !in categoryIndicators.indices) return
@@ -2054,12 +2053,11 @@ class MainActivity: Activity() {
                 indicator.setTypeface(
                     Typeface.create("sans-serif-medium",if(active) Typeface.BOLD else Typeface.NORMAL)
                 )
-                // Keep all category labels visually inside one shared navigation card.
-                indicator.background=rounded(Color.TRANSPARENT)
-            }
-            // The left navigation controls the single visible settings panel on the right.
-            categoryPanels.forEachIndexed { index,panel ->
-                panel.visibility=if(index==focusedCategory) View.VISIBLE else View.GONE
+                // The active category stays highlighted; actual focus gets a stronger border.
+                indicator.background=rounded(
+                    if(indicator.hasFocus()) TvStyle.raised else if(active) TvStyle.selectedSurface else Color.TRANSPARENT,
+                    if(indicator.hasFocus()) accent else if(active) TvStyle.outline else Color.TRANSPARENT
+                )
             }
         }
         // Five vertical sections; danmaku controls are grouped into the Playback section.
@@ -2091,7 +2089,16 @@ class MainActivity: Activity() {
             }
             categoryIndicators+=headingTitle
             headingTitle.setOnFocusChangeListener { _,focused ->
-                if(focused) markFocusedCategory(categoryIndicators.indexOf(headingTitle))
+                val category=categoryIndicators.indexOf(headingTitle)
+                if(focused) markFocusedCategory(category)
+                else if(category==focusedCategory) {
+                    headingTitle.background=rounded(TvStyle.selectedSurface,TvStyle.outline)
+                }
+            }
+            headingTitle.background=rounded(Color.TRANSPARENT)
+            headingTitle.setOnClickListener {
+                val category=categoryIndicators.indexOf(headingTitle)
+                categoryItems.getOrNull(category)?.firstOrNull()?.requestFocus()
             }
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
@@ -2107,7 +2114,6 @@ class MainActivity: Activity() {
                 setPadding(dp(8),dp(7),dp(8),dp(7))
                 background=rounded(surface)
             }
-            categoryPanels+=panel
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
             panel.addView(grid,lp(-1,-2))
             sectionsHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
