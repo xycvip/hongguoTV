@@ -1969,8 +1969,8 @@ class MainActivity: Activity() {
     private fun settings(parent: LinearLayout, footerHost: LinearLayout) {
         val settingRows=mutableListOf<TextView>()
         val categoryItems=mutableListOf<MutableList<TextView>>()
-        val categoryPanels=mutableListOf<LinearLayout>()
-        val categoryNames=listOf("播放","弹幕","遥控器","外观","数据","关于")
+        // Five vertical sections; danmaku controls are grouped into the Playback section.
+
         val columns=when {
             widthDp()<600f -> 2
             widthDp()<1100f -> 3
@@ -2001,15 +2001,13 @@ class MainActivity: Activity() {
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
             panel.addView(grid,LinearLayout.LayoutParams(0,-2,1f))
             contentHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
-            categoryPanels+=panel
             categoryItems+=mutableListOf<TextView>()
             return panel to grid
         }
-        val playback=section("播放","清晰度、倍速与连续播放").second
-        val danmaku=section("弹幕","弹幕显示效果与屏蔽内容").second
-        val remote=section("遥控器","自定义方向键与确认键操作").second
+        val playback=section("播放","清晰度、倍速、连播与弹幕设置").second
         val appearance=section("外观","界面风格与播放画面显示").second
         val data=section("数据","备份记录、统计与缓存管理").second
+        val remote=section("遥控器","自定义方向键与确认键操作").second
         val system=section("关于","软件信息与恢复设置").second
 
         fun setting(group:GridLayout,category:Int,label:String,action:()->Unit):TextView {
@@ -2110,16 +2108,16 @@ class MainActivity: Activity() {
             }
             rechainSettings()
         }
-        danmakuButton=setting(danmaku,1,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
+        danmakuButton=setting(playback,0,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
             library.danmaku=!library.danmaku
             danmakuButton.text="官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}"
             syncDanmakuRows()
         }
-        danmakuOpacity=setting(danmaku,1,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
-        danmakuFont=setting(danmaku,1,"字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
-        danmakuSpeed=setting(danmaku,1,"移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
-        danmakuRows=setting(danmaku,1,"展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
-        danmakuReset=setting(danmaku,1,"恢复弹幕默认") {
+        danmakuOpacity=setting(playback,0,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
+        danmakuFont=setting(playback,0,"字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
+        danmakuSpeed=setting(playback,0,"移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
+        danmakuRows=setting(playback,0,"展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
+        danmakuReset=setting(playback,0,"恢复弹幕默认") {
             resetDanmakuPrefs()
             danmakuOpacity.text="不透明度  ·  ${library.danmakuOpacity}%"
             danmakuFont.text="字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}"
@@ -2127,7 +2125,7 @@ class MainActivity: Activity() {
             danmakuRows.text="展示行数  ·  ${library.danmakuRows} 行"
             Toast.makeText(this,"弹幕设置已恢复默认",Toast.LENGTH_SHORT).show()
         }
-        blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
+        blockedWords=setting(playback,0,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset,blockedWords))
         syncDanmakuRows()
 
@@ -2146,7 +2144,7 @@ class MainActivity: Activity() {
         fun remoteKeySetting(title:String,current:()->String,update:(String)->Unit):TextView {
             lateinit var item:TextView
             fun sync() { item.text="$title  ·  ${remoteActionLabel(current())}" }
-            item=setting(remote,2,"$title  ·  ${remoteActionLabel(current())}") {
+            item=setting(remote,3,"$title  ·  ${remoteActionLabel(current())}") {
                 TvDialog.choose(this,"${title}功能",remoteActionLabels,{ index ->
                     update(remoteActions[index])
                     sync()
@@ -2160,19 +2158,19 @@ class MainActivity: Activity() {
         remoteKeySetting("确认键",{ extras.remoteConfirmAction },{ extras.remoteConfirmAction=it })
         remoteKeySetting("菜单键",{ extras.remoteMenuAction },{ extras.remoteMenuAction=it })
 
-        themeButton=setting(appearance,3,"系统风格  ·  ${TvStyle.theme.label}") {
+        themeButton=setting(appearance,1,"系统风格  ·  ${TvStyle.theme.label}") {
             library.theme=TvStyle.toggle().name
             settingsFocusKey="系统风格"
             showCatalog()
         }
-        clockButton=setting(appearance,3,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
+        clockButton=setting(appearance,1,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
             library.showClock=!library.showClock
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
         lateinit var videoInfoButton: TextView
         fun videoInfoModeLabel()=listOf("关","简洁","完整")[library.videoInfoMode]
-        videoInfoButton=setting(appearance,3,"视频信息显示  ·  ${videoInfoModeLabel()}") {
+        videoInfoButton=setting(appearance,1,"视频信息显示  ·  ${videoInfoModeLabel()}") {
             TvDialog.choose(this,"视频信息显示",listOf("关","简洁","完整"),{ index ->
                 library.videoInfoMode=index
                 videoInfoButton.text="视频信息显示  ·  ${videoInfoModeLabel()}"
@@ -2181,15 +2179,15 @@ class MainActivity: Activity() {
             }).show()
         }
         lateinit var networkSpeedButton: TextView
-        networkSpeedButton=setting(appearance,3,"显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}") {
+        networkSpeedButton=setting(appearance,1,"显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}") {
             library.showNetworkSpeed=!library.showNetworkSpeed
             networkSpeedButton.text="显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}"
             applyNetworkSpeedOverlay()
             networkSpeedButton.requestFocus()
         }
 
-        fileBackup=setting(data,4,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
-        backup=setting(data,4,"手机备份与恢复") {
+        fileBackup=setting(data,2,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
+        backup=setting(data,2,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { restored,restoreSettings ->
                     favoriteMonitor.stop(); library.restore(restored,restoreSettings)
@@ -2206,10 +2204,10 @@ class MainActivity: Activity() {
                 }
             }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
         }
-        hidden=setting(data,4,"恢复隐藏推荐  ·  ${library.hidden().size} 部") {
+        hidden=setting(data,2,"恢复隐藏推荐  ·  ${library.hidden().size} 部") {
             library.unhideAll(); hidden.text="恢复隐藏推荐  ·  0 部"; Toast.makeText(this,"热门推荐已恢复",Toast.LENGTH_SHORT).show()
         }
-        statsButton=setting(data,4,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
+        statsButton=setting(data,2,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
         fun cacheBytes()=listOfNotNull(cacheDir,externalCacheDir).sumOf { dir -> dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }
         fun cacheLabel(bytes:Long?)="清理缓存  ·  ${when {
             bytes==null -> "计算中…"
@@ -2217,7 +2215,7 @@ class MainActivity: Activity() {
             bytes in 1024..1048575 -> "${bytes/1024} KB"
             else -> "%.1f MB".format(bytes/1048576f)
         }}"
-        clearCache=setting(data,4,cacheLabel(null)) {
+        clearCache=setting(data,2,cacheLabel(null)) {
             TvDialog.confirm(this,"清理缓存","清除封面图片和已下载的安装包等缓存数据，不影响收藏和观看记录。") {
                 io.execute {
                     listOfNotNull(cacheDir,externalCacheDir).forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
@@ -2235,8 +2233,8 @@ class MainActivity: Activity() {
             main.post { if(!isDestroyed) clearCache.text=cacheLabel(bytes) }
         }
 
-        resetButton=setting(system,5,"重置软件") { showResetOptions(resetButton) }
-        aboutButton=setting(system,5,"关于软件") { updater.show(aboutButton,aboutMode=true) }
+        resetButton=setting(system,4,"重置软件") { showResetOptions(resetButton) }
+        aboutButton=setting(system,4,"关于软件") { updater.show(aboutButton,aboutMode=true) }
 
         rechainSettings={
             val visibleByCategory=categoryItems.map { items -> items.filter { it.visibility==View.VISIBLE } }
