@@ -2063,15 +2063,18 @@ class MainActivity: Activity() {
             widthDp()<1100f -> 3
             else -> 4
         }
-        // One shared category card on the left; all setting groups stay in a single right column.
+        // A single seamless settings surface: subtle separators define sections instead of nested cards.
         val contentHost=row().apply { gravity=Gravity.TOP }
         parent.addView(contentHost,lp())
         val headingWidth=if(widthDp()<600f) 82 else 126
-        val categoryCard=column().apply {
-            setPadding(dp(7),dp(8),dp(7),dp(8))
-            background=rounded(surface)
-        }
-        contentHost.addView(categoryCard,lp(dp(headingWidth),-2).apply { rightMargin=dp(10) })
+        val separatorColor=Color.argb(38,255,255,255)
+        fun horizontalSeparator()=View(this).apply { setBackgroundColor(separatorColor) }
+        val categoryCard=column()
+        contentHost.addView(categoryCard,lp(dp(headingWidth),-2))
+        val columnDivider=View(this).apply { setBackgroundColor(separatorColor) }
+        contentHost.addView(columnDivider,lp(dp(1),-1).apply {
+            leftMargin=dp(10); rightMargin=dp(10)
+        })
         val sectionsHost=column()
         contentHost.addView(sectionsHost,LinearLayout.LayoutParams(0,-2,1f))
 
@@ -2102,15 +2105,22 @@ class MainActivity: Activity() {
                     setPadding(dp(5),dp(3),dp(2),0)
                 })
             }
-            val headingParams=lp(-1,-2).apply { bottomMargin=dp(8) }
-            categoryCard.addView(heading,headingParams)
+            categoryCard.addView(heading,lp(-1,-2))
             val panel=column().apply {
                 setPadding(dp(8),dp(7),dp(8),dp(7))
-                background=rounded(surface)
+                // The panel shares the page background; only its contents receive focus surfaces.
             }
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
             panel.addView(grid,lp(-1,-2))
-            sectionsHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
+            sectionsHost.addView(panel,lp(-1,-2))
+            val leftRule=horizontalSeparator()
+            categoryCard.addView(leftRule,lp(-1,dp(1)).apply {
+                topMargin=dp(8); bottomMargin=dp(8)
+            })
+            val rightRule=horizontalSeparator()
+            sectionsHost.addView(rightRule,lp(-1,dp(1)).apply {
+                topMargin=dp(8); bottomMargin=dp(8)
+            })
             // Keep each left category label vertically centered against its matching
             // right-hand settings panel, including after width or content changes.
             panel.addOnLayoutChangeListener { _,_,top,_,bottom,_,oldTop,_,oldBottom ->
@@ -2144,9 +2154,9 @@ class MainActivity: Activity() {
                 ellipsize=TextUtils.TruncateAt.END
                 setPadding(dp(9),dp(10),dp(9),dp(10))
                 minHeight=dp(66)
-                background=rounded(surface)
+                background=TvStyle.card(this@MainActivity,false)
                 setOnFocusChangeListener { _,focused ->
-                    background=rounded(if(focused) TvStyle.raised else surface,if(focused) accent else Color.TRANSPARENT)
+                    background=TvStyle.card(this@MainActivity,focused)
                     if(focused) markFocusedCategory(category)
                 }
             }
@@ -2374,16 +2384,17 @@ class MainActivity: Activity() {
                     val rowStart=(index/columns)*columns
                     val rowEnd=minOf(rowStart+columns,visible.size)-1
                     view.nextFocusLeftId=if(col>0) visible[index-1].id else categoryIndicators[category].id
-                    view.nextFocusRightId=if(index<rowEnd) visible[index+1].id else view.id
+                    // At the row edge, return to the category label instead of trapping focus.
+                    view.nextFocusRightId=if(index<rowEnd) visible[index+1].id else categoryIndicators[category].id
                     view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: navForTab().id
                     view.nextFocusDownId=visible.getOrNull(index+columns)?.id
-                        ?: categoryIndicators.getOrNull(category+1)?.id ?: view.id
+                        ?: categoryIndicators.getOrNull(category+1)?.id ?: navForTab().id
                 }
                 val indicator=categoryIndicators[category]
                 indicator.nextFocusLeftId=navForTab().id
-                indicator.nextFocusRightId=visible.firstOrNull()?.id ?: indicator.id
+                indicator.nextFocusRightId=visible.firstOrNull()?.id ?: navForTab().id
                 indicator.nextFocusUpId=categoryIndicators.getOrNull(category-1)?.id ?: navForTab().id
-                indicator.nextFocusDownId=categoryIndicators.getOrNull(category+1)?.id ?: indicator.id
+                indicator.nextFocusDownId=categoryIndicators.getOrNull(category+1)?.id ?: navForTab().id
             }
             navForTab().nextFocusDownId=settingRows.firstOrNull()?.id ?: navForTab().id
         }
