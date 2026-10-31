@@ -63,7 +63,8 @@ class RemoteVideo(
         } finally { synchronized(calls) { calls-=call } }
     }
     private fun fetchChunk(start: Long): Range {
-        val end=if(total>0) minOf(total,start+chunkBytes)-1 else start+chunkBytes-1L
+        val requestedEnd=if(start>Long.MAX_VALUE-chunkBytes.toLong()) Long.MAX_VALUE else start+chunkBytes.toLong()
+        val end=if(total>0) minOf(total,requestedEnd)-1 else requestedEnd-1
         return range(start,end)
     }
     private fun inFlightLocked(start: Long)=fetchingRead==start || fetchingAhead==start
@@ -116,7 +117,8 @@ class RemoteVideo(
     }
     private fun nextMissingLocked(): Long {
         if(total<=0) return -1
-        val target=minOf(total,lastRead+aheadBytes)
+        val aheadEnd=if(lastRead>Long.MAX_VALUE-aheadBytes) Long.MAX_VALUE else lastRead+aheadBytes
+        val target=minOf(total,aheadEnd)
         var at=lastRead-lastRead%chunkBytes
         while(at<target) { if(!cache.containsKey(at) && !inFlightLocked(at)) return at; at+=chunkBytes }
         return -1
