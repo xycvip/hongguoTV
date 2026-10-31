@@ -205,17 +205,9 @@ class MainActivity: Activity() {
     private val sleepActionMode: Int
         get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).let { if(it in 0..1) it else 0 }
     private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("播放", "软件")[mode.coerceIn(0, 1)]
+    // 每次启动软件后首次点击时提示一次；不依赖设备开机次数。
     private var sleepSettingHintShown=false
     private fun shouldShowSleepSettingHint(): Boolean {
-        val prefs=getSharedPreferences("playback-settings-v1", MODE_PRIVATE)
-        val bootCount=runCatching {
-            android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1)
-        }.getOrDefault(-1)
-        if(bootCount>=0) {
-            if(prefs.getInt("sleep_action_hint_boot_count", -1)==bootCount) return false
-            prefs.edit().putInt("sleep_action_hint_boot_count",bootCount).apply()
-            return true
-        }
         if(sleepSettingHintShown) return false
         sleepSettingHintShown=true
         return true
