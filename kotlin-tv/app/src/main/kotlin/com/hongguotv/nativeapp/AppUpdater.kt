@@ -118,7 +118,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             text = "换源下载"
             // 未发现新版时也允许切换线路重新检查；下载过程中允许主动换源，
             // 正在检查时禁用，避免并发请求。
-            isEnabled = active && idle() && (!busy || downloadInProgress)
+            // 不因检查请求期间 busy=true 而禁用当前焦点控件；点击回调会拦截重复请求。
+            // Android TV 部分 ROM 在禁用当前焦点按钮时会直接清空焦点。
+            isEnabled = active && idle()
         }
     }
     fun show(from: View?, aboutMode: Boolean = false) {
@@ -155,44 +157,43 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             visibility = if (status.contains("\n")) View.VISIBLE else View.GONE
             setTextIsSelectable(false)
         }
-        // 状态标题固定在滚动区外，检查结果和下载进度始终醒目可见；
-        // 较长的更新说明放入滚动区，底部操作按钮不会被挤出屏幕。
+        // 除底部操作按钮外，标题、状态、说明、选项和换源入口全部放进同一个滚动区。
+        // 手机横屏可用高度较小，不能只滚动更新说明，否则上方固定内容仍会把按钮挤出屏幕。
+        val statusContent = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            if (aboutMode) {
+                addView(TextView(activity).apply {
+                    text = "当前版本  ${BuildConfig.VERSION_NAME}"
+                    textSize = 14f
+                    setTextColor(TvStyle.accent)
+                    setPadding(0, 0, 0, (10 * dp).toInt())
+                    setTextIsSelectable(false)
+                }, LinearLayout.LayoutParams(-1, -2))
+                addView(TvDialog.body(
+                    activity,
+                    "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\\n\\n" +
+                        "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\\n" +
+                        "AndroidX Media3 / OkHttp：Apache-2.0\\nKotlin：Apache-2.0\\nBouncy Castle：MIT。\\n\\n" +
+                        "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
+                ))
+            } else {
+                addView(statusView, LinearLayout.LayoutParams(-1, -2).apply {
+                    bottomMargin = (10 * dp).toInt()
+                })
+                addView(statusDetailsView, LinearLayout.LayoutParams(-1, -2))
+            }
+        }
         val statusScroll = ScrollView(activity).apply {
             isFillViewport = false
             isVerticalScrollBarEnabled = true
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             clipToPadding = false
-            val statusContent = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                if (aboutMode) {
-                    addView(TextView(activity).apply {
-                        text = "当前版本  ${BuildConfig.VERSION_NAME}"
-                        textSize = 14f
-                        setTextColor(TvStyle.accent)
-                        setPadding(0, 0, 0, (10 * dp).toInt())
-                        setTextIsSelectable(false)
-                    }, LinearLayout.LayoutParams(-1, -2))
-                    addView(TvDialog.body(
-                        activity,
-                        "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\n\n" +
-                            "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\n" +
-                            "AndroidX Media3 / OkHttp：Apache-2.0\nKotlin：Apache-2.0\nBouncy Castle：MIT。\n\n" +
-                            "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
-                    ))
-                }
-                if (!aboutMode) addView(statusDetailsView, LinearLayout.LayoutParams(-1, -2))
-            }
             addView(statusContent, FrameLayout.LayoutParams(-1, -2))
         }
-        // 限定整个弹窗内容高度，并让说明区占用剩余空间；底部操作按钮始终留在可见区域。
+        // 给卡片外层留出系统栏和圆角内边距空间；操作按钮固定在滚动区之外。
         body.layoutParams = LinearLayout.LayoutParams(
-            -1, (activity.resources.displayMetrics.heightPixels * 0.72f).toInt()
+            -1, (activity.resources.displayMetrics.heightPixels * 0.64f).toInt()
         )
-        if (!aboutMode) {
-            body.addView(statusView, LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = (10 * dp).toInt()
-            })
-        }
         body.addView(statusScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val autoCheckBox = if (!aboutMode && !updatePending) CheckBox(activity).apply {
             id = View.generateViewId()
@@ -204,8 +205,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 if (!enabled && busy) { interrupt(); updateStatus("自动更新已关闭，可手动检查"); renderActions() }
             }
         } else null
-        autoCheckBox?.let { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
-        if (!aboutMode) body.addView(TextView(activity).apply {
+        autoCheckBox?.let { statusContent.addView(it, LinearLayout.LayoutParams(-1, -2)) }
+        if (!aboutMode) statusContent.addView(TextView(activity).apply {
             text = if (updatePending) "发现新版本，点击即可更新" else "只在应用前台浏览时检查，播放中不打扰。下载后需确认系统安装，收藏与观看记录保留。"
             textSize = 13f; setTextColor(TvStyle.muted)
             setPadding(0, (8*dp).toInt(), 0, (8*dp).toInt())
@@ -224,7 +225,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         proxy.isFocusableInTouchMode = true
         proxyButton = proxy
         if (!aboutMode) {
-            body.addView(proxy, LinearLayout.LayoutParams(-1, -2).apply {
+            statusContent.addView(proxy, LinearLayout.LayoutParams(-1, -2).apply {
                 topMargin = (8 * dp).toInt()
             })
         }
@@ -232,7 +233,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         buttons.addView(action, LinearLayout.LayoutParams(-2,-2))
         body.addView(buttons)
         val next = AlertDialog.Builder(activity).setView(TvDialog.card(activity,body)).create()
-        TvDialog.styleWindow(activity,next)
+        val isCompactScreen = activity.resources.configuration.smallestScreenWidthDp < 600
+        TvDialog.styleWindow(activity, next, widthFraction = if (isCompactScreen) 0.90f else 0.55f)
         dialog = next
         next.setOnDismissListener {
             if (dialog === next) { dialog = null; statusView = null; statusDetailsView = null; actionButton = null; proxyButton = null }
@@ -253,6 +255,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 check(true, manualMirrorIndex)
                 updateStatus("正在通过 $mirrorName 检查最新版…")
             }
+            // 保持换源按钮为当前焦点；异步状态刷新不应把遥控器焦点带回页面或清空。
+            proxy.post { if (next.isShowing && proxy.isEnabled) proxy.requestFocus() }
         }
         action.setOnClickListener {
             if (aboutMode) {
