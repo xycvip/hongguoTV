@@ -2043,6 +2043,7 @@ class MainActivity: Activity() {
         val settingRows=mutableListOf<TextView>()
         val categoryItems=mutableListOf<MutableList<TextView>>()
         val categoryIndicators=mutableListOf<TextView>()
+        val categoryPanels=mutableListOf<LinearLayout>()
         var focusedCategory=-1
         fun markFocusedCategory(category:Int) {
             if(category !in categoryIndicators.indices) return
@@ -2055,6 +2056,10 @@ class MainActivity: Activity() {
                 )
                 // Keep all category labels visually inside one shared navigation card.
                 indicator.background=rounded(Color.TRANSPARENT)
+            }
+            // The left navigation controls the single visible settings panel on the right.
+            categoryPanels.forEachIndexed { index,panel ->
+                panel.visibility=if(index==focusedCategory) View.VISIBLE else View.GONE
             }
         }
         // Five vertical sections; danmaku controls are grouped into the Playback section.
@@ -2097,6 +2102,7 @@ class MainActivity: Activity() {
                 setPadding(dp(8),dp(7),dp(8),dp(7))
                 background=rounded(surface)
             }
+            categoryPanels+=panel
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
             panel.addView(grid,lp(-1,-2))
             sectionsHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
@@ -2360,6 +2366,7 @@ class MainActivity: Activity() {
             navForTab().nextFocusDownId=settingRows.firstOrNull()?.id ?: navForTab().id
         }
         rechainSettings()
+        markFocusedCategory(0)
 
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
