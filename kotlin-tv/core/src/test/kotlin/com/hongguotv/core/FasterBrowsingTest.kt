@@ -52,7 +52,7 @@ class FasterBrowsingTest {
     @Test fun cachedVideoPrefixServesRepeatReadsAndFetchesOnlyMissingTail() {
         fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
         val head=box("ftyp","isom0000".toByteArray())+box("moov",byteArrayOf())
-        val data=head+ByteArray(2*1024*1024-head.size) { (it%239).toByte() }
+        val data=head+ByteArray(4*1024*1024-head.size) { (it%239).toByte() }
         val ranges=java.util.Collections.synchronizedList(mutableListOf<String>())
         val server=HttpServer.create(InetSocketAddress("127.0.0.1",0),0)
         server.createContext("/video") { exchange ->
@@ -65,11 +65,19 @@ class FasterBrowsingTest {
         server.start()
         val client=OkHttpClient()
         try {
-            val remote=RemoteVideo(client,StreamInfo("http://127.0.0.1:${server.address.port}/video",null,"720P")).warm()
-            assertEquals(listOf("bytes=0-262143","bytes=262144-1048575"),ranges.toList())
-            assertArrayEquals(data.copyOfRange(11,700011),remote.read(11,700000)); assertEquals(2,ranges.size)
-            assertArrayEquals(data.copyOfRange(1000000,1200000),remote.read(1000000,200000))
-            assertEquals("bytes=1048576-1199999",ranges.last())
+            // Disable read-ahead here so this test deterministically checks reader-side chunk caching.
+            // Keep the production 2 MiB chunk size: warm() fetches the first chunk, and a seek into
+            // the second chunk must fetch only that missing chunk.
+            val remote=RemoteVideo(
+                client,
+                StreamInfo("http://127.0.0.1:${server.address.port}/video",null,"720P"),
+                aheadBytes=0
+            ).warm()
+            assertEquals(listOf("bytes=0-2097151"),ranges.toList())
+            assertArrayEquals(data.copyOfRange(11,700011),remote.read(11,700000))
+            assertEquals(1,ranges.size)
+            assertArrayEquals(data.copyOfRange(2500000,2700000),remote.read(2500000,200000))
+            assertEquals(listOf("bytes=0-2097151","bytes=2097152-4194303"),ranges.toList())
             remote.close(); assertThrows(java.io.IOException::class.java) { remote.read(0,1) }
         } finally { server.stop(0); client.connectionPool.evictAll(); client.dispatcher.executorService.shutdownNow() }
     }
