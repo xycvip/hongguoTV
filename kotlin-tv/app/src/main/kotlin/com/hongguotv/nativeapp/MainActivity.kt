@@ -2016,8 +2016,23 @@ class MainActivity: Activity() {
         }
 
         fun syncDanmakuRows() {
-            val show=library.danmaku
-            danmakuPrefRows.forEach { it.visibility=if(show) View.VISIBLE else View.GONE }
+            val visibleRows=listOf(danmakuButton)+danmakuPrefRows.filter { library.danmaku }
+            val allRows=listOf(danmakuButton)+danmakuPrefRows
+            // 重新加入可见项，避免 GridLayout 中隐藏项留下空格或断层。
+            danmaku.removeAllViews()
+            allRows.filter { it !in visibleRows }.forEach { it.visibility=View.GONE }
+            visibleRows.forEach { item ->
+                item.visibility=View.VISIBLE
+                val params=item.layoutParams as? GridLayout.LayoutParams
+                    ?: GridLayout.LayoutParams(
+                        GridLayout.spec(GridLayout.UNDEFINED),
+                        GridLayout.spec(GridLayout.UNDEFINED,1f)
+                    ).apply {
+                        width=0; height=dp(66)
+                        setMargins(dp(5),dp(5),dp(5),dp(5))
+                    }
+                danmaku.addView(item,params)
+            }
             rechainSettings()
         }
         danmakuButton=setting(danmaku,1,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
@@ -2037,8 +2052,8 @@ class MainActivity: Activity() {
             danmakuRows.text="展示行数  ·  ${library.danmakuRows} 行"
             Toast.makeText(this,"弹幕设置已恢复默认",Toast.LENGTH_SHORT).show()
         }
-        danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset))
         blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
+        danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset,blockedWords))
         syncDanmakuRows()
 
         val remoteActions=listOf(
