@@ -37,17 +37,47 @@ object MediaCrypto {
         for(at in start..limit-8) if(data[at+4].toInt()==type[0].code) { val b=box(data,at,limit); if(b?.type==type) return b }
         return null
     }
+    /** Locate a front-loaded moov box while safely skipping ordinary top-level boxes.
+     *  A moov after mdat is deliberately rejected: loading it requires a separate range
+     *  for the index and must not turn a large media payload into an in-memory header. */
+    private fun locateMoov(data: ByteArray, total: Long, requireComplete: Boolean): Pair<Int, Long> {
+        val ftyp = box(data, 0) ?: throw IOException("视频文件头不完整")
+        if (ftyp.type != "ftyp" || ftyp.start != 0) throw IOException("不支持的视频容器")
+        var at = ftyp.end
+        while (at.toLong() + 8L <= minOf(data.size.toLong(), total)) {
+            val size32 = data.u32(at)
+            val type = String(data, at + 4, 4, Charsets.US_ASCII)
+            val header = if (size32 == 1L) 16 else 8
+            if (at + header > data.size) throw IOException("视频索引头不完整")
+            val size = when (size32) {
+                0L -> throw IOException("不支持未知长度的视频索引块")
+                1L -> data.i64(at + 8).also { if (it < 0) throw IOException("视频索引大小异常") }
+                else -> size32
+            }
+            if (size < header) throw IOException("视频索引大小异常")
+            val end = at.toLong() + size
+            if (end > total || end > 8L * 1024L * 1024L) {
+                if (type == "moov") throw IOException("视频索引大小异常")
+                throw IOException("视频索引不在文件开头")
+            }
+            if (type == "moov") {
+                if (requireComplete && end > data.size) throw IOException("视频索引不完整")
+                return at to end
+            }
+            if (type == "mdat") throw IOException("视频索引位于媒体数据之后，暂不支持")
+            if (end > data.size) throw IOException("视频索引不在文件开头")
+            at = end.toInt()
+        }
+        throw IOException("视频索引不在文件开头")
+    }
     fun headerEnd(first: ByteArray,total: Long): Int {
-        if(first.size<16 || String(first,4,4,Charsets.US_ASCII)!="ftyp") throw IOException("不支持的视频容器")
-        val ftyp=first.u32(0)
-        if(ftyp<8 || ftyp+8>first.size || String(first,ftyp.toInt()+4,4,Charsets.US_ASCII)!="moov") throw IOException("视频索引不在文件开头")
-        val size=first.u32(ftyp.toInt()); val end=ftyp+size
-        if(size<8 || end>total || end>8*1024*1024) throw IOException("视频索引大小异常")
+        val (_, end) = locateMoov(first,total,false)
         return end.toInt()
     }
     fun prepare(data: ByteArray,key: ByteArray?): Prepared {
         if(key==null) return Prepared(data.copyOf(),emptyList())
-        val moov=box(data,data.u32(0).toInt()) ?: throw IOException("视频索引不完整")
+        val (moovOffset, _) = locateMoov(data,data.size.toLong(),true)
+        val moov=box(data,moovOffset) ?: throw IOException("视频索引不完整")
         require(moov.type=="moov")
         val samples=mutableListOf<Sample>(); val header=data.copyOf()
         var cursor=moov.body
