@@ -139,11 +139,14 @@ class HomeScreen(
         contents.removeAllViews(); rows.clear(); cards.clear(); moreButton=null; lastRow=null
         shelves.filter { it.entries.isNotEmpty() || it.more!=null }.forEach { shelf ->
             val block=LinearLayout(context).apply { orientation=VERTICAL }
-            val heading=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(2),dp(4),dp(2),dp(9)) }
-            heading.addView(View(context).apply { background=TvStyle.shape(context,accent,radius=2) },LayoutParams(dp(3),dp(14)).apply { rightMargin=dp(8) })
-            heading.addView(label(shelf.title,16f).apply { setTypeface(null,Typeface.BOLD) },LayoutParams(0,-2,1f))
-            heading.addView(label("左右选剧  ·  上下切换分区",10f,TvStyle.muted))
-            block.addView(heading)
+            // 随机推荐区保留居中的操作卡片，不再额外显示重复的栏目标题。
+            if(shelf.key!="random") {
+                val heading=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; setPadding(dp(2),dp(4),dp(2),dp(9)) }
+                heading.addView(View(context).apply { background=TvStyle.shape(context,accent,radius=2) },LayoutParams(dp(3),dp(14)).apply { rightMargin=dp(8) })
+                heading.addView(label(shelf.title,16f).apply { setTypeface(null,Typeface.BOLD) },LayoutParams(0,-2,1f))
+                heading.addView(label("左右选剧  ·  上下切换分区",10f,TvStyle.muted))
+                block.addView(heading)
+            }
             val horizontal=VerticalFriendlyHorizontalScrollView(context).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; setPadding(dp(2),dp(2),dp(2),dp(2)); isFillViewport=shelf.key=="random" }
             val line=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=if(shelf.key=="random") Gravity.CENTER else Gravity.TOP }
             horizontal.addView(line, if(shelf.key=="random") LayoutParams(-1,-2) else LayoutParams(-2,-2)); block.addView(horizontal)
