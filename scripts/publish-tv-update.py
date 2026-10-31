@@ -183,7 +183,75 @@ def changelog():
             "", line, flags=re.I
         )
         cleaned.append(line)
-    return translate_notes("\n".join(cleaned))
+    # Compare the two complete source versions, rather than treating each commit
+    # as an independent release-note item. Commit subjects are only supporting
+    # clues; changed source paths and added/removed code are also inspected.
+    if not previous_ref:
+        return translate_notes("\\n".join(cleaned))
+
+    changed_paths = run_text([
+        "git", "diff", "--name-only", "--diff-filter=ACMR",
+        f"{previous_ref}..{current_commit}",
+    ]).splitlines()
+    source_paths = [
+        path for path in changed_paths
+        if path.startswith(("kotlin-tv/app/src/main/", "kotlin-tv/core/src/main/"))
+        and path.endswith((".kt", ".java", ".xml"))
+    ]
+    diff_text = run_text([
+        "git", "diff", "--no-ext-diff", "--unified=0",
+        f"{previous_ref}..{current_commit}", "--",
+        "kotlin-tv/app/src/main", "kotlin-tv/core/src/main",
+    ])
+    evidence = "\\n".join(cleaned + source_paths + [diff_text]).lower()
+
+    # One bullet per user-facing feature area. Multiple commits and files that
+    # implement the same feature collapse into one release-note item.
+    feature_rules = [
+        (r"搜索|search|query|检索", "优化搜索功能与搜索结果展示"),
+        (r"评论|comment|reply|回复|点赞", "完善评论、回复与互动功能"),
+        (r"首页|home.?screen|homepage|热门发现|片单|推荐|recommend", "优化首页内容展示与推荐体验"),
+        (r"播放|player|playback|倍速|清晰度|进度|全屏|弹幕|danmaku", "优化视频播放体验及播放设置"),
+        (r"登录|login|账号|account|二维码|短信验证|phone.?login", "完善账号登录与账户功能"),
+        (r"收藏|favorite|library|书架|历史记录|watch.?history", "完善收藏、书架与观看记录"),
+        (r"设置|setting|preference|偏好", "优化设置选项与操作体验"),
+        (r"更新|updater|update|版本检查|下载进度", "优化应用更新与版本管理"),
+        (r"片源|source|cms|线路|仓库|配置导入", "完善片源管理与内容加载"),
+        (r"焦点|focus|遥控器|remote.?control|导航|键盘操作", "优化电视遥控器焦点与导航操作"),
+        (r"弹窗|dialog|二维码|布局|界面|ui|样式|主题|毛玻璃|动画", "优化界面布局与交互效果"),
+        (r"备份|backup|恢复|restore|导入|导出|transfer", "完善本地数据备份与恢复"),
+    ]
+    notes = []
+    matched_spans = set()
+    for pattern, label in feature_rules:
+        if re.search(pattern, evidence, flags=re.I):
+            if label not in matched_spans:
+                notes.append("- " + label)
+                matched_spans.add(label)
+
+    # If source code changed but no known feature keyword matched, still report
+    # a real source-level update instead of falling back to one commit title.
+    if not notes and source_paths:
+        app_changed = any(path.startswith("kotlin-tv/app/src/main/") for path in source_paths)
+        core_changed = any(path.startswith("kotlin-tv/core/src/main/") for path in source_paths)
+        if app_changed and core_changed:
+            notes.append("- 优化应用界面、功能及底层逻辑")
+        elif app_changed:
+            notes.append("- 优化应用界面与功能体验")
+        else:
+            notes.append("- 优化应用底层功能与运行逻辑")
+
+    # Include non-source project changes only when there is no user-facing
+    # source change, while excluding release/build housekeeping.
+    if not notes:
+        meaningful = [
+            path for path in changed_paths
+            if not path.startswith((".github/", "scripts/"))
+            and not path.endswith(("version.properties", "README.md"))
+        ]
+        if meaningful:
+            notes.append("- 完善项目配置与运行支持")
+    return "\\n".join(notes) or "- 本次版本更新（具体变更见提交记录）。"
 
 notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
