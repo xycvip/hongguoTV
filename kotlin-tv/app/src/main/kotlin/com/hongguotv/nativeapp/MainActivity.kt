@@ -1861,134 +1861,225 @@ class MainActivity: Activity() {
     }
     private fun settings(parent: LinearLayout, footerHost: LinearLayout) {
         val settingRows=mutableListOf<TextView>()
-        parent.addView(text("按你的习惯播放",25f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL); setPadding(0,dp(15),0,dp(7)) })
-        parent.addView(text("偏好自动保存，下一部剧继续使用。",13f,muted).apply { setPadding(0,0,0,dp(18)) })
-        val groups=row().apply { gravity=Gravity.TOP }
-        val playback=column(); val device=column()
-        listOf(playback,device).forEachIndexed { i,group ->
-            group.setPadding(dp(16),dp(16),dp(16),dp(16)); group.background=rounded(surface)
-            groups.addView(group,lp(0,-2).apply { weight=1f; if(i==0) rightMargin=dp(16) })
+        val categoryItems=mutableListOf<MutableList<TextView>>()
+        val categoryPanels=mutableListOf<LinearLayout>()
+        val categoryNames=listOf("播放","弹幕","遥控器","外观","数据","关于")
+        val columns=if(widthDp()<1000f) 3 else 4
+
+        parent.addView(text("设置中心",24f).apply {
+            typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+            maxLines=1; ellipsize=TextUtils.TruncateAt.END
+            setPadding(0,dp(12),0,dp(10))
+        })
+        parent.addView(text("按使用习惯调整播放、显示与设备功能",13f,muted).apply {
+            maxLines=1; ellipsize=TextUtils.TruncateAt.END
+            setPadding(0,0,0,dp(14))
+        })
+
+        val categoryBar=row().apply {
+            gravity=Gravity.CENTER_VERTICAL
+            setPadding(0,0,0,dp(14))
         }
-        parent.addView(groups)
-        fun heading(group: LinearLayout,title: String,subtitle: String) {
-            group.addView(text(title,18f).apply { setTypeface(null,Typeface.BOLD) })
-            group.addView(text(subtitle,12f,muted).apply { setPadding(0,dp(5),0,dp(15)) })
-        }
-        fun setting(group: LinearLayout,label: String,action: ()->Unit): TextView {
-            val view=button(label,onClick=action).apply {
-                gravity=Gravity.CENTER_VERTICAL; setPadding(dp(13),dp(11),dp(13),dp(11))
-                background=rounded(bg)
-                setOnFocusChangeListener { _,focused -> background=rounded(if(focused) TvStyle.raised else bg,if(focused) accent else Color.TRANSPARENT) }
+        parent.addView(categoryBar,lp())
+        val contentHost=FrameLayout(this)
+        parent.addView(contentHost,lp())
+
+        fun section(title:String,subtitle:String): Pair<LinearLayout,GridLayout> {
+            val panel=column().apply {
+                setPadding(dp(16),dp(15),dp(16),dp(16))
+                background=rounded(surface)
             }
-            group.addView(view,lp(-1,-2).apply { bottomMargin=dp(8) })
+            panel.addView(text(title,18f).apply {
+                typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                maxLines=1; ellipsize=TextUtils.TruncateAt.END
+            })
+            panel.addView(text(subtitle,12f,muted).apply {
+                maxLines=1; ellipsize=TextUtils.TruncateAt.END
+                setPadding(0,dp(4),0,dp(13))
+            })
+            val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
+            panel.addView(grid,lp())
+            contentHost.addView(panel,FrameLayout.LayoutParams(-1,-2))
+            categoryPanels+=panel
+            categoryItems+=mutableListOf<TextView>()
+            return panel to grid
+        }
+        val playback=section("播放体验","清晰度、倍速与连续播放").second
+        val danmaku=section("弹幕设置","调整弹幕显示效果与屏蔽内容").second
+        val remote=section("遥控器设置","自定义方向键与确认键操作").second
+        val appearance=section("外观与显示","调整界面风格和时间显示").second
+        val data=section("片单与数据","备份记录、统计与缓存管理").second
+        val system=section("系统与关于","恢复设置与查看应用信息").second
+
+        fun setting(group:GridLayout,category:Int,label:String,action:()->Unit):TextView {
+            val view=button(label,onClick=action).apply {
+                gravity=Gravity.CENTER
+                textSize=14f
+                maxLines=1
+                ellipsize=TextUtils.TruncateAt.END
+                setPadding(dp(9),dp(10),dp(9),dp(10))
+                minHeight=dp(66)
+                background=rounded(TvStyle.raised)
+                setOnFocusChangeListener { _,focused ->
+                    background=rounded(if(focused) TvStyle.raised else TvStyle.selectedSurface,if(focused) accent else TvStyle.outline)
+                }
+            }
+            val params=GridLayout.LayoutParams(
+                GridLayout.spec(GridLayout.UNDEFINED),
+                GridLayout.spec(GridLayout.UNDEFINED,1f)
+            ).apply {
+                width=0; height=dp(66)
+                setMargins(dp(5),dp(5),dp(5),dp(5))
+            }
+            group.addView(view,params)
             settingRows+=view
+            categoryItems[category]+=view
             return view
         }
-        heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
-        heading(device,"片单与设备","保管记录，保持应用更新")
-        lateinit var startupAutoplayButton: TextView
-        fun paintStartupAutoplayButton(focused: Boolean=startupAutoplayButton.hasFocus()) {
+
+        var activeCategory=0
+        val categoryButtons=mutableListOf<TextView>()
+        fun paintCategories() {
+            categoryButtons.forEachIndexed { index,button ->
+                val selected=index==activeCategory
+                button.background=rounded(
+                    if(button.hasFocus()) TvStyle.raised else if(selected) TvStyle.selectedSurface else surface,
+                    if(button.hasFocus() || selected) accent else Color.TRANSPARENT
+                )
+                button.setTextColor(if(selected) white else muted)
+            }
+        }
+        fun selectCategory(index:Int,focusFirst:Boolean=false) {
+            activeCategory=index.coerceIn(categoryPanels.indices)
+            categoryPanels.forEachIndexed { i,panel -> panel.visibility=if(i==activeCategory) View.VISIBLE else View.GONE }
+            paintCategories()
+            rechainSettings()
+            if(focusFirst) categoryItems[activeCategory].firstOrNull { it.visibility==View.VISIBLE }?.requestFocus()
+        }
+        categoryNames.forEachIndexed { index,name ->
+            val item=text(name,14f).apply {
+                gravity=Gravity.CENTER
+                maxLines=1
+                ellipsize=TextUtils.TruncateAt.END
+                setPadding(dp(5),dp(12),dp(5),dp(12))
+                isFocusable=true; isFocusableInTouchMode=true
+                id=View.generateViewId()
+                background=rounded(surface)
+                setOnClickListener { selectCategory(index,true) }
+                setOnFocusChangeListener { _,focused ->
+                    if(focused) selectCategory(index)
+                    paintCategories()
+                }
+            }
+            categoryButtons+=item
+            categoryBar.addView(item,lp(0,dp(48)).apply { width=0; weight=1f; if(index>0) leftMargin=dp(6) })
+        }
+
+        lateinit var startupAutoplayButton:TextView
+        lateinit var qualityButton:TextView
+        lateinit var defaultSpeed:TextView
+        lateinit var frame:TextView
+        lateinit var autoNextButton:TextView
+        lateinit var autoSeasonButton:TextView
+        val danmakuPrefRows=mutableListOf<TextView>()
+        var danmakuExpanded=false
+        var rechainSettings:()->Unit={}
+        lateinit var danmakuToggle:TextView
+        lateinit var danmakuButton:TextView
+        lateinit var danmakuOpacity:TextView
+        lateinit var danmakuFont:TextView
+        lateinit var danmakuSpeed:TextView
+        lateinit var danmakuRows:TextView
+        lateinit var danmakuReset:TextView
+        lateinit var blockedWords:TextView
+        lateinit var keySettings:TextView
+        lateinit var themeButton:TextView
+        lateinit var clockButton:TextView
+        lateinit var fileBackup:TextView
+        lateinit var backup:TextView
+        lateinit var hidden:TextView
+        lateinit var statsButton:TextView
+        lateinit var clearCache:TextView
+        lateinit var resetButton:TextView
+        lateinit var aboutButton:TextView
+
+        fun paintStartupAutoplayButton(focused:Boolean=startupAutoplayButton.hasFocus()) {
             val enabled=startupAutoplayEnabled()
             startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
-            startupAutoplayButton.isSelected=false
-            // 只在真正获得焦点时高亮；开启状态不再残留选中底色。
-            startupAutoplayButton.background=rounded(
-                if(focused) TvStyle.raised else bg,
-                if(focused) accent else Color.TRANSPARENT
-            )
+            startupAutoplayButton.background=rounded(if(focused) TvStyle.raised else TvStyle.selectedSurface,if(focused) accent else TvStyle.outline)
         }
-        fun syncStartupAutoplayButton() = paintStartupAutoplayButton()
-        startupAutoplayButton=setting(playback,"启动时播放推荐") {
+        startupAutoplayButton=setting(playback,0,"启动时播放推荐") {
             val enabled=!startupAutoplayEnabled()
             getSharedPreferences("startup_playback",MODE_PRIVATE).edit().putBoolean("autoplay_recommendation",enabled).apply()
-            syncStartupAutoplayButton()
+            paintStartupAutoplayButton()
         }
-        startupAutoplayButton.setOnFocusChangeListener { _,focused -> paintStartupAutoplayButton(focused) }
         paintStartupAutoplayButton(false)
-        lateinit var qualityButton: TextView
-        qualityButton=setting(playback,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
-        lateinit var defaultSpeed: TextView
-        defaultSpeed=setting(playback,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
-        lateinit var frame: TextView
-        frame=setting(playback,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
-        lateinit var autoNextButton: TextView
-        autoNextButton=setting(playback,"自动连播  ·  ${if(library.autoNext) "开启" else "关闭"}") {
+        startupAutoplayButton.setOnFocusChangeListener { _,focused -> paintStartupAutoplayButton(focused) }
+        qualityButton=setting(playback,0,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
+        defaultSpeed=setting(playback,0,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
+        frame=setting(playback,0,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
+        autoNextButton=setting(playback,0,"自动连播  ·  ${if(library.autoNext) "开启" else "关闭"}") {
             library.autoNext=!library.autoNext
             autoNextButton.text="自动连播  ·  ${if(library.autoNext) "开启" else "关闭"}"
         }
-        lateinit var autoSeasonButton: TextView
-        autoSeasonButton=setting(playback,"系列剧连播  ·  ${if(library.autoSeason) "开启" else "关闭"}") {
+        autoSeasonButton=setting(playback,0,"系列剧连播  ·  ${if(library.autoSeason) "开启" else "关闭"}") {
             library.autoSeason=!library.autoSeason
             autoSeasonButton.text="系列剧连播  ·  ${if(library.autoSeason) "开启" else "关闭"}"
         }
-        val danmakuPrefRows=mutableListOf<TextView>()
-        var danmakuExpanded=false
-        var rechainSettings: ()->Unit={}
-        lateinit var danmakuToggle: TextView
+
         fun syncDanmakuRows() {
             val show=library.danmaku
             danmakuToggle.visibility=if(show) View.VISIBLE else View.GONE
             danmakuPrefRows.forEach { it.visibility=if(show && danmakuExpanded) View.VISIBLE else View.GONE }
-            danmakuToggle.text="弹幕设置  ·  ${if(danmakuExpanded) "收起" else "展开"}"
+            danmakuToggle.text="高级弹幕设置  ·  ${if(danmakuExpanded) "收起" else "展开"}"
             rechainSettings()
         }
-        lateinit var danmakuButton: TextView
-        danmakuButton=setting(playback,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
+        danmakuButton=setting(danmaku,1,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
             library.danmaku=!library.danmaku
             danmakuButton.text="官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}"
             if(!library.danmaku) danmakuExpanded=false
             syncDanmakuRows()
         }
-        danmakuToggle=setting(playback,"弹幕设置  ·  展开") {
+        danmakuToggle=setting(danmaku,1,"高级弹幕设置  ·  展开") {
             danmakuExpanded=!danmakuExpanded
             syncDanmakuRows()
         }
-        lateinit var danmakuOpacity: TextView
-        danmakuOpacity=setting(playback,"弹幕不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
-        lateinit var danmakuFont: TextView
-        danmakuFont=setting(playback,"弹幕字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
-        lateinit var danmakuSpeed: TextView
-        danmakuSpeed=setting(playback,"弹幕移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
-        lateinit var danmakuRows: TextView
-        danmakuRows=setting(playback,"弹幕展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
-        lateinit var danmakuReset: TextView
-        danmakuReset=setting(playback,"恢复弹幕默认设置") {
+        danmakuOpacity=setting(danmaku,1,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
+        danmakuFont=setting(danmaku,1,"字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
+        danmakuSpeed=setting(danmaku,1,"移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
+        danmakuRows=setting(danmaku,1,"展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
+        danmakuReset=setting(danmaku,1,"恢复弹幕默认") {
             resetDanmakuPrefs()
-            danmakuOpacity.text="弹幕不透明度  ·  ${library.danmakuOpacity}%"
-            danmakuFont.text="弹幕字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}"
-            danmakuSpeed.text="弹幕移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}"
-            danmakuRows.text="弹幕展示行数  ·  ${library.danmakuRows} 行"
+            danmakuOpacity.text="不透明度  ·  ${library.danmakuOpacity}%"
+            danmakuFont.text="字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}"
+            danmakuSpeed.text="移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}"
+            danmakuRows.text="展示行数  ·  ${library.danmakuRows} 行"
             Toast.makeText(this,"弹幕设置已恢复默认",Toast.LENGTH_SHORT).show()
         }
         danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset))
-        lateinit var blockedWords: TextView
-        blockedWords=setting(playback,"弹幕屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
-        lateinit var keySettings: TextView
-        keySettings=setting(playback,"遥控器按键自定义") { showKeySettings(keySettings) }
+        blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         syncDanmakuRows()
 
-        lateinit var themeButton: TextView
-        themeButton=setting(device,"系统风格  ·  ${TvStyle.theme.label}") {
+        keySettings=setting(remote,2,"遥控器按键自定义") { showKeySettings(keySettings) }
+
+        themeButton=setting(appearance,3,"系统风格  ·  ${TvStyle.theme.label}") {
             library.theme=TvStyle.toggle().name
-            // Redraw only the current settings screen. Recreating the Activity reruns startup autoplay.
             settingsFocusKey="系统风格"
             showCatalog()
         }
-        lateinit var clockButton: TextView
-        clockButton=setting(device,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
+        clockButton=setting(appearance,3,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
             library.showClock=!library.showClock
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        lateinit var fileBackup: TextView
-        fileBackup=setting(device,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
-        lateinit var backup: TextView
-        backup=setting(device,"手机备份与恢复") {
-            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState = cloudAccount.backupJson(), playbackExtras = extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
-                tvTools.libraryTransfer(encoded,backup) { data,restoreSettings ->
-                    favoriteMonitor.stop(); library.restore(data,restoreSettings)
+
+        fileBackup=setting(data,4,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
+        backup=setting(data,4,"手机备份与恢复") {
+            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
+                tvTools.libraryTransfer(encoded,backup) { restored,restoreSettings ->
+                    favoriteMonitor.stop(); library.restore(restored,restoreSettings)
                     if(restoreSettings) {
-                        val restoredExtras = data.playbackExtras ?: BackupPlaybackExtras()
+                        val restoredExtras=restored.playbackExtras ?: BackupPlaybackExtras()
                         extras.restoreBackup(restoredExtras)
                         library.restoreSkipMarks(restoredExtras.skipMarks)
                     }
@@ -1996,27 +2087,25 @@ class MainActivity: Activity() {
                     showCatalog()
                     favoriteMonitor.check()
                     Toast.makeText(this,"备份记录已恢复",Toast.LENGTH_LONG).show()
-                    restoreBackupAccount(data, backup)
+                    restoreBackupAccount(restored,backup)
                 }
             }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
         }
-        lateinit var hidden: TextView
-        hidden=setting(device,"恢复隐藏推荐  ·  ${library.hidden().size} 部") {
+        hidden=setting(data,4,"恢复隐藏推荐  ·  ${library.hidden().size} 部") {
             library.unhideAll(); hidden.text="恢复隐藏推荐  ·  0 部"; Toast.makeText(this,"热门推荐已恢复",Toast.LENGTH_SHORT).show()
         }
-        lateinit var statsButton: TextView
-        statsButton=setting(device,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
+        statsButton=setting(data,4,"观看统计  ·  本机累计") { showWatchStats(statsButton) }
         fun cacheBytes()=listOfNotNull(cacheDir,externalCacheDir).sumOf { dir -> dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() } }
-        fun cacheLabel(bytes: Long?)="清理缓存  ·  ${when {
+        fun cacheLabel(bytes:Long?)="清理缓存  ·  ${when {
             bytes==null -> "计算中…"
-            bytes in 0..1023 -> "$bytes B"; bytes in 1024..1048575 -> "${bytes/1024} KB"; else -> "%.1f MB".format(bytes/1048576f)
+            bytes in 0..1023 -> "$bytes B"
+            bytes in 1024..1048575 -> "${bytes/1024} KB"
+            else -> "%.1f MB".format(bytes/1048576f)
         }}"
-        lateinit var clearCache: TextView
-        clearCache=setting(device,cacheLabel(null)) {
+        clearCache=setting(data,4,cacheLabel(null)) {
             TvDialog.confirm(this,"清理缓存","清除封面图片和已下载的安装包等缓存数据，不影响收藏和观看记录。") {
                 io.execute {
                     listOfNotNull(cacheDir,externalCacheDir).forEach { dir -> dir.listFiles()?.forEach { it.deleteRecursively() } }
-                    // 统计同样放后台，避免删完立刻在主线程遍历目录
                     val remaining=cacheBytes()
                     main.post {
                         if(isDestroyed) return@post
@@ -2026,41 +2115,51 @@ class MainActivity: Activity() {
                 }
             }.show()
         }
-        // 大小统计会遍历缓存目录，放到后台算完再回填，避免设置页构建时阻塞主线程
         io.execute {
             val bytes=cacheBytes()
             main.post { if(!isDestroyed) clearCache.text=cacheLabel(bytes) }
         }
-        lateinit var resetButton: TextView
-        resetButton=setting(device,"重置软件") { showResetOptions(resetButton) }
-        lateinit var aboutButton: TextView
-        aboutButton=setting(device,"关于软件") {
-            updater.show(aboutButton, aboutMode = true)
-        }
-        // 页脚固定在滚动区之外（屏幕底部居中）：始终可见，因此不再需要抢焦点
-        // 设置页不再显示底部版本号及说明文字。
+
+        resetButton=setting(system,5,"重置软件") { showResetOptions(resetButton) }
+        aboutButton=setting(system,5,"关于软件") { updater.show(aboutButton,aboutMode=true) }
+
         rechainSettings={
-            val left=listOf(startupAutoplayButton,qualityButton,defaultSpeed,frame,autoNextButton,autoSeasonButton,danmakuButton)+
-                (if(library.danmaku) listOf(danmakuToggle)+(if(danmakuExpanded) danmakuPrefRows else emptyList()) else emptyList())+
-                listOf(blockedWords,keySettings)
-            val right=listOf(themeButton,clockButton,fileBackup,backup,hidden,statsButton,clearCache,resetButton,aboutButton)
-            listOf(left,right).forEach { items -> items.forEachIndexed { index,view ->
-                view.nextFocusUpId=items.getOrNull(index-1)?.id ?: nav[tab].id
-                // 页脚固定在屏幕上，不再作为焦点链末端，最后一项按下不再移动焦点
-                view.nextFocusDownId=items.getOrNull(index+1)?.id ?: View.NO_ID
-            } }
-            left.forEachIndexed { i,v -> v.nextFocusLeftId=v.id; v.nextFocusRightId=right.getOrNull(i)?.id ?: v.id }
-            right.forEachIndexed { i,v -> v.nextFocusLeftId=left.getOrNull(i)?.id ?: v.id; v.nextFocusRightId=v.id }
-            nav.forEach { it.nextFocusDownId=startupAutoplayButton.id }
+            categoryButtons.forEachIndexed { index,button ->
+                button.nextFocusLeftId=categoryButtons.getOrNull(index-1)?.id ?: button.id
+                button.nextFocusRightId=categoryButtons.getOrNull(index+1)?.id ?: button.id
+                button.nextFocusUpId=nav[tab].id
+                button.nextFocusDownId=categoryItems[index].firstOrNull { it.visibility==View.VISIBLE }?.id ?: button.id
+            }
+            categoryItems.forEachIndexed { category,all ->
+                val visible=all.filter { it.visibility==View.VISIBLE }
+                visible.forEachIndexed { index,view ->
+                    val row=index/columns
+                    val col=index%columns
+                    val rowStart=(index/columns)*columns
+                    val rowEnd=minOf(rowStart+columns,visible.size)-1
+                    view.nextFocusLeftId=if(col>0) visible[index-1].id else view.id
+                    view.nextFocusRightId=if(index<rowEnd) visible[index+1].id else view.id
+                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: categoryButtons[category].id
+                    view.nextFocusDownId=visible.getOrNull(index+columns)?.id ?: View.NO_ID
+                }
+            }
+            nav[tab].nextFocusDownId=categoryButtons.first().id
         }
         rechainSettings()
 
-        // 页面重建（如切换片源显隐）后按标签恢复焦点，避免跳回顶部导航
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
-        if(target!=null) target.requestFocus()
-        else if(tab==5) startupAutoplayButton.requestFocus()
-        else nav[tab].requestFocus()
+        if(target!=null) {
+            val category=categoryItems.indexOfFirst { target in it }.coerceAtLeast(0)
+            selectCategory(category)
+            target.requestFocus()
+        } else if(tab==5) {
+            selectCategory(0)
+            startupAutoplayButton.requestFocus()
+        } else {
+            selectCategory(0)
+            categoryButtons.firstOrNull()?.requestFocus() ?: startupAutoplayButton.requestFocus()
+        }
     }
     private fun runSearch(value: String,type: ContentType=library.contentType,fromPhone: Boolean=false,aggregate: Boolean=true) {
         val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
