@@ -3419,7 +3419,7 @@ class MainActivity: Activity() {
     }
     private fun updatePlaybackText() {
         transportPlay?.text=if(player?.playWhenReady==true) "暂停" else "播放"
-        sleepButton?.text="定时 ${sleepTimer.label()}"
+        sleepButton?.text=if(sleepTimer.active) "定时 ${sleepTimer.label()}" else "定时"
         if(screen!="player" || playError) return
         if(sleepStopped) { playbackText.text="定时停止已生效 · 观看位置已保存 · 按播放可继续"; return }
         if(!playbackReady) { playbackText.text=(if(!requestedAutoplay) "准备后保持暂停 · " else "")+if(video==null) "正在获取播放地址…" else "正在缓冲…"; return }
@@ -3476,7 +3476,7 @@ class MainActivity: Activity() {
         val labels=listOf("关闭定时停止","15 分钟后","30 分钟后","60 分钟后","90 分钟后","本集播完","再播完 3 集","再播完 5 集")
         tvTools.choose("定时停止 · ${sleepTimer.label()}",labels,anchor,{ choice ->
             when(choice) { 0 -> sleepTimer.cancel(); in 1..4 -> sleepTimer.afterMinutes(listOf(15,30,60,90)[choice-1]); else -> sleepTimer.afterEpisodes(listOf(1,3,5)[choice-5]) }
-            if(anchor.tag!="playback-settings") anchor.text="定时 ${sleepTimer.label()}"; updatePlaybackText(); showHud()
+            if(anchor.tag!="playback-settings") anchor.text=if(sleepTimer.active) "定时 ${sleepTimer.label()}" else "定时"; updatePlaybackText(); showHud()
         })
     }
     /** Device-aware buffering: keep low-memory boxes conservative and avoid oversized queues on metered links. */
@@ -3890,7 +3890,7 @@ class MainActivity: Activity() {
         lateinit var qualityButton: TextView
         qualityButton=addButton(transport,"画质") { showQualityPicker(qualityButton,true) }
         lateinit var timerButton: TextView
-        timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
+        timerButton=addButton(transport,if(sleepTimer.active) "定时 ${sleepTimer.label()}" else "定时") { showSleepPicker(timerButton) }.also { sleepButton=it }
         val seriesId=detail?.series?.id.orEmpty()
         lateinit var danmakuButton: TextView
         fun refreshDanmakuLabel() {
