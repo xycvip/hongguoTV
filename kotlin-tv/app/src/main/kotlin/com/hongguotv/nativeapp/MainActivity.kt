@@ -125,6 +125,7 @@ class MainActivity: Activity() {
         RandomRecommender(repository, items)
     }
     private var randomReplenishing=false
+    private var randomPlaybackLaunching=false
     private var randomDialog: AlertDialog?=null
     private var exitDialog: AlertDialog?=null
     private var killOnDestroy=false
@@ -2567,14 +2568,27 @@ class MainActivity: Activity() {
         }
     }
     private fun showRandomPicks() {
-        if(randomDialog?.isShowing==true) return
-        val picks=randomRecommender.pick(12)
-        if(picks.isNotEmpty()) { showRandomDialog(picks); return }
-        // 池空或近期都展示过：先补充再展示
-        showRandomDialog(emptyList(), loading = true)
-        replenishRandomPool {
-            val next=randomRecommender.pick(12)
-            if(next.isNotEmpty()) showRandomDialog(next) else randomDialog?.dismiss().also { Toast.makeText(this,"暂时无法随机荐剧，请稍后重试",Toast.LENGTH_SHORT).show() }
+        // 首页随机入口直接播放，不再展示随机荐剧列表供用户二次选择。
+        if(screen!="catalog" || randomPlaybackLaunching || isDestroyed) return
+        randomPlaybackLaunching=true
+        fun playPickedVideo() {
+            if(isDestroyed) { randomPlaybackLaunching=false; return }
+            val picked=randomRecommender.pick(1).firstOrNull()
+                ?: library.cachedHome(library.contentType)?.items?.shuffled()?.firstOrNull()
+            if(picked!=null) {
+                randomPlaybackLaunching=false
+                openDetail(picked,resume=true,autoplay=true)
+            } else {
+                randomPlaybackLaunching=false
+                Toast.makeText(this,"暂时无法获取随机视频，请检查网络后重试",Toast.LENGTH_SHORT).show()
+            }
+        }
+        val cached=randomRecommender.pick(1).firstOrNull()
+        if(cached!=null) {
+            randomPlaybackLaunching=false
+            openDetail(cached,resume=true,autoplay=true)
+        } else {
+            replenishRandomPool { playPickedVideo() }
         }
     }
 
