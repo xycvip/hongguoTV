@@ -558,7 +558,7 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         val series=card(o).copy(id=id)
         val related=related(html,series)
         val social=social(loader.optJSONObject("detail_page")?.optJSONObject("seriesSocialInfo"))
-        return Detail(series,episodes,related,sameName(series,related),social)
+        return Detail(series,episodes,related,emptyList(),social)
     }
     // 评分与收藏数只在详情页 SSR 里下发，卡片数据源没有这些字段，因此只读取不追加请求。
     private fun social(o: JSONObject?): SeriesSocial {
@@ -590,6 +590,10 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         return (siblings+extra).distinctBy { it.id }.filter { it.id!=current.id }
             .sortedBy { seasonNumber(it.title).let { n -> if(n==Int.MAX_VALUE) 1 else n } }.take(20)
     }
+    /** Called by the UI after the basic detail page is already visible. */
+    fun sameNameSeasons(current: Series, related: List<Series>): List<Series> =
+        sameName(current,related)
+
     private fun baseName(title: String)=title.replace(SeasonPattern,"").trim().trim('：',':','-','·',' ')
     // The detail page embeds its recommendation payload as an HTML-escaped JSON array inside the
     // `data-fn-args` attribute, separate from _ROUTER_DATA. Same-name entries (other seasons) sort first.
