@@ -116,8 +116,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         }
         proxyButton?.apply {
             text = "换源下载"
-            // 下载过程中允许主动换源；检查更新过程中仍禁用，避免并发请求。
-            isEnabled = active && idle() && available != null && (!busy || downloadInProgress)
+            // 未发现新版时也允许切换线路重新检查；下载过程中允许主动换源，
+            // 正在检查时禁用，避免并发请求。
+            isEnabled = active && idle() && (!busy || downloadInProgress)
         }
     }
     fun show(from: View?, aboutMode: Boolean = false) {
@@ -193,15 +194,17 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             })
         }
         body.addView(statusScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        if (!aboutMode && !updatePending) {
-            body.addView(CheckBox(activity).apply {
-                text = "自动检查并下载更新"; isChecked = auto; setTextColor(TvStyle.text)
-                setOnCheckedChangeListener { _, enabled ->
-                    preferences.edit().putBoolean("automatic", enabled).apply()
-                    if (!enabled && busy) { interrupt(); updateStatus("自动更新已关闭，可手动检查"); renderActions() }
-                }
-            })
-        }
+        val autoCheckBox = if (!aboutMode && !updatePending) CheckBox(activity).apply {
+            id = View.generateViewId()
+            text = "自动检查并下载更新"; isChecked = auto; setTextColor(TvStyle.text)
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setOnCheckedChangeListener { _, enabled ->
+                preferences.edit().putBoolean("automatic", enabled).apply()
+                if (!enabled && busy) { interrupt(); updateStatus("自动更新已关闭，可手动检查"); renderActions() }
+            }
+        } else null
+        autoCheckBox?.let { body.addView(it, LinearLayout.LayoutParams(-1, -2)) }
         if (!aboutMode) body.addView(TextView(activity).apply {
             text = if (updatePending) "发现新版本，点击即可更新" else "只在应用前台浏览时检查，播放中不打扰。下载后需确认系统安装，收藏与观看记录保留。"
             textSize = 13f; setTextColor(TvStyle.muted)
@@ -216,6 +219,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val action = TvDialog.capsuleButton(activity,"检查更新") { }
         actionButton = action
         val proxy = TvDialog.capsuleButton(activity, "换源下载") { }
+        proxy.id = View.generateViewId()
+        proxy.isFocusable = true
+        proxy.isFocusableInTouchMode = true
         proxyButton = proxy
         if (!aboutMode) {
             body.addView(proxy, LinearLayout.LayoutParams(-1, -2).apply {
@@ -235,7 +241,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         next.show()
         later.setOnClickListener { next.dismiss() }
         proxy.setOnClickListener {
-            if (aboutMode || !active || !idle() || available == null) return@setOnClickListener
+            if (aboutMode || !active || !idle()) return@setOnClickListener
             // 下载太慢时允许立即取消当前请求，并从下一条线路重新开始。
             if (busy && downloadInProgress) interrupt()
             else if (busy) return@setOnClickListener
@@ -263,6 +269,15 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             }
         }
         renderActions()
+        // 为电视遥控器建立明确的纵向焦点链，避免系统按控件几何位置跳过复选框或换源按钮。
+        action.nextFocusUpId = proxy.id
+        proxy.nextFocusDownId = action.id
+        if (autoCheckBox != null) {
+            autoCheckBox.nextFocusDownId = proxy.id
+            proxy.nextFocusUpId = autoCheckBox.id
+        } else {
+            proxy.nextFocusUpId = action.id
+        }
         action.post { if (dialog === next) action.requestFocus() }
     }
     private fun <T> work(action: () -> T, done: (T) -> Unit) {
