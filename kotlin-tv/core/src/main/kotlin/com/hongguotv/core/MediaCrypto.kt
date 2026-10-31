@@ -118,7 +118,8 @@ object MediaCrypto {
     data class EncryptionConfig(val scheme: String, val ivSize: Int, val constantIv: ByteArray? = null)
     private fun encryptionConfig(data: ByteArray, sinf: Box): EncryptionConfig {
         val schm=child(data,"schm",sinf.body,sinf.end) ?: throw IOException("加密方案标识缺失")
-        if(schm.body+8>schm.end) throw IOException("加密方案标识不完整")
+        fullBox(data,schm,setOf(0))
+        if(schm.body+12!=schm.end) throw IOException("加密方案标识长度异常")
         val scheme=String(data,schm.body+4,4,Charsets.US_ASCII)
         if(scheme!="cenc") throw IOException("暂不支持加密方案：$scheme")
         val schi=child(data,"schi",sinf.body,sinf.end) ?: throw IOException("加密参数缺失")
@@ -128,11 +129,15 @@ object MediaCrypto {
         val version=(fullBox ushr 24).toInt()
         val flags=fullBox and 0x00ffffffL
         if(version>1 || flags!=0L) throw IOException("不支持的加密参数版本或标志")
-        if(version==1 && data[tenc.body+4].u()!=0) throw IOException("暂不支持 CENC 模式加密参数")
+        val patternOrReserved=data[tenc.body+4].u()
+        if(patternOrReserved!=0) throw IOException("暂不支持 CENC 模式加密参数")
         val isProtected=data[tenc.body+5].u()
         val ivSize=data[tenc.body+6].u()
         if(isProtected!=1) throw IOException("轨道未启用样本加密")
-        if(ivSize==8 || ivSize==16) return EncryptionConfig(scheme,ivSize)
+        if(ivSize==8 || ivSize==16) {
+            if(tenc.body+23!=tenc.end) throw IOException("样本 IV 参数长度异常")
+            return EncryptionConfig(scheme,ivSize)
+        }
         if(ivSize!=0) throw IOException("不支持的样本 IV 长度：$ivSize")
         val kidEnd=tenc.body+23
         if(kidEnd>=tenc.end) throw IOException("固定 IV 参数缺失")
