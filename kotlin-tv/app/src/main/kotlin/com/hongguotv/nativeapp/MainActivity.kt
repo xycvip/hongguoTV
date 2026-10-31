@@ -1132,8 +1132,8 @@ class MainActivity: Activity() {
             val item=addButton(top,label,tabId==tab || (tabId==6 && screen=="account")) { switchTab(tabId) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(tabId==tab) accent else muted)
-                item.background=rounded(if(focused) white else if(index==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
-                item.setTypeface(null,if(focused || index==tab) Typeface.BOLD else Typeface.NORMAL)
+                item.background=rounded(if(focused) white else if(tabId==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
+                item.setTypeface(null,if(focused || tabId==tab) Typeface.BOLD else Typeface.NORMAL)
             }
             paint(false); item.setOnFocusChangeListener { _,focused -> paint(focused) }; nav+=item
         }
@@ -1200,7 +1200,7 @@ class MainActivity: Activity() {
                 tag="home:refresh"
                 nextFocusUpId=navForTab().id
             }
-            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=nav[tab].id }
+            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=navForTab().id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
             // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
             container.addView(types)
@@ -4255,7 +4255,7 @@ class MainActivity: Activity() {
             }.apply {
                 isFocusable = true
                 isFocusableInTouchMode = true
-                val accountNavigation = nav.getOrNull(6)
+                val accountNavigation = navForTab()
                 nextFocusUpId = accountNavigation?.id ?: View.NO_ID
                 nextFocusDownId = id
                 nextFocusLeftId = id
