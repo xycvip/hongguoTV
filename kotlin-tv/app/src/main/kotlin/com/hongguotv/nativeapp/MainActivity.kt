@@ -1652,7 +1652,7 @@ class MainActivity: Activity() {
                 clipToPadding=false
                 isFillViewport=true
                 overScrollMode=View.OVER_SCROLL_NEVER
-                descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
+                descendantFocusability=android.view.ViewGroup.FOCUS_AFTER_DESCENDANTS
             }
             pageScroll.addView(pageContent,ViewGroup.LayoutParams(-1,-2))
             container.addView(pageScroll,lp(-1,0).apply { weight=1f })
