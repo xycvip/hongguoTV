@@ -2085,9 +2085,10 @@ class MainActivity: Activity() {
             (screenWidthDp/800f).coerceIn(0.88f,1.16f),
             (screenHeightDp/600f).coerceIn(0.88f,1.12f)
         )
-        val categoryTitleSize=(headingWidth*0.18f*categoryScale).coerceIn(14f,22f)
-        val categoryTitleHeight=(headingWidth*0.43f*categoryScale).toInt().coerceIn(46,64)
-        val categorySubtitleSize=(categoryTitleSize*0.58f).coerceIn(9f,12f)
+        // 设置页采用更克制的字号层级，避免分类标题过大、说明文字过小。
+        val categoryTitleSize=(16.5f*categoryScale).coerceIn(15f,19f)
+        val categoryTitleHeight=(headingWidth*0.40f*categoryScale).toInt().coerceIn(44,60)
+        val categorySubtitleSize=(10.5f*categoryScale).coerceIn(9.5f,11.5f)
         val separatorColor=Color.argb(38,255,255,255)
         fun horizontalSeparator()=View(this).apply { setBackgroundColor(separatorColor) }
         val categoryCard=column()
@@ -2177,14 +2178,16 @@ class MainActivity: Activity() {
         val system=section("关于","软件信息与恢复设置").second
 
         // 右侧设置项与左侧分类栏共用屏幕缩放系数，保持两侧视觉比例一致。
-        val settingTextSize=(14f*categoryScale).coerceIn(12f,16f)
-        val settingItemHeight=(66f*categoryScale).toInt().coerceIn(54,76)
-        val settingHorizontalPadding=(9f*categoryScale).toInt().coerceIn(7,12)
-        val settingVerticalPadding=(10f*categoryScale).toInt().coerceIn(7,13)
+        val settingTextSize=(13.5f*categoryScale).coerceIn(12.5f,14.5f)
+        val settingItemHeight=(64f*categoryScale).toInt().coerceIn(54,72)
+        val settingHorizontalPadding=(10f*categoryScale).toInt().coerceIn(7,13)
+        val settingVerticalPadding=(8f*categoryScale).toInt().coerceIn(6,11)
         fun setting(group:GridLayout,category:Int,label:String,action:()->Unit):TextView {
             val view=button(label,onClick=action).apply {
                 gravity=Gravity.CENTER
                 textSize=settingTextSize
+                typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                includeFontPadding=false
                 maxLines=1
                 ellipsize=TextUtils.TruncateAt.END
                 setPadding(dp(settingHorizontalPadding),dp(settingVerticalPadding),dp(settingHorizontalPadding),dp(settingVerticalPadding))
