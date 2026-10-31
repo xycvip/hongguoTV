@@ -294,7 +294,6 @@ class MainActivity: Activity() {
     private val theaterFiltersByType=mutableMapOf<String,List<TheaterFilterGroup>>()
     private var theaterContentType: ContentType?=null
     private val theaterSelections=mutableMapOf<String,String>()
-    private var theaterExpanded=true
     private fun theaterFilterKey(type:ContentType?)=type?.name ?: "ALL"
     private fun theaterFilterSummary()=theaterSelections.entries.joinToString(" · ") { (key,value) ->
         theaterFiltersByType[theaterFilterKey(theaterContentType)].orEmpty().firstOrNull { it.type==key }?.options?.firstOrNull { it.id==value }?.label ?: value
@@ -1095,7 +1094,7 @@ class MainActivity: Activity() {
         host.addView(types)
         val groups=theaterFiltersByType[theaterFilterKey(theaterContentType)].orEmpty().filterNot { it.type=="genre" }
         if(groups.isEmpty()) host.addView(text("正在读取红果官方筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
-        else if(theaterExpanded) groups.forEach { group ->
+        else groups.forEach { group ->
             val line=row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(2),0,dp(2)) }
             val scroll=VerticalFriendlyHorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
             val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
@@ -1118,12 +1117,13 @@ class MainActivity: Activity() {
             line.addView(scroll,lp(0,dp(40)).apply { weight=1f })
             host.addView(line)
         }
-        val control=row().apply { gravity=Gravity.CENTER; setPadding(0,dp(4),0,dp(8)) }
-        if(theaterSelections.isNotEmpty()) addButton(control,"清空筛选") {
-            theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
+        if(theaterSelections.isNotEmpty()) {
+            val control=row().apply { gravity=Gravity.CENTER; setPadding(0,dp(4),0,dp(8)) }
+            addButton(control,"清空筛选") {
+                theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
+            }
+            host.addView(control)
         }
-        addButton(control,if(theaterExpanded) "收起⌃" else "展开⌄") { theaterExpanded=!theaterExpanded; theaterFilterHost?.let(::renderTheaterFilters) }
-        host.addView(control)
     }
     private fun localCatalog()=tab==3 || tab==4 || collection!=null
     private fun localItems(): List<Series> = when(collection) {
