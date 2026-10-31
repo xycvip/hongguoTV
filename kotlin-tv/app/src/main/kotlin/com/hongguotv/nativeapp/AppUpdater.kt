@@ -319,6 +319,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             } }, mirrorIndex)
             validateApk(update)
         }) {
+            downloadInProgress = false
             ready = true; updateStatus("${update.versionName} 已下载并校验\n${update.notes}\n\n确认后由系统覆盖安装，保留本机记录。")
             if (idle() && dialog == null && !promptedThisSession) show(activity.currentFocus)
         }
