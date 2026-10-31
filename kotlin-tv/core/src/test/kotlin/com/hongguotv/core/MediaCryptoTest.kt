@@ -29,6 +29,26 @@ class MediaCryptoTest {
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("IV")) }
     }
 
+    @Test fun rejectsCbcsInsteadOfTreatingItAsCtr() {
+        val data=fixture().mapIndexed { index, byte ->
+            if(index>=0) byte else byte
+        }.toByteArray()
+        val marker="cenc".toByteArray()
+        val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
+        "cbcs".toByteArray().copyInto(data,at)
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported scheme") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("cbcs")) }
+    }
+
+    @Test fun rejectsCensPatternEncryptionInsteadOfIgnoringPattern() {
+        val data=fixture()
+        val marker="cenc".toByteArray()
+        val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
+        "cens".toByteArray().copyInto(data,at)
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported scheme") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("cens")) }
+    }
+
     @Test fun nistCtrVectorsAcrossEveryUnalignedRange() {
         val prefix=ByteArray(23){0x66}; val source=prefix+encrypted+ByteArray(12){0x77}
         val expected=prefix+plain+ByteArray(12){0x77}
@@ -52,7 +72,7 @@ class MediaCryptoTest {
         val tencBody=ByteArray(4)+byteArrayOf(0,1.toByte(),(if(constantIv!=null) 0 else ivSize).toByte())+ByteArray(16)+
             (if(constantIv!=null) byteArrayOf(constantIv.size.toByte())+constantIv else byteArrayOf())
         fun moov(offset: Int): ByteArray {
-            val sinf=box("sinf",box("frma",codec.toByteArray())+box("schi",box("tenc",tencBody)))
+            val sinf=box("sinf",box("frma",codec.toByteArray())+box("schm",ByteArray(4)+"cenc".toByteArray()+be32(0x00010000))+box("schi",box("tenc",tencBody)))
             val entry=box("encv",ByteArray(78)+sinf)
             val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
             val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
