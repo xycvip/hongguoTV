@@ -170,7 +170,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                             "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
                     ))
                 }
-                addView(statusDetailsView, LinearLayout.LayoutParams(-1, -2))
+                if (!aboutMode) addView(statusDetailsView, LinearLayout.LayoutParams(-1, -2))
             }
             addView(statusContent, FrameLayout.LayoutParams(-1, -2))
         }
@@ -178,11 +178,13 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         body.layoutParams = LinearLayout.LayoutParams(
             -1, (activity.resources.displayMetrics.heightPixels * 0.72f).toInt()
         )
-        body.addView(statusView, LinearLayout.LayoutParams(-1, -2).apply {
-            bottomMargin = (10 * dp).toInt()
-        })
+        if (!aboutMode) {
+            body.addView(statusView, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = (10 * dp).toInt()
+            })
+        }
         body.addView(statusScroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        if (!updatePending) {
+        if (!aboutMode && !updatePending) {
             body.addView(CheckBox(activity).apply {
                 text = "自动检查并下载更新"; isChecked = auto; setTextColor(TvStyle.text)
                 setOnCheckedChangeListener { _, enabled ->
@@ -191,7 +193,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 }
             })
         }
-        body.addView(TextView(activity).apply {
+        if (!aboutMode) body.addView(TextView(activity).apply {
             text = if (updatePending) "发现新版本，点击即可更新" else "只在应用前台浏览时检查，播放中不打扰。下载后需确认系统安装，收藏与观看记录保留。"
             textSize = 13f; setTextColor(TvStyle.muted)
             setPadding(0, (8*dp).toInt(), 0, (8*dp).toInt())
@@ -217,16 +219,17 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         next.show()
         later.setOnClickListener { next.dismiss() }
         action.setOnClickListener {
-            when {
-                ready -> install()
-                available != null -> download()
-                aboutMode -> {
-                    // 关于页只展示软件信息；检查结果使用独立的更新弹窗，避免状态行挤压说明内容。
-                    next.dismiss()
-                    show(from, aboutMode = false)
-                    check(true)
+            if (aboutMode) {
+                // 关于页只保留更新入口；点击后进入独立的更新弹窗，再执行真正的版本检查。
+                next.dismiss()
+                show(from, aboutMode = false)
+                check(true)
+            } else {
+                when {
+                    ready -> install()
+                    available != null -> download()
+                    else -> check(true)
                 }
-                else -> check(true)
             }
         }
         renderActions()
