@@ -38,11 +38,17 @@ object MediaCrypto {
         for(at in start..limit-8) if(data[at+4].toInt()==type[0].code) { val b=box(data,at,limit); if(b?.type==type) return b }
         return null
     }
-    data class EncryptionConfig(val ivSize: Int, val constantIv: ByteArray? = null)
+    data class EncryptionConfig(val scheme: String, val ivSize: Int, val constantIv: ByteArray? = null)
     private fun encryptionConfig(data: ByteArray, stbl: Box): EncryptionConfig {
-        val sinf=find(data,"sinf",stbl.body,stbl.end) ?: return EncryptionConfig(8)
-        val schi=find(data,"schi",sinf.body,sinf.end) ?: return EncryptionConfig(8)
-        val tenc=find(data,"tenc",schi.body,schi.end) ?: return EncryptionConfig(8)
+        val sinf=find(data,"sinf",stbl.body,stbl.end) ?: throw IOException("加密方案信息缺失")
+        val schm=find(data,"schm",sinf.body,sinf.end) ?: throw IOException("加密方案标识缺失")
+        if(schm.body+8>schm.end) throw IOException("加密方案标识不完整")
+        val scheme=String(data,schm.body+4,4,Charsets.US_ASCII)
+        // This implementation uses AES-CTR only. Pattern encryption and CBC schemes
+        // must never be interpreted as ordinary CENC.
+        if(scheme!="cenc") throw IOException("暂不支持加密方案：$scheme")
+        val schi=find(data,"schi",sinf.body,sinf.end) ?: throw IOException("加密参数缺失")
+        val tenc=find(data,"tenc",schi.body,schi.end) ?: throw IOException("加密参数缺失")
         if(tenc.body+7>tenc.end) throw IOException("加密参数不完整")
         val version=data[tenc.body].u()
         if(version>1) throw IOException("不支持的加密参数版本")
@@ -51,14 +57,14 @@ object MediaCrypto {
         val isProtected=data[protectedAt].u()
         val ivSize=data[ivSizeAt].u()
         if(isProtected!=1) throw IOException("轨道未启用样本加密")
-        if(ivSize==8 || ivSize==16) return EncryptionConfig(ivSize)
+        if(ivSize==8 || ivSize==16) return EncryptionConfig(scheme,ivSize)
         if(ivSize!=0) throw IOException("不支持的样本 IV 长度：$ivSize")
         val kidEnd=tenc.body+23
         if(kidEnd>=tenc.end) throw IOException("固定 IV 参数缺失")
         val constantSize=data[kidEnd].u()
         if(constantSize !in 8..16) throw IOException("固定 IV 长度无效")
         if(kidEnd+1+constantSize>tenc.end) throw IOException("固定 IV 数据不完整")
-        return EncryptionConfig(0,data.copyOfRange(kidEnd+1,kidEnd+1+constantSize))
+        return EncryptionConfig(scheme,0,data.copyOfRange(kidEnd+1,kidEnd+1+constantSize))
     }
     /** Parse a top-level ISO BMFF box header from a range whose first byte is [offset]. */
     fun topLevelBoxHeader(bytes: ByteArray, offset: Long, total: Long): TopLevelBox {
