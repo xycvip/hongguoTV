@@ -2120,9 +2120,10 @@ class MainActivity: Activity() {
             focusedCategory=category
             categoryIndicators.forEach { indicator ->
                 val focused=indicator.hasFocus()
-                // 左侧分类只有实际获得焦点时才显示选中效果；右侧设置项移动焦点时，
-                // 左侧对应分类保持普通底色，不额外伪装成已选中状态。
-                indicator.background=TvStyle.card(this@MainActivity,focused)
+                // 未聚焦时保留主题的橘红系底色，但不显示选中文字效果；
+                // 获得焦点时再显示完整的焦点背景与强调样式。
+                indicator.background=if(focused) TvStyle.card(this@MainActivity,true)
+                    else TvStyle.shape(this@MainActivity,TvStyle.selectedSurface)
                 indicator.setTextColor(if(focused) white else muted)
                 indicator.setTypeface(null,if(focused) Typeface.BOLD else Typeface.NORMAL)
             }
