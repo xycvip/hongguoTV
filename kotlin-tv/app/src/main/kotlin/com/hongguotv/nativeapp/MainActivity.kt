@@ -4076,6 +4076,7 @@ class MainActivity: Activity() {
         line.getChildAt(0)?.requestFocus()
         showHud()
     }
+    // 供播放控制栏和片头/片尾设置弹窗共同使用。
     private fun skipButtonLabel(intro: Boolean,seconds: Int)=if(seconds>0) "跳过${if(intro) "片头" else "片尾"} ${seconds}秒" else if(intro) "片头" else "片尾"
     private fun showSkipPicker(anchor: TextView,intro: Boolean) {
         val data=detail ?: return
