@@ -30,7 +30,7 @@ jobs:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Validate publishing scripts
-        run: python3 -m py_compile scripts/publish-tv-update.py scripts/sync-source-release.py
+        run: python3 -m py_compile scripts/publish-tv-update.py
       - name: Set monotonic build version and validate signing key
         env:
           KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
@@ -124,7 +124,6 @@ jobs:
           echo "Verified APK package=$ACTUAL_PACKAGE versionCode=$ACTUAL_VERSION_CODE"
       - name: Publish APK and update manifest
         env:
-          GH_TOKEN: ${{ github.token }}
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
         run: python3 scripts/publish-tv-update.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -140,4 +139,4 @@ jobs:
         run: rm -f "$RUNNER_TEMP/release.p12"
 
 # Push a commit marked [release] only after custom-branch verification succeeds.
-# Unit tests, lint, signed APK verification, and both Release uploads are mandatory.
+# Unit tests, lint, signed APK verification, and AppDownload publication are mandatory.
