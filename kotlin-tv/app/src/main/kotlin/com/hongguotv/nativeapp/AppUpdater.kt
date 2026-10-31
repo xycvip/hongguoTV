@@ -114,7 +114,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             isEnabled = true
         }
         proxyButton?.apply {
-            text = "换代理下载最新版"
+            text = "换源下载"
             isEnabled = !busy
         }
     }
@@ -213,7 +213,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val later = TvDialog.capsuleButton(activity, if (aboutMode) "关闭" else "稍后") { }
         val action = TvDialog.capsuleButton(activity,"检查更新") { }
         actionButton = action
-        val proxy = TvDialog.capsuleButton(activity, "换代理下载最新版") { }
+        val proxy = TvDialog.capsuleButton(activity, "换源下载") { }
         proxyButton = proxy
         if (!aboutMode) {
             body.addView(proxy, LinearLayout.LayoutParams(-1, -2).apply {
