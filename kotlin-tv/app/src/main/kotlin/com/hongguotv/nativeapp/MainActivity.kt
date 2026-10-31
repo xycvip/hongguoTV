@@ -1105,7 +1105,7 @@ class MainActivity: Activity() {
         if(groups.isEmpty()) host.addView(text("正在读取红果官方筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
         else if(theaterExpanded) groups.forEach { group ->
             val line=row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(2),0,dp(2)) }
-            val scroll=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
+            val scroll=VerticalFriendlyHorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
             val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
             val selected=theaterSelections[group.type]
             val allLabel=if(group.label.startsWith("全部")) group.label else "全部${group.label}"
