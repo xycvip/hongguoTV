@@ -1093,7 +1093,7 @@ class MainActivity: Activity() {
         collection=kind; page=1; catalogFocus=""; showCatalog()
     }
     private fun inlineHomeFilters()=tab==0 && resources.configuration.fontScale<=1.2f && widthDp()>=900
-    private fun navIndexForTab(value:Int)=when(value) { 7 -> 2; 2 -> 3; 3 -> 4; 4 -> 5; 5 -> 6; 6 -> 7; else -> value }
+    private fun navIndexForTab(value:Int)=when(value) { 7 -> 1; 1 -> 2; 2 -> 3; 3 -> 4; 4 -> 5; 5 -> 6; 6 -> 7; else -> value }
     private fun navForTab():View=nav.getOrNull(navIndexForTab(tab)) ?: root
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
