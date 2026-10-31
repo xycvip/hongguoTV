@@ -1974,7 +1974,7 @@ class MainActivity: Activity() {
         homeRefreshControl?.nextFocusDownId=home.firstId()
         // 首页导航按下方向直接进入第一个内容栏目，避免焦点落到已移除的顶部随机按钮区域。
         nav.forEach { it.nextFocusDownId=home.firstId() }
-        if(focusNav) (navByTab[0] ?: nav[0]).requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
+        if(focusNav) navByTab[0]?.requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
         loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,false)
         loadHomeShelf(ContentType.AI,false)
         if(hot.isNotEmpty() && !homeContentLogged) {
@@ -4854,7 +4854,7 @@ class MainActivity: Activity() {
                 val theaterNav=navByTab[7]
                 theaterNav?.requestFocus()
                 theaterNav?.post { if(screen=="catalog" && tab==7 && theaterNav.isAttachedToWindow) theaterNav.requestFocus() }
-            } else if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else navForTab().requestFocus()
+            } else if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); navByTab[0]?.requestFocus() } else showExitConfirm() } else navForTab().requestFocus()
         }
     }
     /** 手机触屏：轻触唤起播放信息与进度条，左右滑动按比例快退/快进。 */
