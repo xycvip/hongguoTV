@@ -50,7 +50,7 @@ class RemoteVideoRangeTest {
         val video = RemoteVideo(
             OkHttpClient(),
             StreamInfo(server.url("/video").toString(), null, "test"),
-            chunkBytes = 16,
+            chunkBytes = 32,
             aheadBytes = 0
         )
         try {
@@ -71,7 +71,7 @@ class RemoteVideoRangeTest {
         val video = RemoteVideo(
             OkHttpClient(),
             StreamInfo(server.url("/video").toString(), null, "test"),
-            chunkBytes = 16,
+            chunkBytes = 32,
             aheadBytes = 0
         )
         try {
@@ -92,7 +92,7 @@ class RemoteVideoRangeTest {
         val video = RemoteVideo(
             OkHttpClient(),
             StreamInfo(server.url("/video").toString(), null, "test"),
-            chunkBytes = 16,
+            chunkBytes = 32,
             aheadBytes = 0
         )
         try {
