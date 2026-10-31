@@ -20,6 +20,27 @@ class RemoteVideoRangeTest {
         return ftyp + moov + mdat
     }
 
+    private data class TailFixture(val bytes: ByteArray, val moovOffset: Long, val moovSize: Int)
+
+    private fun tailMoovFixture(): TailFixture {
+        val ftyp=box("ftyp","isom0000".toByteArray())
+        val payload=ByteArray(4080) { (it % 251).toByte() }
+        val iv=byteArrayOf(1,2,3,4,5,6,7,8)
+        iv.copyInto(payload,256-(ftyp.size+8))
+        val mdat=box("mdat",payload)
+        val entry=box("encv",ByteArray(78)+box("sinf",box("frma","avc1".toByteArray())))
+        val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
+        val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
+        val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
+        val stco=box("stco",ByteArray(4)+be32(1)+be32(128))
+        val saiz=box("saiz",ByteArray(4)+byteArrayOf(8)+be32(1))
+        val saio=box("saio",ByteArray(4)+be32(1)+be32(256))
+        val stbl=box("stbl",stsd+stsz+stsc+stco+saiz+saio)
+        val moov=box("moov",box("trak",box("mdia",box("minf",stbl)))+box("free",iv))
+        val offset=(ftyp.size+mdat.size).toLong()
+        return TailFixture(ftyp+mdat+moov,offset,moov.size)
+    }
+
     private fun serverFor(data: ByteArray, responseCode: Int = 206, wrongRange: Boolean = false): MockWebServer {
         val server = MockWebServer()
         server.dispatcher = object : Dispatcher() {
@@ -42,6 +63,28 @@ class RemoteVideoRangeTest {
         }
         server.start()
         return server
+    }
+
+    @Test fun preparesAndPlaysEncryptedMp4WhoseMoovFollowsMdat() {
+        val fixture=tailMoovFixture()
+        val server=serverFor(fixture.bytes)
+        val key=hex("2b7e151628aed2a6abf7158809cf4f3c")
+        val video=RemoteVideo(
+            OkHttpClient(),
+            StreamInfo(server.url("/video").toString(),key,"test"),
+            chunkBytes=4096,
+            aheadBytes=0
+        )
+        try {
+            video.prepare()
+            val patched=video.read(fixture.moovOffset,fixture.moovSize)
+            assertTrue(String(patched).contains("avc1"))
+            assertFalse(String(patched).contains("encv"))
+            assertEquals(16,video.read(128,16).size)
+        } finally {
+            video.close()
+            server.shutdown()
+        }
     }
 
     @Test fun readsAcrossChunkBoundariesAndReturnsShortFinalRange() {
