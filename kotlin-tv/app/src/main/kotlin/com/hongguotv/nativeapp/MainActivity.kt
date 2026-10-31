@@ -2205,7 +2205,7 @@ class MainActivity: Activity() {
         val playback=section("播放","清晰度、倍速与连播设置").second
         val danmaku=section("弹幕","官方弹幕、显示效果与屏蔽词设置").second
         val data=section("数据","备份记录、统计与缓存管理").second
-        val remote=section("遥控器","自定义方向键与确认键操作").second
+        val remote=section("按键","自定义方向键与确认键操作").second
         val appearance=section("外观","界面风格与播放画面显示").second
         val system=section("关于","软件信息与恢复设置").second
 
