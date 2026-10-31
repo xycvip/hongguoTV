@@ -2067,7 +2067,7 @@ class MainActivity: Activity() {
                 indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
             }
         }
-        // Five vertical sections; danmaku controls are grouped into the Playback section.
+        // Settings sections are listed in the same order as the left navigation.
 
         val columns=when {
             widthDp()<600f -> 2
@@ -2218,7 +2218,6 @@ class MainActivity: Activity() {
         lateinit var frame:TextView
         lateinit var autoNextButton:TextView
         lateinit var autoSeasonButton:TextView
-        val danmakuPrefRows=mutableListOf<TextView>()
         lateinit var danmakuButton:TextView
         lateinit var danmakuOpacity:TextView
         lateinit var danmakuFont:TextView
@@ -2282,8 +2281,6 @@ class MainActivity: Activity() {
             Toast.makeText(this,"弹幕设置已恢复默认",Toast.LENGTH_SHORT).show()
         }
         blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
-        danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset,blockedWords))
-        rechainSettings()
 
         val remoteActions=listOf(
             PlaybackExtras.REMOTE_PREVIOUS,
