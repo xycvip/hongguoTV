@@ -3071,7 +3071,7 @@ class MainActivity: Activity() {
             }
             horizontal.addView(line); section.addView(horizontal)
             content.addView(section,lp(-1,-2).apply { topMargin=dp(4) })
-            extraRows+=cards
+            if(cards.isNotEmpty()) extraRows+=cards
             if(seasonSection) {
                 detailSeasonLine=line
                 detailSeasonSection=section
