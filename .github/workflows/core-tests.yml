@@ -1,0 +1,29 @@
+name: 红果TV核心播放测试
+on:
+  push:
+    branches:
+      - custom
+    paths:
+      - 'kotlin-tv/core/**'
+      - '.github/workflows/core-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: core-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core-tests:
+    name: 核心模块单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: 运行核心模块单元测试
+        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test --console=plain
