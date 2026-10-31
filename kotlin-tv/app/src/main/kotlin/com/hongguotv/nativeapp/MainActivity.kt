@@ -3922,7 +3922,7 @@ class MainActivity: Activity() {
         addButton(transport,"下集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
-        fun speedLabel()="当前倍速 "+String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble())
+        fun speedLabel()=String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble())
         lateinit var speedButton: TextView
         speedButton=addButton(transport,speedLabel()) { showSpeedPicker(speedButton) }
         lateinit var qualityButton: TextView
@@ -4011,7 +4011,7 @@ class MainActivity: Activity() {
         tvTools.choose("全局默认倍速",speeds.map(PlaybackSpeed::label),anchor,{ index ->
             library.playbackSpeed=speeds[index]
             if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
-            if(anchor.tag!="playback-settings") anchor.text=if(inPlayer) "当前倍速 "+String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble()) else "默认倍速  ·  "+PlaybackSpeed.label(library.playbackSpeed)
+            if(anchor.tag!="playback-settings") anchor.text=String.format(java.util.Locale.US,"%.2f",library.playbackSpeed.toDouble()) else "默认倍速  ·  "+PlaybackSpeed.label(library.playbackSpeed)
             if(inPlayer) updatePlaybackText()
         })
     }
