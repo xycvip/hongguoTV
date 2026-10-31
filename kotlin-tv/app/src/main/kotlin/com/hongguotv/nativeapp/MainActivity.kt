@@ -205,6 +205,21 @@ class MainActivity: Activity() {
     private val sleepActionMode: Int
         get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).let { if(it in 0..1) it else 0 }
     private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("播放", "软件")[mode.coerceIn(0, 1)]
+    private var sleepSettingHintShown=false
+    private fun shouldShowSleepSettingHint(): Boolean {
+        val prefs=getSharedPreferences("playback-settings-v1", MODE_PRIVATE)
+        val bootCount=runCatching {
+            android.provider.Settings.Global.getInt(contentResolver, android.provider.Settings.Global.BOOT_COUNT, -1)
+        }.getOrDefault(-1)
+        if(bootCount>=0) {
+            if(prefs.getInt("sleep_action_hint_boot_count", -1)==bootCount) return false
+            prefs.edit().putInt("sleep_action_hint_boot_count",bootCount).apply()
+            return true
+        }
+        if(sleepSettingHintShown) return false
+        sleepSettingHintShown=true
+        return true
+    }
     private var sleepStopped=false
     private var playerView: PlayerView?=null
     private var danmakuView: DanmakuView?=null
@@ -2331,6 +2346,9 @@ class MainActivity: Activity() {
         }
         lateinit var sleepActionButton: TextView
         sleepActionButton=setting(playback,0,"定时关闭·${sleepActionLabel()}") {
+            if(shouldShowSleepSettingHint()) {
+                Toast.makeText(this@MainActivity,"请在播放视频页面启用定时功能",Toast.LENGTH_LONG).show()
+            }
             val next=(sleepActionMode+1)%2
             getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().putInt("sleep_action_mode",next).apply()
             sleepActionButton.text="定时关闭·${sleepActionLabel(next)}"
