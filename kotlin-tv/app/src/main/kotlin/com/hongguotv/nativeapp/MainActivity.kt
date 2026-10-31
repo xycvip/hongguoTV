@@ -2373,10 +2373,11 @@ class MainActivity: Activity() {
             navForTab().nextFocusDownId=settingRows.firstOrNull()?.id ?: navForTab().id
         }
         rechainSettings()
-        markFocusedCategory(0)
 
         val wanted=settingsFocusKey.also { settingsFocusKey=null }
         val target=wanted?.let { key -> settingRows.firstOrNull { it.text.toString().startsWith(key) } }
+        val targetCategory=target?.let { view -> categoryItems.indexOfFirst { view in it } } ?: 0
+        markFocusedCategory(targetCategory.coerceAtLeast(0))
         if(target!=null) {
             target.requestFocus()
         } else {
