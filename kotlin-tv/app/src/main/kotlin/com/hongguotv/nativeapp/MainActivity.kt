@@ -1676,7 +1676,6 @@ class MainActivity: Activity() {
             body.addView(bar)
             aiGenreButton?.nextFocusDownId=genreClear!!.id
         }
-        if(tab==1 && query.isBlank()) body.addView(text("热搜推荐 · 大家都在看",18f).apply { setTypeface(null,Typeface.BOLD); setPadding(dp(2),dp(8),0,dp(6)) })
         val preview=SeriesPreview(this); selectionPreview=preview; body.addView(preview)
         val displayed=mutableListOf<Series>()
         displayed+=if(localCatalog()) catalog else if(tab==0) catalog.filterNot { it.id in library.hidden() } else catalog
