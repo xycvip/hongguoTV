@@ -152,7 +152,7 @@ class HomeScreen(
             horizontal.addView(line, if(shelf.key=="random") LayoutParams(-1,-2) else LayoutParams(-2,-2)); block.addView(horizontal)
             val rowCards=mutableListOf<Card>()
             fun addCard(entry: Entry?,moreAction: (() -> Unit)?=null) {
-                val width=if(shelf.key=="random") (resources.displayMetrics.widthPixels*.58f).toInt().coerceAtMost(dp(520)).coerceAtLeast(dp(260))
+                val width=if(shelf.key=="random") dp(320)
                     else ((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
                 val key=if(entry!=null) "${shelf.key}:${entry.series.id}" else "${shelf.key}:more"
                 val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
@@ -224,7 +224,7 @@ class HomeScreen(
                         lastRow=shelf.key
                     }
                 }
-                line.addView(view,LayoutParams(width,-1).apply { rightMargin=dp(14) }); rowCards+=card; cards[key]=card
+                line.addView(view,LayoutParams(width,if(shelf.key=="random") dp(104) else -1).apply { rightMargin=dp(14) }); rowCards+=card; cards[key]=card
             }
             // 所有片单先展示内容，“查看全部”统一放在对应栏目末尾。
             shelf.entries.forEach { addCard(it) }
