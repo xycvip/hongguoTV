@@ -52,6 +52,10 @@ object MediaCrypto {
         if(tenc.body+7>tenc.end) throw IOException("加密参数不完整")
         val version=data[tenc.body].u()
         if(version>1) throw IOException("不支持的加密参数版本")
+        if(version==1) {
+            val pattern=data[tenc.body+4].u()
+            if((pattern ushr 4)!=0 || (pattern and 0x0f)!=0) throw IOException("暂不支持 CENC 模式加密参数")
+        }
         val protectedAt=tenc.body+5
         val ivSizeAt=tenc.body+6
         val isProtected=data[protectedAt].u()
