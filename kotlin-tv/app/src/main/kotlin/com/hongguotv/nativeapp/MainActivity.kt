@@ -2053,11 +2053,14 @@ class MainActivity: Activity() {
                 indicator.setTypeface(
                     Typeface.create("sans-serif-medium",if(active) Typeface.BOLD else Typeface.NORMAL)
                 )
-                // The active category stays highlighted; actual focus gets a stronger border.
+                // Match the top navigation tabs exactly: focused = white surface,
+                // active category = selected surface, otherwise transparent.
+                val focused=indicator.hasFocus()
+                indicator.setTextColor(if(focused) bg else if(active) accent else muted)
                 indicator.background=rounded(
-                    if(indicator.hasFocus()) TvStyle.raised else if(active) TvStyle.selectedSurface else Color.TRANSPARENT,
-                    if(indicator.hasFocus()) accent else if(active) TvStyle.outline else Color.TRANSPARENT
+                    if(focused) white else if(active) TvStyle.selectedSurface else Color.TRANSPARENT
                 )
+                indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
             }
         }
         // Five vertical sections; danmaku controls are grouped into the Playback section.
@@ -2088,12 +2091,9 @@ class MainActivity: Activity() {
                 isFocusableInTouchMode=true
             }
             categoryIndicators+=headingTitle
-            headingTitle.setOnFocusChangeListener { _,focused ->
+            headingTitle.setOnFocusChangeListener { _,_ ->
                 val category=categoryIndicators.indexOf(headingTitle)
-                if(focused) markFocusedCategory(category)
-                else if(category==focusedCategory) {
-                    headingTitle.background=rounded(TvStyle.selectedSurface,TvStyle.outline)
-                }
+                if(category==focusedCategory || headingTitle.hasFocus()) markFocusedCategory(category)
             }
             headingTitle.background=rounded(Color.TRANSPARENT)
             headingTitle.setOnClickListener {
