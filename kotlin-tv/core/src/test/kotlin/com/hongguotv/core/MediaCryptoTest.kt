@@ -75,6 +75,29 @@ class MediaCryptoTest {
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("IV")) }
     }
 
+    @Test fun rejectsDuplicateAuxiliaryIndexBoxes() {
+        try { MediaCrypto.prepare(fixture(duplicateSaiz=true),key); fail("duplicate saiz must be rejected") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().isNotBlank()) }
+    }
+    @Test fun rejectsTrailingBytesInSampleToChunkIndex() {
+        try { MediaCrypto.prepare(fixture(trailingStsc=true),key); fail("stsc trailing data must be rejected") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().isNotBlank()) }
+    }
+    @Test fun rejectsUnsupportedSampleDescriptionIndex() {
+        try { MediaCrypto.prepare(fixture(badSampleDescription=true),key); fail("unknown sample description must be rejected") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().isNotBlank()) }
+    }
+    @Test fun rejectsFragmentedMp4InsteadOfUsingClassicSampleTables() {
+        try { MediaCrypto.prepare(fixture(fragmented=true),key); fail("fragmented MP4 must be rejected") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("fragmented")) }
+    }
+    @Test fun supportsVersionOneEncryptedAudioSampleEntry() {
+        val prepared=MediaCrypto.prepare(fixture(codec="mp4a",audioVersion=1),key)
+        assertEquals(1,prepared.samples.size)
+        assertTrue(String(prepared.header).contains("mp4a"))
+        assertFalse(String(prepared.header).contains("enca"))
+    }
+
     @Test fun ignoresFakeBoxSignaturesInsideOtherBoxPayloads() {
         try { MediaCrypto.prepare(fixture(omitSaiz=true,nestedFakeSaiz=true),key); fail("nested payload is not an stbl child") }
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().isNotBlank()) }
@@ -139,7 +162,7 @@ class MediaCryptoTest {
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun extendedBox(type: String, body: ByteArray): ByteArray =
         be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null,seig: Boolean=false,omitSaiz: Boolean=false,nestedFakeSaiz: Boolean=false): ByteArray {
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null,seig: Boolean=false,omitSaiz: Boolean=false,nestedFakeSaiz: Boolean=false,duplicateSaiz: Boolean=false,trailingStsc: Boolean=false,badSampleDescription: Boolean=false,fragmented: Boolean=false,audioVersion: Int=0): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
         val actualAuxSize=if(constantIv!=null) 0 else auxSize
         val sampleIv=constantIv ?: if(ivSize==16) iv+ByteArray(8) else iv.copyOf(8)
@@ -147,16 +170,19 @@ class MediaCryptoTest {
             (if(constantIv!=null) byteArrayOf(constantIv.size.toByte())+constantIv else byteArrayOf())
         fun moov(offset: Int): ByteArray {
             val sinf=box("sinf",box("frma",codec.toByteArray())+box("schm",ByteArray(4)+"cenc".toByteArray()+be32(0x00010000))+box("schi",box("tenc",tencBody)))
-            val entry=box("encv",ByteArray(78)+sinf)
+            val audio=codec=="mp4a"
+            val entry=box(if(audio) "enca" else "encv",ByteArray(if(audio) when(audioVersion) {0->28;1->44;2->64;else->28} else 78)+
+                (if(audio) ByteArray(2)+be16(audioVersion) else byteArrayOf())+sinf)
             val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
             val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
-            val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
+            val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(if(badSampleDescription) 2 else 1)+(if(trailingStsc) byteArrayOf(0) else byteArrayOf()))
             val stco=box("stco",ByteArray(4)+be32(1)+be32(4096))
             val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1)+(if(actualAuxSize==0) byteArrayOf(0) else byteArrayOf()))
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
             val sampleGroups=if(seig) box("sgpd",ByteArray(4)+"seig".toByteArray()+be32(0)) else byteArrayOf()
             val nested=if(nestedFakeSaiz) box("free",saiz) else byteArrayOf()
-            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+(if(omitSaiz) byteArrayOf() else saiz)+saio+sampleGroups+nested))))+box("free",sampleIv))
+            val stbl=stsd+stsz+stsc+stco+(if(omitSaiz) byteArrayOf() else saiz)+(if(duplicateSaiz) saiz else byteArrayOf())+saio+sampleGroups+nested
+            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stbl))))+(if(fragmented) box("mvex",byteArrayOf()) else byteArrayOf())+box("free",sampleIv))
         }
         val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
