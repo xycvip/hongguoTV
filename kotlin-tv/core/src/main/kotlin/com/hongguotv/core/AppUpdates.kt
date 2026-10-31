@@ -35,6 +35,8 @@ data class AppUpdate(val versionCode: Long, val versionName: String, val minSdk:
             { "https://ghfast.top/$it" },                  // fastgit alternate
             { "https://gh-proxy.net/$it" },                // another mirror
         )
+        /** Display names aligned with MIRRORS for the manual download selector. */
+        val MIRROR_NAMES = listOf("GitHub 原始线路", "gh-proxy.com", "ghfast.top", "gh-proxy.net")
         /** All hosts we ever send HTTPS traffic to — the interceptor whitelist. */
         val ALLOWED_HOSTS = setOf(
             "github.com",
@@ -217,12 +219,15 @@ class AppUpdateRepository : java.io.Closeable {
         }
     }
 
-    fun download(update: AppUpdate, file: File, progress: (Int) -> Unit) {
+    fun download(update: AppUpdate, file: File, progress: (Int) -> Unit, mirrorIndex: Int? = null) {
         if (UpdateFiles.verify(file, update)) return
         // Release assets are immutable, but intermediaries can cache redirects; make each request unique.
         val base = "${update.downloadUrl}?cachebust=${System.currentTimeMillis()}"
         val errors = ArrayList<String>()
-        for (wrap in AppUpdate.MIRRORS) {
+        val mirrors = if (mirrorIndex == null) AppUpdate.MIRRORS else listOf(
+            AppUpdate.MIRRORS.getOrNull(mirrorIndex) ?: throw IOException("代理线路编号无效")
+        )
+        for (wrap in mirrors) {
             val url = wrap(base)
             var response: okhttp3.Response? = null
             try {
