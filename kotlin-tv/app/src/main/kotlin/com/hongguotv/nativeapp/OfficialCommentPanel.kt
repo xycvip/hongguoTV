@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import com.hongguotv.core.DanmakuEmoji
 import com.hongguotv.core.OfficialComment
 import com.hongguotv.core.OfficialCommentPage
 
@@ -318,7 +319,7 @@ internal class OfficialCommentPanel(
         authorLine.addView(label(comment.author, 13f, true), LinearLayout.LayoutParams(0, -2, 1f))
         if (comment.createdAt > 0) authorLine.addView(label(timeText(comment.createdAt), 11f, false, mutedColor))
         card.addView(authorLine)
-        card.addView(label(comment.text, 14f, false, textColor).apply {
+        card.addView(label(DanmakuEmoji.display(comment.text), 14f, false, textColor).apply {
             setPadding(0, dp(6), 0, dp(7))
         })
         val actions = LinearLayout(context).apply {
