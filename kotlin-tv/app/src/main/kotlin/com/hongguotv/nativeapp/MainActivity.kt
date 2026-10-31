@@ -1977,8 +1977,11 @@ class MainActivity: Activity() {
             categoryIndicators.forEachIndexed { index,indicator ->
                 val active=index==focusedCategory
                 indicator.setTextColor(if(active) accent else white)
-                indicator.background=if(active) rounded(TvStyle.selectedSurface,accent) else rounded(Color.TRANSPARENT)
-                indicator.setPadding(dp(5),dp(3),dp(5),dp(3))
+                indicator.setTypeface(
+                    Typeface.create("sans-serif-medium",if(active) Typeface.BOLD else Typeface.NORMAL)
+                )
+                // Keep all category labels visually inside one shared navigation card.
+                indicator.background=rounded(Color.TRANSPARENT)
             }
         }
         // Five vertical sections; danmaku controls are grouped into the Playback section.
@@ -1988,35 +1991,42 @@ class MainActivity: Activity() {
             widthDp()<1100f -> 3
             else -> 4
         }
-        val contentHost=column()
+        // One shared category card on the left; all setting groups stay in a single right column.
+        val contentHost=row().apply { gravity=Gravity.TOP }
         parent.addView(contentHost,lp())
+        val headingWidth=if(widthDp()<600f) 82 else 126
+        val categoryCard=column().apply {
+            setPadding(dp(7),dp(8),dp(7),dp(8))
+            background=rounded(surface)
+        }
+        contentHost.addView(categoryCard,lp(dp(headingWidth),-2).apply { rightMargin=dp(10) })
+        val sectionsHost=column()
+        contentHost.addView(sectionsHost,LinearLayout.LayoutParams(0,-2,1f))
 
         fun section(title:String,subtitle:String): Pair<LinearLayout,GridLayout> {
-            val panel=row().apply {
-                gravity=Gravity.CENTER_VERTICAL
-                setPadding(dp(12),dp(10),dp(12),dp(10))
-                background=rounded(surface)
-            }
             val headingTitle=text(title,if(widthDp()<600f) 14f else 17f).apply {
                 typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                 maxLines=1; ellipsize=TextUtils.TruncateAt.END
                 setPadding(dp(5),dp(3),dp(5),dp(3))
-                background=rounded(Color.TRANSPARENT)
             }
             categoryIndicators+=headingTitle
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
+                setPadding(dp(3),dp(9),dp(3),dp(9))
                 addView(headingTitle)
                 addView(text(subtitle,11f,muted).apply {
                     maxLines=2; ellipsize=TextUtils.TruncateAt.END
-                    setPadding(0,dp(4),dp(4),0)
+                    setPadding(dp(5),dp(3),dp(2),0)
                 })
             }
-            val headingWidth=if(widthDp()<600f) 82 else 126
-            panel.addView(heading,lp(dp(headingWidth),-2).apply { rightMargin=dp(10) })
+            categoryCard.addView(heading,lp(-1,-2))
+            val panel=column().apply {
+                setPadding(dp(8),dp(7),dp(8),dp(7))
+                background=rounded(surface)
+            }
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
-            panel.addView(grid,LinearLayout.LayoutParams(0,-2,1f))
-            contentHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
+            panel.addView(grid,lp(-1,-2))
+            sectionsHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
             categoryItems+=mutableListOf<TextView>()
             return panel to grid
         }
