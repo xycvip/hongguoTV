@@ -11,7 +11,7 @@ import android.view.ViewConfiguration
 import android.widget.*
 import com.hongguotv.core.Series
 
-/** Keeps vertical swipes available to the parent page while retaining horizontal shelf scrolling. */
+/** Lets the vertical page container arbitrate gestures; this view only handles horizontal drags. */
 class VerticalFriendlyHorizontalScrollView(context: Context): HorizontalScrollView(context) {
     private val touchSlop=ViewConfiguration.get(context).scaledTouchSlop
     private var downX=0f
@@ -22,20 +22,20 @@ class VerticalFriendlyHorizontalScrollView(context: Context): HorizontalScrollVi
             android.view.MotionEvent.ACTION_DOWN -> {
                 downX=event.x
                 downY=event.y
+                // Clear any stale disallow-intercept request before a new gesture.
                 parent?.requestDisallowInterceptTouchEvent(false)
             }
             android.view.MotionEvent.ACTION_MOVE -> {
                 val dx=kotlin.math.abs(event.x-downX)
                 val dy=kotlin.math.abs(event.y-downY)
                 if(dy>touchSlop && dy>dx*1.15f) {
-                    // A vertical gesture belongs to the page's ScrollView/RecyclerView.
+                    // Do not claim vertical gestures: let the outer page ScrollView intercept.
                     parent?.requestDisallowInterceptTouchEvent(false)
                     return false
                 }
-                if(dx>touchSlop && dx>dy*1.15f) {
-                    // A horizontal gesture belongs to this shelf.
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                }
+                // Intentionally do not disallow parent interception for horizontal gestures.
+                // The vertical ScrollView naturally ignores predominantly horizontal movement,
+                // while this HorizontalScrollView still handles and scrolls its own shelf.
             }
             android.view.MotionEvent.ACTION_UP,android.view.MotionEvent.ACTION_CANCEL ->
                 parent?.requestDisallowInterceptTouchEvent(false)
