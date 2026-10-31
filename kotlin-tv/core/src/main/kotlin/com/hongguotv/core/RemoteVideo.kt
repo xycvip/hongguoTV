@@ -57,6 +57,7 @@ class RemoteVideo(
                 if(total!=0L && full!=total) throw IOException("视频资源已变化，请重试")
                 val n=(last-start+1).toInt(); val body=response.body ?: throw IOException("视频分段为空")
                 val bytes=body.source().readByteArray(n.toLong())
+                if(bytes.size!=n) throw IOException("视频分段长度不完整：期望 ${n} 字节，实际 ${bytes.size} 字节")
                 Range(bytes,full)
             }
         } finally { synchronized(calls) { calls-=call } }
