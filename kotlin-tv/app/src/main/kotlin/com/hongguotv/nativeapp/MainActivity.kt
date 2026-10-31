@@ -1167,7 +1167,7 @@ class MainActivity: Activity() {
         brand.addView(ImageView(this).apply { setImageResource(com.hongguotv.nativeapp.R.drawable.app_icon) },lp(dp(if(compactHeader) 24 else 28),dp(if(compactHeader) 24 else 28)).apply { rightMargin=dp(6) })
         brand.addView(text("红果",if(compactHeader) 18f else 22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
         top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
-        listOf(0 to "首页",1 to "搜索",7 to "剧场",2 to "排行榜",3 to "收藏",4 to "最近观看",5 to "设置",6 to "红果账户").forEach { (tabId,label) ->
+        listOf(0 to "首页",7 to "剧场",1 to "搜索",2 to "排行榜",3 to "收藏",4 to "最近观看",5 to "设置",6 to "红果账户").forEach { (tabId,label) ->
             val item=addButton(top,label,tabId==tab || (tabId==6 && screen=="account")) { switchTab(tabId) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(tabId==tab) accent else muted)
