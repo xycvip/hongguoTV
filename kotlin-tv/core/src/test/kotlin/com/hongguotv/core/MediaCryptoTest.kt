@@ -24,7 +24,7 @@ class MediaCryptoTest {
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun extendedBox(type: String, body: ByteArray): ByteArray =
         be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false): ByteArray {
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
         fun moov(offset: Int): ByteArray {
             val entry=box("encv",ByteArray(78)+box("sinf",box("frma",codec.toByteArray())))
@@ -38,7 +38,7 @@ class MediaCryptoTest {
         }
         val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
-        return ftyp+padding+moov(initial.size-8)
+        return ftyp+padding+moov(auxOffset ?: initial.size-8)
     }
     @Test fun headerRestoresOriginalAvcCodecAndSampleIndex() {
         val data=fixture(); val prepared=MediaCrypto.prepare(data,key)
@@ -63,6 +63,48 @@ class MediaCryptoTest {
         val prepared=MediaCrypto.prepare(data,key)
         assertEquals(1,prepared.samples.size)
         assertEquals(4096L,prepared.samples[0].start)
+    }
+
+    @Test fun preparesTailMoovAndFetchesAuxiliaryDataByAbsoluteRange() {
+        val full=fixture(auxOffset=5000)
+        val ftypSize=box("ftyp","isom0000".toByteArray()).size
+        val ftyp=full.copyOfRange(0,ftypSize)
+        val moov=full.copyOfRange(ftypSize,full.size)
+        val auxiliary=hex("0102030405060708")
+        var requestedOffset=-1L
+        var requestedLength=0
+        val prepared=MediaCrypto.prepareMoov(ftyp,moov,9000,key) { offset,length ->
+            requestedOffset=offset
+            requestedLength=length
+            auxiliary
+        }
+        assertEquals(5000L,requestedOffset)
+        assertEquals(8,requestedLength)
+        assertEquals(9000L,prepared.headerOffset)
+        assertEquals(1,prepared.samples.size)
+        assertArrayEquals(auxiliary+ByteArray(8),prepared.samples.single().iv)
+        assertTrue(String(prepared.header).contains("avc1"))
+        assertFalse(String(prepared.header).contains("encv"))
+    }
+
+    @Test fun decryptAppliesHeaderPatchAtItsOriginalFileOffset() {
+        val prepared=MediaCrypto.Prepared(byteArrayOf(7,8,9),emptyList(),100)
+        val result=MediaCrypto.decrypt(ByteArray(12),95,key,prepared)
+        assertArrayEquals(byteArrayOf(7,8,9),result.copyOfRange(5,8))
+        assertArrayEquals(ByteArray(5),result.copyOfRange(0,5))
+    }
+
+    @Test fun topLevelScannerCanJumpOverLargeMdatToTailMoov() {
+        val ftyp=box("ftyp","isom0000".toByteArray())
+        val mdat=box("mdat",ByteArray(4096))
+        val moov=box("moov",byteArrayOf(1,2,3,4))
+        val total=(ftyp+mdat+moov).size.toLong()
+        val mdatHeader=MediaCrypto.topLevelBoxHeader(mdat.copyOfRange(0,16),ftyp.size.toLong(),total)
+        assertEquals("mdat",mdatHeader.type)
+        assertEquals(ftyp.size.toLong()+mdat.size,mdatHeader.end)
+        val moovHeader=MediaCrypto.topLevelBoxHeader(moov,mdatHeader.end,total)
+        assertEquals("moov",moovHeader.type)
+        assertEquals(moov.size.toLong(),moovHeader.size)
     }
     @Test(expected=java.io.IOException::class) fun moovAfterMdatIsRejectedWithoutReadingMediaPayload() {
         val ftyp=box("ftyp","isom0000".toByteArray())
