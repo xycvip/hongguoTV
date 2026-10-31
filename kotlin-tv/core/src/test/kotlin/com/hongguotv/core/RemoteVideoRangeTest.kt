@@ -67,6 +67,96 @@ class RemoteVideoRangeTest {
         }
     }
 
+
+    @Test fun repeatedReadsAndBackwardSeekReuseCachedChunks() {
+        val bytes = fixture()
+        val server = serverFor(bytes)
+        val video = RemoteVideo(
+            OkHttpClient(),
+            StreamInfo(server.url("/video").toString(), null, "test"),
+            chunkBytes = 32,
+            aheadBytes = 0
+        )
+        try {
+            video.prepare()
+            assertArrayEquals(bytes.copyOfRange(64, 80), video.read(64, 16))
+            val requestsAfterForwardRead = server.requestCount
+            assertArrayEquals(bytes.copyOfRange(0, 16), video.read(0, 16))
+            assertArrayEquals(bytes.copyOfRange(64, 80), video.read(64, 16))
+            assertEquals("cached chunks should not trigger duplicate HTTP ranges", requestsAfterForwardRead, server.requestCount)
+        } finally {
+            video.close()
+            server.shutdown()
+        }
+    }
+
+    @Test fun rejectsResourceWhoseLengthChangesBetweenRanges() {
+        val original = fixture()
+        val changed = original + byteArrayOf(99)
+        val server = MockWebServer()
+        var requests = 0
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                requests++
+                val range = Regex("bytes=(\\d+)-(\\d+)").matchEntire(request.getHeader("Range").orEmpty())
+                    ?: return MockResponse().setResponseCode(400)
+                val start = range.groupValues[1].toInt()
+                val data = if (requests == 1) original else changed
+                val end = minOf(range.groupValues[2].toInt(), data.lastIndex)
+                return MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $start-$end/${data.size}")
+                    .setBody(Buffer().write(data.copyOfRange(start, end + 1)))
+            }
+        }
+        server.start()
+        val video = RemoteVideo(
+            OkHttpClient(),
+            StreamInfo(server.url("/video").toString(), null, "test"),
+            chunkBytes = 32,
+            aheadBytes = 0
+        )
+        try {
+            video.prepare()
+            try {
+                video.read(32, 16)
+                fail("changed resource length must be rejected")
+            } catch (e: IOException) {
+                assertTrue(e.message.orEmpty().contains("资源已变化"))
+            }
+        } finally {
+            video.close()
+            server.shutdown()
+        }
+    }
+
+    @Test fun rejectsTruncatedRangeBody() {
+        val server = MockWebServer()
+        server.enqueue(
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-31/96")
+                .setHeader("Content-Length", "32")
+                .setBody(Buffer().write(ByteArray(16)))
+        )
+        server.start()
+        val video = RemoteVideo(
+            OkHttpClient(),
+            StreamInfo(server.url("/video").toString(), null, "test"),
+            chunkBytes = 32,
+            aheadBytes = 0
+        )
+        try {
+            try {
+                video.prepare()
+                fail("truncated range body must be rejected")
+            } catch (e: IOException) {
+                assertTrue(e.message.orEmpty().isNotBlank())
+            }
+        } finally {
+            video.close()
+            server.shutdown()
+        }
+    }
+
     @Test fun rejectsServerThatIgnoresRangeAndReturnsFullResponse() {
         val server = serverFor(fixture(), responseCode = 200)
         val video = RemoteVideo(
