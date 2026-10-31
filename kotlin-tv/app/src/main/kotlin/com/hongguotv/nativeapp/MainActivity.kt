@@ -1202,7 +1202,7 @@ class MainActivity: Activity() {
                 gravity=Gravity.CENTER
                 includeFontPadding=false
                 setPadding(dp(5),dp(5),dp(5),dp(5))
-                background=Color.TRANSPARENT.toDrawable()
+                background=null
                 isFocusable=false; isFocusableInTouchMode=false; isClickable=false
                 importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
                 maxLines=1
