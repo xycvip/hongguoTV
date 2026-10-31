@@ -94,13 +94,54 @@ class RemoteVideo(
         readChunk(k)
         return synchronized(lock) { cache[k] } ?: throw IOException("视频缓存块丢失")
     }
+    /** Read an exact bounded range without pulling intervening media payload into memory. */
+    private fun readExactRange(start: Long, length: Int): ByteArray {
+        if (start < 0 || length <= 0 || start > total - length.toLong()) throw IOException("视频索引范围超出文件")
+        val result=ByteArray(length)
+        var offset=start
+        var copied=0
+        while(copied<length) {
+            val count=minOf(chunkBytes,length-copied)
+            val part=range(offset,offset+count-1L).bytes
+            if(part.size!=count) throw IOException("视频分段数据不完整")
+            part.copyInto(result,copied)
+            copied+=count
+            offset+=count
+        }
+        return result
+    }
     @Synchronized fun prepare(): RemoteVideo {
         if(::prepared.isInitialized) return this
         readChunk(0L)
+        if(info.key==null) {
+            prepared=MediaCrypto.Prepared(byteArrayOf(),emptyList())
+            return this
+        }
         val first=chunkOrFetch(0L)
-        val end=MediaCrypto.headerEnd(first,total)
-        val header=if(end>first.size) first+range(first.size.toLong(),end-1L).bytes else first.copyOf(end)
-        prepared=MediaCrypto.prepare(header,info.key)
+        val ftypBox=MediaCrypto.topLevelBoxHeader(first,0,total)
+        if(ftypBox.type!="ftyp" || ftypBox.offset!=0L || ftypBox.size>1024L*1024L) throw IOException("不支持的视频容器")
+        val ftyp=readExactRange(0,ftypBox.size.toInt())
+        var offset=ftypBox.end
+        var found=false
+        repeat(128) {
+            if(found) return@repeat
+            if(offset>=total) return@repeat
+            val headerLength=minOf(16L,total-offset).toInt()
+            if(headerLength<8) throw IOException("视频区块头不完整")
+            val boxHeader=readExactRange(offset,headerLength)
+            val box=MediaCrypto.topLevelBoxHeader(boxHeader,offset,total)
+            if(box.type=="moov") {
+                if(box.size>8L*1024L*1024L || box.size>Int.MAX_VALUE) throw IOException("视频索引大小异常")
+                val moov=readExactRange(offset,box.size.toInt())
+                prepared=MediaCrypto.prepareMoov(ftyp,moov,offset,info.key) { auxOffset,auxLength ->
+                    readExactRange(auxOffset,auxLength)
+                }
+                found=true
+            } else {
+                offset=box.end
+            }
+        }
+        if(!found) throw IOException("视频索引未找到或区块数量超限")
         if(prepared.samples.any { it.end>total }) throw IOException("视频样本超出资源大小")
         return this
     }
