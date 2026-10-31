@@ -1444,7 +1444,9 @@ class MainActivity: Activity() {
                 }.apply { nextFocusUpId=navForTab().id }
             }
             if(tab==4) {
-                val stats=addButton(heading,"观看统计") { showWatchStats(stats) }.apply {
+                historyManage=null
+                lateinit var stats:TextView
+                stats=addButton(heading,"观看统计") { showWatchStats(stats) }.apply {
                     tag="recent:watch-stats"
                     nextFocusUpId=navForTab().id
                 }
