@@ -2863,8 +2863,12 @@ class MainActivity: Activity() {
         if(!reuse) {
             root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
             val view=PlayerView(this).apply {
+                // Keep Media3's default SurfaceView path for TV-box efficiency; TextureView remains
+                // a device-specific fallback candidate rather than a global default.
                 useController=false; resizeMode=frameResizeMode(); isFocusable=false
-                setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+                setKeepContentOnPlayerReset(true)
+                setShutterBackgroundColor(Color.BLACK)
+                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
             }
             playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
             val danmakuLayer=DanmakuView(this).apply {
