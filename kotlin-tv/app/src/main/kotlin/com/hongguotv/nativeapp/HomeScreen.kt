@@ -323,6 +323,8 @@ class HomeScreen(
     private fun fitArtwork() {
         if(height<=0) return
         rows.forEach { row ->
+            // 随机推荐操作卡片使用独立固定尺寸，不参与海报高度自适应，避免被按海报宽高比拉成方形。
+            if(row.key=="random") return@forEach
             val textHeight=row.cards.maxOf { item -> item.view.paddingTop+item.view.paddingBottom+(1 until item.view.childCount).sumOf { child ->
                 val view=item.view.getChildAt(child); val params=view.layoutParams as LayoutParams
                 view.measuredHeight+params.topMargin+params.bottomMargin
