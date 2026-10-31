@@ -1969,6 +1969,18 @@ class MainActivity: Activity() {
     private fun settings(parent: LinearLayout, footerHost: LinearLayout) {
         val settingRows=mutableListOf<TextView>()
         val categoryItems=mutableListOf<MutableList<TextView>>()
+        val categoryIndicators=mutableListOf<TextView>()
+        var focusedCategory=-1
+        fun markFocusedCategory(category:Int) {
+            if(category !in categoryIndicators.indices) return
+            focusedCategory=category
+            categoryIndicators.forEachIndexed { index,indicator ->
+                val active=index==focusedCategory
+                indicator.setTextColor(if(active) accent else white)
+                indicator.background=if(active) rounded(TvStyle.selectedSurface,accent) else rounded(Color.TRANSPARENT)
+                indicator.setPadding(dp(5),dp(3),dp(5),dp(3))
+            }
+        }
         // Five vertical sections; danmaku controls are grouped into the Playback section.
 
         val columns=when {
@@ -1985,12 +1997,16 @@ class MainActivity: Activity() {
                 setPadding(dp(12),dp(10),dp(12),dp(10))
                 background=rounded(surface)
             }
+            val headingTitle=text(title,if(widthDp()<600f) 14f else 17f).apply {
+                typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                maxLines=1; ellipsize=TextUtils.TruncateAt.END
+                setPadding(dp(5),dp(3),dp(5),dp(3))
+                background=rounded(Color.TRANSPARENT)
+            }
+            categoryIndicators+=headingTitle
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
-                addView(text(title,if(widthDp()<600f) 14f else 17f).apply {
-                    typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-                    maxLines=1; ellipsize=TextUtils.TruncateAt.END
-                })
+                addView(headingTitle)
                 addView(text(subtitle,11f,muted).apply {
                     maxLines=2; ellipsize=TextUtils.TruncateAt.END
                     setPadding(0,dp(4),dp(4),0)
@@ -2022,6 +2038,7 @@ class MainActivity: Activity() {
                 background=rounded(surface)
                 setOnFocusChangeListener { _,focused ->
                     background=rounded(if(focused) TvStyle.raised else surface,if(focused) accent else Color.TRANSPARENT)
+                    if(focused) markFocusedCategory(category)
                 }
             }
             val params=GridLayout.LayoutParams(
@@ -2076,7 +2093,10 @@ class MainActivity: Activity() {
             paintStartupAutoplayButton()
         }
         paintStartupAutoplayButton(false)
-        startupAutoplayButton.setOnFocusChangeListener { _,focused -> paintStartupAutoplayButton(focused) }
+        startupAutoplayButton.setOnFocusChangeListener { _,focused ->
+            paintStartupAutoplayButton(focused)
+            if(focused) markFocusedCategory(0)
+        }
         qualityButton=setting(playback,0,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
         defaultSpeed=setting(playback,0,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
         frame=setting(playback,0,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
