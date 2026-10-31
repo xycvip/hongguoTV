@@ -2086,8 +2086,13 @@ class MainActivity: Activity() {
                 typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                 maxLines=1; ellipsize=TextUtils.TruncateAt.END
                 setPadding(dp(5),dp(3),dp(5),dp(3))
+                isFocusable=true
+                isFocusableInTouchMode=true
             }
             categoryIndicators+=headingTitle
+            headingTitle.setOnFocusChangeListener { _,focused ->
+                if(focused) markFocusedCategory(categoryIndicators.indexOf(headingTitle))
+            }
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
                 setPadding(dp(3),dp(9),dp(3),dp(9))
@@ -2353,15 +2358,17 @@ class MainActivity: Activity() {
                     val col=index%columns
                     val rowStart=(index/columns)*columns
                     val rowEnd=minOf(rowStart+columns,visible.size)-1
-                    view.nextFocusLeftId=if(col>0) visible[index-1].id else view.id
+                    view.nextFocusLeftId=if(col>0) visible[index-1].id else categoryIndicators[category].id
                     view.nextFocusRightId=if(index<rowEnd) visible[index+1].id else view.id
-                    val previous=visibleByCategory.getOrNull(category-1).orEmpty()
-                    val next=visibleByCategory.getOrNull(category+1).orEmpty()
-                    val up=previous.getOrNull((index%columns).coerceAtMost((previous.size-1).coerceAtLeast(0)))
-                    val down=next.getOrNull((index%columns).coerceAtMost((next.size-1).coerceAtLeast(0)))
-                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: up?.id ?: navForTab().id
-                    view.nextFocusDownId=visible.getOrNull(index+columns)?.id ?: down?.id ?: view.id
+                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: navForTab().id
+                    view.nextFocusDownId=visible.getOrNull(index+columns)?.id
+                        ?: categoryIndicators.getOrNull(category+1)?.id ?: view.id
                 }
+                val indicator=categoryIndicators[category]
+                indicator.nextFocusLeftId=navForTab().id
+                indicator.nextFocusRightId=visible.firstOrNull()?.id ?: indicator.id
+                indicator.nextFocusUpId=categoryIndicators.getOrNull(category-1)?.id ?: navForTab().id
+                indicator.nextFocusDownId=categoryIndicators.getOrNull(category+1)?.id ?: indicator.id
             }
             navForTab().nextFocusDownId=settingRows.firstOrNull()?.id ?: navForTab().id
         }
