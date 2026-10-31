@@ -2329,7 +2329,8 @@ class MainActivity: Activity() {
             paintStartupAutoplayButton(focused)
             if(focused) markFocusedCategory(0)
         }
-        val sleepActionButton=setting(playback,0,"定时关闭 · ${sleepActionLabel()}") {
+        lateinit var sleepActionButton: TextView
+        sleepActionButton=setting(playback,0,"定时关闭 · ${sleepActionLabel()}") {
             val next=(sleepActionMode+1)%3
             getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().putInt("sleep_action_mode",next).apply()
             sleepActionButton.text="定时关闭 · ${sleepActionLabel(next)}"
