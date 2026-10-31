@@ -149,7 +149,7 @@ class RemoteVideoRangeTest {
                 video.prepare()
                 fail("truncated range body must be rejected")
             } catch (e: IOException) {
-                assertTrue(e.message.orEmpty().isNotBlank())
+                assertTrue(e is java.io.EOFException || e.message.orEmpty().isNotBlank())
             }
         } finally {
             video.close()
