@@ -1635,6 +1635,28 @@ class MainActivity: Activity() {
                 }
             })
         } else catalogGrid(body,focusNav,focusType,focusFilter=focusFilter)
+        // 目录类页面统一采用固定导航与连续纵向内容结构。
+        // 顶部标题和筛选区与网格处于同一纵向滚动容器；RecyclerView 继续负责分页和回收。
+        if(tab==2 || tab==3 || tab==4 || tab==7) {
+            val fixedCount=if(compactHeader) 3 else 2
+            val pageContent=column()
+            while(container.childCount>fixedCount) {
+                val child=container.getChildAt(fixedCount)
+                container.removeViewAt(fixedCount)
+                pageContent.addView(child)
+            }
+            val viewportDp=(heightDp()-(if(compactHeader) 46+38+7 else 44+7)-24).coerceAtLeast(180)
+            body.layoutParams=lp(-1,dp(viewportDp))
+            val pageScroll=ScrollView(this).apply {
+                isVerticalScrollBarEnabled=false
+                clipToPadding=false
+                isFillViewport=true
+                overScrollMode=View.OVER_SCROLL_NEVER
+                descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
+            }
+            pageScroll.addView(pageContent,ViewGroup.LayoutParams(-1,-2))
+            container.addView(pageScroll,lp(-1,0).apply { weight=1f })
+        }
         // 页面重建后初始化联想区：回显点击联想词前的列表，或无词时收起中栏
         if(tab==1) { fetchSuggest(); if(query.isBlank()) loadSearchHot() }
     }
