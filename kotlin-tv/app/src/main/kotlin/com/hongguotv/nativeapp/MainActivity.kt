@@ -3906,40 +3906,43 @@ class MainActivity: Activity() {
     private fun showPanel() {
         if(playError) return
         panel=true; showHud(); controls.visibility=View.VISIBLE; controls.removeAllViews()
-        val transport=row(); controls.addView(transport)
-        val play=addButton(transport,if(player?.playWhenReady==true) "暂停" else "播放") { togglePlayback() }.also { transportPlay=it }
+        val strip=HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled=false
+            clipToPadding=false
+            descendantFocusability=ViewGroup.FOCUS_AFTER_DESCENDANTS
+            overScrollMode=View.OVER_SCROLL_NEVER
+        }
+        val transport=row()
+        strip.addView(transport,lp(-2,-2))
+        controls.addView(strip,lp(-1,-2))
+        addButton(transport,if(player?.playWhenReady==true) "暂停" else "播放") { togglePlayback() }.also { transportPlay=it }
+        addButton(transport,"从头播放") { seekTo(0); hidePanel() }
         addButton(transport,"上一集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
         addButton(transport,"下一集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
-        addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
-        lateinit var timerButton: TextView
-        timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
-        lateinit var more: TextView
-        more=addButton(transport,"播放设置") {
-            val seriesId=detail?.series?.id.orEmpty()
-            val mark=library.skipMark(seriesId)
-            val danmakuOn=extras.danmakuEnabled(seriesId,library.danmaku)
-            fun skipLabel(seconds: Int)=if(seconds>0) "$seconds 秒" else "关闭"
-            tvTools.choose("播放设置",buildList {
-                add("倍速 ${PlaybackSpeed.label(library.playbackSpeed)}"); add("清晰度 ${library.maxQuality}P"); add("画面 ${library.frameMode.label}")
-                add("跳过片头 ${skipLabel(mark?.introSeconds ?: 0)}"); add("跳过片尾 ${skipLabel(mark?.outroSeconds ?: 0)}"); add("从头播放"); add("弹幕 ${if(danmakuOn) "开启" else "关闭"}（仅本剧）")
-                if(danmakuOn) add("弹幕设置")
-            },more,{ choice ->
-                main.post {
-                    if(screen=="player" && more.isAttachedToWindow) when(choice) {
-                        0 -> showSpeedPicker(more)
-                        1 -> showQualityPicker(more,true)
-                        2 -> showFramePicker(more,true)
-                        3 -> showSkipPicker(more,true)
-                        4 -> showSkipPicker(more,false)
-                        5 -> { seekTo(0); hidePanel() }
-                        6 -> toggleSeriesDanmaku(seriesId)
-                        7 -> showDanmakuPrefsDialog(more)
-                    }
-                }
-            })
-        }.apply { tag="playback-settings" }
+        lateinit var speedButton: TextView
+        speedButton=addButton(transport,"倍速 ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(speedButton) }
+        lateinit var qualityButton: TextView
+        qualityButton=addButton(transport,"清晰度 ${library.maxQuality}P") { showQualityPicker(qualityButton,true) }
+        lateinit var timerButton: TextView
+        timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
+        val seriesId=detail?.series?.id.orEmpty()
+        lateinit var danmakuButton: TextView
+        fun refreshDanmakuLabel() {
+            danmakuButton.text="弹幕 ${if(extras.danmakuEnabled(seriesId,library.danmaku)) "开启" else "关闭"}"
+        }
+        danmakuButton=addButton(transport,"弹幕 ${if(extras.danmakuEnabled(seriesId,library.danmaku)) "开启" else "关闭"}") {
+            toggleSeriesDanmaku(seriesId)
+            refreshDanmakuLabel()
+        }
+        val mark=library.skipMark(seriesId)
+        fun skipLabel(seconds: Int)=if(seconds>0) "${seconds}秒" else "关闭"
+        lateinit var introButton: TextView
+        introButton=addButton(transport,"跳过片头 ${skipLabel(mark?.introSeconds ?: 0)}") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
+        lateinit var outroButton: TextView
+        outroButton=addButton(transport,"跳过片尾 ${skipLabel(mark?.outroSeconds ?: 0)}") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
+        addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
         play.requestFocus()
     }
     /** Season finale auto-continues into the next season only when both the master autoplay and the season switch are on. */
@@ -3997,6 +4000,7 @@ class MainActivity: Activity() {
             val next=if(intro) old.copy(introSeconds=options[index]) else old.copy(outroSeconds=options[index])
             library.setSkipMark(data.series.id,next)
             if(!intro) { outroSkipSeconds=next.outroSeconds; outroTriggered=false }
+            if(anchor.isAttachedToWindow) anchor.text=(if(intro) "跳过片头 " else "跳过片尾 ")+(if(options[index]>0) "${options[index]}秒" else "关闭")
             Toast.makeText(this,"已保存，仅对《${data.series.title}》生效",Toast.LENGTH_SHORT).show()
             showHud()
         },"当前 ${if(current>0) "$current 秒" else "关闭"}") {}
