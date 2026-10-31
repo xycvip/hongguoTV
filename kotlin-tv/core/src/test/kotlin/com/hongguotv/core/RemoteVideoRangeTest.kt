@@ -177,6 +177,34 @@ class RemoteVideoRangeTest {
         } finally { video.close(); server.shutdown() }
     }
 
+    @Test fun closeCancelsAnInFlightRangeRequest() {
+        val bytes=ByteArray(256) { it.toByte() }
+        val server=MockWebServer()
+        server.enqueue(
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range","bytes 0-255/256")
+                .setHeadersDelay(5,java.util.concurrent.TimeUnit.SECONDS)
+                .setBody(Buffer().write(bytes))
+        )
+        server.start()
+        val video=RemoteVideo(OkHttpClient(),StreamInfo(server.url("/video").toString(),null,"test"),chunkBytes=256,aheadBytes=0)
+        val pool=java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            val read=pool.submit<Throwable?> {
+                try { video.prepare(); null } catch(error: Throwable) { error }
+            }
+            assertNotNull("range request should reach the server",server.takeRequest(2,java.util.concurrent.TimeUnit.SECONDS))
+            video.close()
+            val error=read.get(2,java.util.concurrent.TimeUnit.SECONDS)
+            assertNotNull("closing the stream must abort its active request",error)
+            assertTrue(video.stats().rangeFailures>=1)
+        } finally {
+            video.close()
+            pool.shutdownNow()
+            server.shutdown()
+        }
+    }
+
     @Test fun rejectsResourceWhoseLengthChangesBetweenRanges() {
         val original = fixture()
         val changed = original + byteArrayOf(99)
