@@ -110,17 +110,17 @@ class HomeScreen(
             heading.addView(label(shelf.title,16f).apply { setTypeface(null,Typeface.BOLD) },LayoutParams(0,-2,1f))
             heading.addView(label("左右选剧  ·  上下切换分区",10f,TvStyle.muted))
             block.addView(heading)
-            val horizontal=HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; setPadding(dp(2),dp(2),dp(2),dp(2)) }
-            val line=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=Gravity.TOP }
-            horizontal.addView(line); block.addView(horizontal)
+            val horizontal=HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; setPadding(dp(2),dp(2),dp(2),dp(2)); isFillViewport=shelf.key=="random" }
+            val line=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=if(shelf.key=="random") Gravity.CENTER else Gravity.TOP }
+            horizontal.addView(line, if(shelf.key=="random") LayoutParams(-1,-2) else LayoutParams(-2,-2)); block.addView(horizontal)
             val rowCards=mutableListOf<Card>()
             fun addCard(entry: Entry?,moreAction: (() -> Unit)?=null) {
-                val width=if(shelf.key=="random") (resources.displayMetrics.widthPixels*.92f).toInt().coerceAtLeast(dp(220))
+                val width=if(shelf.key=="random") (resources.displayMetrics.widthPixels*.58f).toInt().coerceAtMost(dp(520)).coerceAtLeast(dp(260))
                     else ((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
                 val key=if(entry!=null) "${shelf.key}:${entry.series.id}" else "${shelf.key}:more"
                 val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
                 val image=if(entry!=null) ImageView(context).apply { scaleType=ImageView.ScaleType.FIT_CENTER; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO } else null
-                val posterHeight=((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
+                val posterHeight=if(shelf.key=="random") dp(76) else ((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
                 if(image!=null) {
                     view.addView(image,LayoutParams(-1,posterHeight))
                 } else {
@@ -168,7 +168,7 @@ class HomeScreen(
                 val title=label(entry?.series?.title ?: "查看全部",14f).apply { minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
                 val badge=label(entry?.label ?: shelf.title,12f,TvStyle.muted).apply { minLines=1; maxLines=1; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(2),0,0) }
                 val progress=ProgressBar(context,null,android.R.attr.progressBarStyleHorizontal).apply { max=100; progress=entry?.progress ?: 0; visibility=if(entry?.progress==null) INVISIBLE else VISIBLE; progressTintList=android.content.res.ColorStateList.valueOf(accent) }
-                view.addView(title); view.addView(badge); view.addView(progress,LayoutParams(-1,dp(3)).apply { topMargin=dp(4) })
+                if(shelf.key!="random") { view.addView(title); view.addView(badge); view.addView(progress,LayoutParams(-1,dp(3)).apply { topMargin=dp(4) }) }
                 val card=Card(key,view,image,title,badge,progress,entry)
                 view.contentDescription=entry?.let { "${shelf.title}，${it.series.title}，${it.label}" } ?: "查看全部${shelf.title}"
                 view.setOnClickListener { lastFocus=key; remember(key); card.entry?.let { open(it.series,it.resume) } ?: moreAction?.invoke() }
