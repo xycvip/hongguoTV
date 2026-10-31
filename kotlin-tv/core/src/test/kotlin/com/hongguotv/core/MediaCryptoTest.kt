@@ -171,8 +171,9 @@ class MediaCryptoTest {
         fun moov(offset: Int): ByteArray {
             val sinf=box("sinf",box("frma",codec.toByteArray())+box("schm",ByteArray(4)+"cenc".toByteArray()+be32(0x00010000))+box("schi",box("tenc",tencBody)))
             val audio=codec=="mp4a"
-            val entry=box(if(audio) "enca" else "encv",ByteArray(if(audio) when(audioVersion) {0->28;1->44;2->64;else->28} else 78)+
-                (if(audio) ByteArray(2)+be16(audioVersion) else byteArrayOf())+sinf)
+            val audioBase=when(audioVersion) {0->28;1->44;2->64;else->28}
+            val audioHeader=ByteArray(8)+byteArrayOf((audioVersion ushr 8).toByte(),audioVersion.toByte())+ByteArray(audioBase-10)
+            val entry=box(if(audio) "enca" else "encv",(if(audio) audioHeader else ByteArray(78))+sinf)
             val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
             val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
             val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(if(badSampleDescription) 2 else 1)+(if(trailingStsc) byteArrayOf(0) else byteArrayOf()))
