@@ -73,6 +73,13 @@ class PlaybackDeviceSession(
             )
             .also { ready = it }
     }
+
+    /** 丢弃进程内匿名播放身份并重新注册；不读写账号登录凭证。 */
+    @Synchronized
+    internal fun renew(http: OkHttpClient): Profile {
+        ready = null
+        return profile(http)
+    }
 }
 
 /** 注册响应的有界读取；取消由调用方的工作域负责。 */
