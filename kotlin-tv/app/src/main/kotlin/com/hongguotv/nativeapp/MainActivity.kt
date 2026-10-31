@@ -1244,13 +1244,8 @@ class MainActivity: Activity() {
             searchRow.addView(input,lp(0,dp(45)).apply { weight=1f; rightMargin=dp(10) })
             fun search() { val next=input.text.toString().trim(); if(next.isBlank()) { input.requestFocus(); return }; runSearch(next) }
             searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }
-            // 搜索栏右边缘与左侧键盘最右侧对齐；搜索按钮文字贴右，避免宽屏下搜索栏横跨整个页面。
-            val searchRowWidth=when(mode) {
-                3 -> dp((if(roomy) 430 else 360)-10)
-                2 -> dp(360-10)
-                else -> -1
-            }
-            searchRow.layoutParams=lp(searchRowWidth)
+            // 搜索栏作为左侧键盘区的顶部内容；右侧结果区从同一高度开始展示，不留下搜索栏缩短后的空白带。
+            searchRow.layoutParams=lp(-1)
             searchButton?.apply {
                 gravity=Gravity.CENTER_VERTICAL or Gravity.END
                 setPadding(paddingLeft,paddingTop,0,paddingBottom)
@@ -1268,7 +1263,8 @@ class MainActivity: Activity() {
                 searchActions.addAll(listOf(recent))
             }
             // 搜索页不再显示类型切换栏，导航直接进入搜索输入框
-            input.setOnEditorActionListener { _,_,_-> search(); true }; container.addView(searchRow)
+            input.setOnEditorActionListener { _,_,_-> search() ; true }
+            if(mode==0) container.addView(searchRow)
             input.addTextChangedListener(object: android.text.TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?,start: Int,count: Int,after: Int) {}
                 override fun onTextChanged(s: CharSequence?,start: Int,before: Int,count: Int) {}
@@ -1331,6 +1327,8 @@ class MainActivity: Activity() {
             } else {
                 // 历史与键盘分开滚动，历史条数不会挤压键盘高度；焦点移动时各自滚入可视区。
                 val contentRow=row().apply { gravity=Gravity.TOP }
+                val leftPane=column()
+                leftPane.addView(searchRow,lp(-1,-2))
                 val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
                 val history=library.searches()
                 if(history.isNotEmpty()) {
@@ -1382,7 +1380,8 @@ class MainActivity: Activity() {
                 }
                 keyboardScroll.addView(keyboard,lp(-1,-1))
                 leftColumn.addView(keyboardScroll,lp(0,-1).apply { weight=1f; leftMargin=dp(14) })
-                contentRow.addView(leftColumn,lp(if(mode==3) dp(if(roomy) 430 else 360) else dp(360),-1))
+                leftPane.addView(leftColumn,lp(-1,0).apply { weight=1f })
+                contentRow.addView(leftPane,lp(if(mode==3) dp(if(roomy) 430 else 360) else dp(360),-1))
                 val midScroll=ScrollView(this).apply {
                     isVerticalScrollBarEnabled=false
                     clipToPadding=false
