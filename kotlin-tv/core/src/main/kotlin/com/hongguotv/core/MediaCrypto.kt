@@ -9,21 +9,41 @@ object MediaCrypto {
     data class Prepared(val header: ByteArray, val samples: List<Sample>, val headerOffset: Long = 0)
     data class TopLevelBox(val offset: Long, val size: Long, val headerSize: Int, val type: String) { val end: Long get() = offset + size }
     fun deriveKey(value: String): ByteArray {
-        val raw=decode64(value); require(raw.size>=3) { "内容密钥格式异常" }
+        require(value.isNotBlank() && value.length <= 8192) { "内容密钥格式异常" }
+        val raw=decode64(value)
+        require(raw.size>=34) { "内容密钥格式异常" }
         val length=minOf(raw.size-(raw[0].u() xor raw[1].u() xor raw[2].u())+47,raw.size-1)
-        require(length>=33)
+        require(length>=33 && 1L+length<=raw.size) { "内容密钥长度异常" }
         val work=raw.copyOfRange(1,1+length); var a=85; var b=246
-        for(i in work.indices) { val old=work[i].u(); val previous=if(i and 1 != 0) a else b; if(i and 1 != 0) a=old else b=old; work[i]=(-21-Integer.bitCount(i)+(previous xor old)).toByte() }
-        return hex(String(work.copyOfRange(1,33),Charsets.US_ASCII)).also { require(it.size==16) }
+        for(i in work.indices) {
+            val old=work[i].u()
+            val previous=if(i and 1 != 0) a else b
+            if(i and 1 != 0) a=old else b=old
+            work[i]=(-21-Integer.bitCount(i)+(previous xor old)).toByte()
+        }
+        val encoded=String(work.copyOfRange(1,33),Charsets.US_ASCII)
+        require(encoded.length==32 && encoded.all { it in '0'..'9' || it.lowercaseChar() in 'a'..'f' }) { "内容密钥编码无效" }
+        return hex(encoded).also { require(it.size==16) { "内容密钥长度无效" } }
     }
     fun decryptUrl(value: String, seed: ByteArray): String {
-        val raw=decode64(value); require(raw.size>=20 && raw[0].u()==0xa8 && raw[2].u()==1 && raw[3].u()==0)
+        require(value.isNotBlank() && value.length <= 16384 && seed.isNotEmpty() && seed.size <= 4096) { "播放地址密钥格式异常" }
+        val raw=decode64(value)
+        require(raw.size>=20 && raw[0].u()==0xa8 && raw[2].u()==1 && raw[3].u()==0) { "播放地址格式异常" }
+        val cipherLength=raw.size-4
+        require(cipherLength>0 && cipherLength%16==0) { "播放地址密文长度异常" }
         val constants=hex("4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58")
         val h=digest("SHA-512",digest("SHA-512",seed)+constants)
-        val bytes=aes("CBC",h.copyOfRange(0,16),h.copyOfRange(16,32),raw.copyOfRange(4,4+(raw.size-4)/16*16))
-        var end=bytes.size; val padding=bytes.last().u(); if(padding in 1..16 && padding<=end) end-=padding
+        val bytes=aes("CBC",h.copyOfRange(0,16),h.copyOfRange(16,32),raw.copyOfRange(4,raw.size))
+        var end=bytes.size
+        val padding=bytes.last().u()
+        if(padding in 1..16 && padding<=end && (end-padding until end).all { bytes[it].u()==padding }) end-=padding
         while(end>0 && bytes[end-1].u()==0) end--
-        return String(bytes,0,end,Charsets.UTF_8)
+        val decoded=java.nio.charset.StandardCharsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+            .decode(java.nio.ByteBuffer.wrap(bytes,0,end)).toString()
+        require(decoded.isNotBlank() && decoded.none { it.isISOControl() }) { "解码后的播放地址无效" }
+        return decoded
     }
     private data class Box(val start: Int,val end: Int,val body: Int,val type: String)
     private fun box(data: ByteArray, at: Int, limit: Int = data.size): Box? {
@@ -34,40 +54,70 @@ object MediaCrypto {
         if(size<header || size>limit-at) return null
         return Box(at,at+size.toInt(),at+header,String(data,at+4,4,Charsets.US_ASCII))
     }
-    private fun find(data: ByteArray,type: String,start: Int,limit: Int): Box? {
-        for(at in start..limit-8) if(data[at+4].toInt()==type[0].code) { val b=box(data,at,limit); if(b?.type==type) return b }
+    /** Read only real, sequential child boxes; never search arbitrary payload bytes for a box signature. */
+    private fun child(data: ByteArray,type: String,start: Int,limit: Int): Box? {
+        if(start<0 || limit>data.size || start>limit) throw IOException("MP4 盒子范围异常")
+        var at=start
+        while(at<limit) {
+            val item=box(data,at,limit) ?: throw IOException("MP4 子盒结构异常")
+            if(item.type==type) return item
+            at=item.end
+        }
+        if(at!=limit) throw IOException("MP4 子盒边界异常")
         return null
     }
+    private fun trackSampleTable(data: ByteArray,track: Box): Box? {
+        val mdia=child(data,"mdia",track.body,track.end) ?: return null
+        val minf=child(data,"minf",mdia.body,mdia.end) ?: return null
+        return child(data,"stbl",minf.body,minf.end)
+    }
+    private fun encryptedSampleEntry(data: ByteArray,stbl: Box): Pair<Box,Box> {
+        val stsd=child(data,"stsd",stbl.body,stbl.end) ?: throw IOException("样本描述缺失")
+        if(stsd.body+8>stsd.end) throw IOException("样本描述不完整")
+        val count=data.u32(stsd.body+4)
+        if(count !in 1L..64L) throw IOException("样本描述数量异常")
+        var at=stsd.body+8
+        var first: Box?=null
+        repeat(count.toInt()) {
+            val entry=box(data,at,stsd.end) ?: throw IOException("样本描述盒异常")
+            if(first==null) first=entry
+            at=entry.end
+        }
+        if(at!=stsd.end) throw IOException("样本描述边界异常")
+        val entry=first ?: throw IOException("样本描述为空")
+        val childStart=when(entry.type) {
+            "encv" -> entry.body+78
+            "enca" -> entry.body+28
+            else -> throw IOException("样本描述未启用受支持的加密格式")
+        }
+        if(childStart>entry.end) throw IOException("加密样本描述不完整")
+        val sinf=child(data,"sinf",childStart,entry.end) ?: throw IOException("加密方案信息缺失")
+        return entry to sinf
+    }
     data class EncryptionConfig(val scheme: String, val ivSize: Int, val constantIv: ByteArray? = null)
-    private fun encryptionConfig(data: ByteArray, stbl: Box): EncryptionConfig {
-        val sinf=find(data,"sinf",stbl.body,stbl.end) ?: throw IOException("加密方案信息缺失")
-        val schm=find(data,"schm",sinf.body,sinf.end) ?: throw IOException("加密方案标识缺失")
+    private fun encryptionConfig(data: ByteArray, sinf: Box): EncryptionConfig {
+        val schm=child(data,"schm",sinf.body,sinf.end) ?: throw IOException("加密方案标识缺失")
         if(schm.body+8>schm.end) throw IOException("加密方案标识不完整")
         val scheme=String(data,schm.body+4,4,Charsets.US_ASCII)
-        // This implementation uses AES-CTR only. Pattern encryption and CBC schemes
-        // must never be interpreted as ordinary CENC.
         if(scheme!="cenc") throw IOException("暂不支持加密方案：$scheme")
-        val schi=find(data,"schi",sinf.body,sinf.end) ?: throw IOException("加密参数缺失")
-        val tenc=find(data,"tenc",schi.body,schi.end) ?: throw IOException("加密参数缺失")
-        if(tenc.body+7>tenc.end) throw IOException("加密参数不完整")
-        val version=data[tenc.body].u()
-        if(version>1) throw IOException("不支持的加密参数版本")
-        if(version==1) {
-            val pattern=data[tenc.body+4].u()
-            if((pattern ushr 4)!=0 || (pattern and 0x0f)!=0) throw IOException("暂不支持 CENC 模式加密参数")
-        }
-        val protectedAt=tenc.body+5
-        val ivSizeAt=tenc.body+6
-        val isProtected=data[protectedAt].u()
-        val ivSize=data[ivSizeAt].u()
+        val schi=child(data,"schi",sinf.body,sinf.end) ?: throw IOException("加密参数缺失")
+        val tenc=child(data,"tenc",schi.body,schi.end) ?: throw IOException("加密参数缺失")
+        if(tenc.body+23>tenc.end) throw IOException("加密参数不完整")
+        val fullBox=data.u32(tenc.body)
+        val version=(fullBox ushr 24).toInt()
+        val flags=fullBox and 0x00ffffffL
+        if(version>1 || flags!=0L) throw IOException("不支持的加密参数版本或标志")
+        if(version==1 && data[tenc.body+4].u()!=0) throw IOException("暂不支持 CENC 模式加密参数")
+        val isProtected=data[tenc.body+5].u()
+        val ivSize=data[tenc.body+6].u()
         if(isProtected!=1) throw IOException("轨道未启用样本加密")
         if(ivSize==8 || ivSize==16) return EncryptionConfig(scheme,ivSize)
         if(ivSize!=0) throw IOException("不支持的样本 IV 长度：$ivSize")
         val kidEnd=tenc.body+23
         if(kidEnd>=tenc.end) throw IOException("固定 IV 参数缺失")
         val constantSize=data[kidEnd].u()
-        if(constantSize !in 8..16) throw IOException("固定 IV 长度无效")
-        if(kidEnd+1+constantSize>tenc.end) throw IOException("固定 IV 数据不完整")
+        if(constantSize!=8 && constantSize!=16) throw IOException("固定 IV 长度无效")
+        if(kidEnd+1+constantSize!=tenc.end) throw IOException("固定 IV 数据长度异常")
         return EncryptionConfig(scheme,0,data.copyOfRange(kidEnd+1,kidEnd+1+constantSize))
     }
     /** Parse a top-level ISO BMFF box header from a range whose first byte is [offset]. */
@@ -132,12 +182,15 @@ object MediaCrypto {
         while(cursor<moov.end) {
             val track=box(data,cursor,moov.end) ?: throw IOException("视频轨道格式异常"); cursor=track.end
             if(track.type!="trak") continue
-            val stbl=find(data,"stbl",track.body,track.end) ?: continue
-            val saiz=find(data,"saiz",stbl.body,stbl.end) ?: continue
-            val saio=find(data,"saio",stbl.body,stbl.end) ?: throw IOException("视频加密索引缺失")
-            val stsz=find(data,"stsz",stbl.body,stbl.end) ?: throw IOException("样本索引缺失")
-            val stsc=find(data,"stsc",stbl.body,stbl.end) ?: throw IOException("块索引缺失")
-            val chunks=find(data,"stco",stbl.body,stbl.end) ?: find(data,"co64",stbl.body,stbl.end) ?: throw IOException("块偏移缺失")
+            val stbl=trackSampleTable(data,track) ?: continue
+            val saiz=child(data,"saiz",stbl.body,stbl.end) ?: continue
+            val saio=child(data,"saio",stbl.body,stbl.end) ?: throw IOException("视频加密索引缺失")
+            val stsz=child(data,"stsz",stbl.body,stbl.end) ?: throw IOException("样本索引缺失")
+            val stsc=child(data,"stsc",stbl.body,stbl.end) ?: throw IOException("块索引缺失")
+            val stco=child(data,"stco",stbl.body,stbl.end)
+            val co64=child(data,"co64",stbl.body,stbl.end)
+            val chunks=stco ?: co64 ?: throw IOException("块偏移缺失")
+            val (sampleEntry,sinf)=encryptedSampleEntry(data,stbl)
             fun count(at: Int,limit: Int): Int { if(at+4>limit) throw IOException("索引越界"); return data.u32(at).also { if(it>200000) throw IOException("索引数量过大") }.toInt() }
             val n=count(stsz.body+8,stsz.end); val defaultSize=data.u32(stsz.body+4)
             if(defaultSize==0L && stsz.body+12+n.toLong()*4>stsz.end) throw IOException("样本索引截断")
@@ -147,9 +200,21 @@ object MediaCrypto {
             val offsets=LongArray(chunkCount) { if(width==8) data.i64(chunks.body+8+it*width) else data.u32(chunks.body+8+it*width) }
             val entryCount=count(stsc.body+4,stsc.end)
             if(stsc.body+8+entryCount.toLong()*12>stsc.end || entryCount==0) throw IOException("块索引截断")
-            val entries=(0 until entryCount).map { data.u32(stsc.body+8+it*12) to data.u32(stsc.body+12+it*12) }
-            // ISO BMFF auxiliary-info flags may insert an eight-byte type/parameter pair.
-            val sizeBase=saiz.body+4+(if(data.i32(saiz.body) and 1 != 0) 8 else 0)
+            if(n==0 || chunkCount==0) throw IOException("视频样本索引为空")
+            val entries=(0 until entryCount).map { index ->
+                val at=stsc.body+8+index*12
+                Triple(data.u32(at),data.u32(at+4),data.u32(at+8))
+            }
+            if(entries.first().first!=1L || entries.any { it.first==0L || it.second==0L || it.third!=1L } ||
+                entries.zipWithNext().any { (a,b) -> b.first<=a.first } || entries.last().first>chunkCount) {
+                throw IOException("块映射索引不受支持")
+            }
+            if(saiz.body+4>saiz.end) throw IOException("辅助索引头不完整")
+            val saizFull=data.u32(saiz.body)
+            val saizVersion=(saizFull ushr 24).toInt()
+            val saizFlags=saizFull and 0x00ffffffL
+            if(saizVersion!=0 || saizFlags and 0xfffffeL!=0L) throw IOException("不支持的辅助索引版本或标志")
+            val sizeBase=saiz.body+4+(if(saizFlags and 1L != 0L) 8 else 0)
             if(sizeBase+5>saiz.end) throw IOException("辅助索引截断")
             val auxDefault=data[sizeBase].u(); val auxCount=count(sizeBase+1,saiz.end)
             if(auxCount!=n || (auxDefault==0 && sizeBase+5+n>saiz.end)) throw IOException("辅助索引数量不一致")
@@ -159,15 +224,20 @@ object MediaCrypto {
             // supports only the track-level tenc defaults, so fail closed rather than
             // silently decrypting those samples with the wrong parameters.
             for (groupType in listOf("sgpd", "sbgp")) {
-                val group=find(data,groupType,stbl.body,stbl.end) ?: continue
+                val group=child(data,groupType,stbl.body,stbl.end) ?: continue
                 if (group.body+8<=group.end &&
                     String(data,group.body+4,4,Charsets.US_ASCII)=="seig") {
                     throw IOException("暂不支持 seig 样本组加密参数")
                 }
             }
-            val encryption=encryptionConfig(data,stbl)
-            val offsetBase=saio.body+4+(if(data.i32(saio.body) and 1 != 0) 8 else 0)
-            val offsetWidth=if(data[saio.body].u()==1) 8 else 4
+            if(saio.body+4>saio.end) throw IOException("辅助偏移头不完整")
+            val saioFull=data.u32(saio.body)
+            val saioVersion=(saioFull ushr 24).toInt()
+            val saioFlags=saioFull and 0x00ffffffL
+            if(saioVersion !in 0..1 || saioFlags and 0xfffffeL!=0L) throw IOException("不支持的辅助偏移版本或标志")
+            val encryption=encryptionConfig(data,sinf)
+            val offsetBase=saio.body+4+(if(saioFlags and 1L != 0L) 8 else 0)
+            val offsetWidth=if(saioVersion==1) 8 else 4
             if(count(offsetBase,saio.end)!=1 || offsetBase+4+offsetWidth>saio.end) throw IOException("不支持的辅助索引布局")
             var aux=if(offsetWidth==8) data.i64(offsetBase+4) else data.u32(offsetBase+4)
             val auxLengthLong=auxSizes.sumOf { it.toLong() }
@@ -213,20 +283,12 @@ object MediaCrypto {
                 }
             }
             if(sampleIndex!=n) throw IOException("视频样本不完整")
-            // Preserve the original codec from frma (AVC and HEVC), not a hardcoded HEVC tag.
-            var at=stbl.body
-            while(at+8<=stbl.end) {
-                val sinf=find(data,"sinf",at,stbl.end) ?: break
-                val frma=find(data,"frma",sinf.body,sinf.end) ?: throw IOException("原始编码格式缺失")
-                if(frma.body+4>frma.end) throw IOException("原始编码格式无效")
-                val original=data.copyOfRange(frma.body,frma.body+4)
-                var entryAt=sinf.start-1
-                while(entryAt>=stbl.body) {
-                    val type=String(data,entryAt,4,Charsets.US_ASCII)
-                    if(type=="encv" || type=="enca") { original.copyInto(header,entryAt); break }; entryAt--
-                }
-                "free".toByteArray().copyInto(header,sinf.start+4); header.fill(0,sinf.body,sinf.end); at=sinf.end
-            }
+            val frma=child(data,"frma",sinf.body,sinf.end) ?: throw IOException("原始编码格式缺失")
+            if(frma.body+4!=frma.end) throw IOException("原始编码格式无效")
+            val original=data.copyOfRange(frma.body,frma.body+4)
+            original.copyInto(header,sampleEntry.start+4)
+            "free".toByteArray().copyInto(header,sinf.start+4)
+            header.fill(0,sinf.body,sinf.end)
         }
         if(samples.isEmpty()) throw IOException("视频加密索引不可用")
         val sorted=samples.sortedBy { it.start }
