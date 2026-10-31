@@ -227,6 +227,10 @@ class MainActivity: Activity() {
     private var genre: Genre?=null
     private var genreButton: View?=null
     private var genreClear: View?=null
+    private var theaterFilterHost: LinearLayout?=null
+    private val theaterFiltersByType=mutableMapOf<ContentType,List<TheaterFilterGroup>>()
+    private var theaterGenre: Genre?=null
+    private var theaterExpanded=true
     private val tabState=mutableMapOf<Int,CatalogState>()
     private val tabFocus=mutableMapOf<Int,String>()
     private val nav=mutableListOf<View>()
@@ -987,7 +991,7 @@ class MainActivity: Activity() {
         homeScreen?.let { homePosition=it.capturePosition() }
         (catalogRecycler?.layoutManager as? GridLayoutManager)?.let { scrollPositions[catalogPageKey]=it.findFirstVisibleItemPosition() }
         homeScreen=null; selectionPreview=null; catalogRecycler=null; catalogAdapter=null; loadingMore=false
-        nav.clear(); typeButtons.clear(); homeRefreshControl=null; aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
+        nav.clear(); theaterFilterHost=null; typeButtons.clear(); homeRefreshControl=null; aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
         azFirst=null; azLastRow.clear(); suggestRow=null; suggestFirst=null; suggestTicket++; main.removeCallbacks(pendingSuggest)
         suggestVertical=false; searchBody=null; keyboardKeys=emptyMap(); keyboardRows=emptyList(); historyFirst=null; historyItems=emptyList(); suggestScrollRef=null; resultFirstCard=null
         historyManage=null; rankSwitch=null; rankRefresh=null; rankSubtitle=null; genreButton=null; genreClear=null; collectionBack=null; favoriteBadges.clear()
@@ -1070,6 +1074,34 @@ class MainActivity: Activity() {
         collection=kind; page=1; catalogFocus=""; showCatalog()
     }
     private fun inlineHomeFilters()=tab==0 && resources.configuration.fontScale<=1.2f && widthDp()>=900
+    private fun navIndexForTab(value:Int)=when(value) { 7 -> 2; 2 -> 3; 3 -> 4; 4 -> 5; 5 -> 6; 6 -> 7; else -> value }
+    private fun navForTab()=nav.getOrNull(navIndexForTab(tab)) ?: nav.firstOrNull()
+    private fun renderTheaterFilters(host:LinearLayout) {
+        host.removeAllViews()
+        val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
+        listOf(ContentType.SHORT,ContentType.COMIC,ContentType.AI).forEach { type ->
+            addButton(types,type.label,library.contentType==type) {
+                if(library.contentType!=type) { library.contentType=type; theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); tabFocus.remove(7); showCatalog(load=true) }
+            }
+        }
+        host.addView(types)
+        val groups=theaterFiltersByType[library.contentType].orEmpty()
+        if(groups.isEmpty()) host.addView(text("正在读取剧场筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
+        else if(theaterExpanded) groups.forEach { group ->
+            val line=row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(2),0,dp(2)) }
+            line.addView(text(group.label,14f,muted).apply { maxLines=1; ellipsize=TextUtils.TruncateAt.END },lp(dp(78),dp(38)))
+            val scroll=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
+            val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
+            addButton(choices,"全部",theaterGenre==null) { theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            group.options.forEach { option -> addButton(choices,option.name,theaterGenre?.slug==option.slug) { theaterGenre=option; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) } }
+            scroll.addView(choices,ViewGroup.LayoutParams(-2,dp(40)))
+            line.addView(scroll,lp(0,dp(40)).apply { weight=1f })
+            host.addView(line)
+        }
+        val control=row().apply { gravity=Gravity.CENTER; setPadding(0,dp(4),0,dp(8)) }
+        addButton(control,if(theaterExpanded) "收起⌃" else "展开⌄") { theaterExpanded=!theaterExpanded; theaterFilterHost?.let(::renderTheaterFilters) }
+        host.addView(control)
+    }
     private fun localCatalog()=tab==3 || tab==4 || collection!=null
     private fun localItems(): List<Series> = when(collection) {
         "hot" -> collectionReturn?.items.orEmpty().filterNot { it.id in library.hidden() }
@@ -1096,8 +1128,8 @@ class MainActivity: Activity() {
         brand.addView(ImageView(this).apply { setImageResource(com.hongguotv.nativeapp.R.drawable.app_icon) },lp(dp(if(compactHeader) 24 else 28),dp(if(compactHeader) 24 else 28)).apply { rightMargin=dp(6) })
         brand.addView(text("红果",if(compactHeader) 18f else 22f).apply { typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL) })
         top.addView(brand,lp(dp(if(compactHeader) 72 else 172),dp(44)))
-        listOf("首页","搜索","排行榜","收藏","最近观看","设置","红果账户").forEachIndexed { index,label ->
-            val item=addButton(top,label,index==tab || (index==6 && screen=="account")) { switchTab(index) }
+        listOf(0 to "首页",1 to "搜索",7 to "剧场",2 to "排行榜",3 to "收藏",4 to "最近观看",5 to "设置",6 to "红果账户").forEach { (tabId,label) ->
+            val item=addButton(top,label,tabId==tab || (tabId==6 && screen=="account")) { switchTab(tabId) }
             fun paint(focused: Boolean) {
                 item.setTextColor(if(focused) bg else if(index==tab) accent else muted)
                 item.background=rounded(if(focused) white else if(index==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
