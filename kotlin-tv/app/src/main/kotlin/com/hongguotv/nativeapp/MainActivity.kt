@@ -3135,7 +3135,7 @@ class MainActivity: Activity() {
                 isFocusable=true; isFocusableInTouchMode=true
                 setPadding(dp(4),dp(4),dp(4),dp(8))
                 background=TvStyle.card(this@MainActivity,false)
-                contentDescription="系列剧推荐，\${series.title}"
+                contentDescription="系列剧推荐，${series.title}"
             }
             val image=ImageView(this).apply {
                 scaleType=ImageView.ScaleType.CENTER_CROP
