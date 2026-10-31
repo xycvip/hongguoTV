@@ -1973,8 +1973,6 @@ class MainActivity: Activity() {
         lateinit var autoNextButton:TextView
         lateinit var autoSeasonButton:TextView
         val danmakuPrefRows=mutableListOf<TextView>()
-        var danmakuExpanded=false
-        lateinit var danmakuToggle:TextView
         lateinit var danmakuButton:TextView
         lateinit var danmakuOpacity:TextView
         lateinit var danmakuFont:TextView
@@ -2019,19 +2017,12 @@ class MainActivity: Activity() {
 
         fun syncDanmakuRows() {
             val show=library.danmaku
-            danmakuToggle.visibility=if(show) View.VISIBLE else View.GONE
-            danmakuPrefRows.forEach { it.visibility=if(show && danmakuExpanded) View.VISIBLE else View.GONE }
-            danmakuToggle.text="高级弹幕设置  ·  ${if(danmakuExpanded) "收起" else "展开"}"
+            danmakuPrefRows.forEach { it.visibility=if(show) View.VISIBLE else View.GONE }
             rechainSettings()
         }
         danmakuButton=setting(danmaku,1,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
             library.danmaku=!library.danmaku
             danmakuButton.text="官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}"
-            if(!library.danmaku) danmakuExpanded=false
-            syncDanmakuRows()
-        }
-        danmakuToggle=setting(danmaku,1,"高级弹幕设置  ·  展开") {
-            danmakuExpanded=!danmakuExpanded
             syncDanmakuRows()
         }
         danmakuOpacity=setting(danmaku,1,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
