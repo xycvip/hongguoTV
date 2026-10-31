@@ -10,8 +10,6 @@ permissions:
   contents: read
 jobs:
   android:
-    # 发布提交显式标记 [skip-tests] 时跳过独立验证工作流；正式发布仍由 release 工作流构建签名 APK。
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tests]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,10 +22,10 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Validate release publisher Python syntax
-        run: python3 -m py_compile scripts/publish-tv-update.py
+      - name: Validate publishing scripts Python syntax
+        run: python3 -m py_compile scripts/publish-tv-update.py scripts/sync-source-release.py
       - name: Unit tests, Android lint, and installable development APK
-        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintDebug :app:assembleDebug --console=plain
+        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish signed APK to the central AppDownload repository only."""
+"""Publish one signed APK to AppDownload and the matching source Kotlin Release."""
 import hashlib
 import json
 import os
@@ -87,7 +87,7 @@ def changelog():
     """Build concise Chinese release notes from commits since the previous AppDownload build."""
     current_commit = os.environ.get("GITHUB_SHA", "HEAD")
     previous_ref = ""
-    # New AppDownload manifests record the source commit, so no source Release is needed.
+    # AppDownload manifests record the source commit, avoiding a separate tag lookup.
     try:
         manifest_url = (
             "https://raw.githubusercontent.com/xycvip/AppDownload/main/"
@@ -163,6 +163,8 @@ with open(sha_path, "w", encoding="utf-8") as f:
 token = os.environ.get("APPDOWNLOAD_TOKEN", "").strip()
 if not token:
     raise SystemExit("缺少 APPDOWNLOAD_TOKEN：请在 hongguoTV 仓库 Actions Secrets 中配置。")
+if not os.environ.get("GH_TOKEN", "").strip():
+    raise SystemExit("缺少 GH_TOKEN：无法在源码仓库创建 kotlin-v 版本 Release。")
 
 def github_contents_request(path, method="GET", payload=None):
     url = f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/contents/{path}"
@@ -247,7 +249,7 @@ except urllib.error.HTTPError as exc:
 
 # Delete same-name assets when retrying an interrupted publication.
 for asset in release.get("assets", []):
-    if asset.get("name") in (DISTRIBUTION_APK_NAME, "latest.json", "SHA256SUMS"):
+    if asset.get("name") in (DISTRIBUTION_APK_NAME, "latest.json", "update.json", "SHA256SUMS"):
         request = urllib.request.Request(asset["url"], method="DELETE", headers=api_headers)
         with urllib.request.urlopen(request, timeout=60):
             pass
@@ -262,6 +264,12 @@ def upload_release_asset(local_path, asset_name, content_type):
         headers={**api_headers, "Content-Type": content_type})
     with urllib.request.urlopen(request, timeout=300) as response:
         result = json.loads(response.read().decode("utf-8"))
+    if asset_name == DISTRIBUTION_APK_NAME:
+        if result.get("size") is not None and int(result["size"]) != size:
+            raise RuntimeError("AppDownload Release APK 文件大小与本地构建产物不一致。")
+        digest = str(result.get("digest", "")).lower()
+        if digest and digest != f"sha256:{sha256}":
+            raise RuntimeError("AppDownload Release APK SHA256 与本地构建产物不一致。")
     print(f"Uploaded AppDownload Release asset: {result.get('name')}")
 
 upload_release_asset(apk_path, DISTRIBUTION_APK_NAME, "application/vnd.android.package-archive")
@@ -274,6 +282,9 @@ with open(json_path, "w", encoding="utf-8") as f:
 # Upload the manifest only after the APK URL is known and the APK asset is in place.
 upload_release_asset(json_path, "update.json", "application/json")
 print(f"AppDownload Release 已发布：{APP_RELEASE_TAG}，APK={DISTRIBUTION_APK_NAME}")
+
+# Verify the AppDownload APK and mirror those exact bytes into the source kotlin-v Release.
+subprocess.run(["python3", "scripts/sync-source-release.py", json_path], check=True)
 
 with open(json_path, "r", encoding="utf-8") as manifest_file:
     manifest_text = manifest_file.read() + "\n"

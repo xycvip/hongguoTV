@@ -4,12 +4,6 @@ on:
     branches:
       - custom
   workflow_dispatch:
-    inputs:
-      skip_tests:
-        description: "Skip tests/lint for an automatically classified upstream update"
-        required: false
-        type: boolean
-        default: false
 permissions:
   contents: write
 concurrency:
@@ -35,6 +29,8 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Validate publishing scripts
+        run: python3 -m py_compile scripts/publish-tv-update.py scripts/sync-source-release.py
       - name: Set monotonic build version and validate signing key
         env:
           KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
@@ -100,10 +96,8 @@ jobs:
           echo "Using monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=hongguotv-v${VERSION_NAME}" >> "$GITHUB_ENV"
-      # Push commits marked [skip-tests] build the APK without running tests or lint.
-      - name: Tests and release lint
-        if: ${{ (github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip-tests]')) && (github.event_name != 'workflow_dispatch' || inputs.skip_tests != true) }}
-        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:lintRelease --console=plain
+      - name: Unit tests and release lint
+        run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:testReleaseUnitTest :app:lintRelease --console=plain
       - name: Build signed APK
         env:
           HONGGUOTV_STORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
@@ -132,9 +126,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
-          RELEASE_NOTES: |
-            - 设置页改为横向分类导航与网格卡片布局，标题和选项尽量单行显示。
-            - 优化设置分类切换与遥控器焦点导航，保留原有设置功能。
         run: python3 scripts/publish-tv-update.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -148,5 +139,5 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12"
 
-# Release trigger marker: horizontal settings grid redesign [release]
-# Manual release trigger: publish current custom build with tests and lint. [release]
+# Push a commit marked [release] only after custom-branch verification succeeds.
+# Unit tests, lint, signed APK verification, and both Release uploads are mandatory.
