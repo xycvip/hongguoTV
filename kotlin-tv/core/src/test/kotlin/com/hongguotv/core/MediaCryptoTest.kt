@@ -8,6 +8,27 @@ class MediaCryptoTest {
     private val iv=hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
     private val plain=hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710")
     private val encrypted=hex("874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff5ae4df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee")
+    @Test fun parsesAndDecryptsSamplesWithSixteenBytePerSampleIv() {
+        val data=fixture(ivSize=16,auxSize=16)
+        val prepared=MediaCrypto.prepare(data,key)
+        assertEquals(1,prepared.samples.size)
+        assertArrayEquals(iv+ByteArray(8),prepared.samples.single().iv)
+    }
+
+    @Test fun parsesConstantIvWhenPerSampleIvSizeIsZero() {
+        val constant=hex("00112233445566778899aabbccddeeff")
+        val data=fixture(ivSize=0,constantIv=constant)
+        val prepared=MediaCrypto.prepare(data,key)
+        assertEquals(1,prepared.samples.size)
+        assertArrayEquals(constant,prepared.samples.single().iv)
+    }
+
+    @Test fun rejectsUnsupportedPerSampleIvLength() {
+        val data=fixture(ivSize=12,auxSize=12)
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported IV length") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("IV")) }
+    }
+
     @Test fun nistCtrVectorsAcrossEveryUnalignedRange() {
         val prefix=ByteArray(23){0x66}; val source=prefix+encrypted+ByteArray(12){0x77}
         val expected=prefix+plain+ByteArray(12){0x77}
@@ -24,21 +45,26 @@ class MediaCryptoTest {
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun extendedBox(type: String, body: ByteArray): ByteArray =
         be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null): ByteArray {
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
+        val actualAuxSize=if(constantIv!=null) 0 else auxSize
+        val sampleIv=constantIv ?: if(ivSize==16) iv+ByteArray(8) else iv.copyOf(8)
+        val tencBody=ByteArray(4)+byteArrayOf(0,1.toByte(),(if(constantIv!=null) 0 else ivSize).toByte())+ByteArray(16)+
+            (if(constantIv!=null) byteArrayOf(constantIv.size.toByte())+constantIv else byteArrayOf())
         fun moov(offset: Int): ByteArray {
-            val entry=box("encv",ByteArray(78)+box("sinf",box("frma",codec.toByteArray())))
+            val sinf=box("sinf",box("frma",codec.toByteArray())+box("schi",box("tenc",tencBody)))
+            val entry=box("encv",ByteArray(78)+sinf)
             val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
             val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
             val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
             val stco=box("stco",ByteArray(4)+be32(1)+be32(4096))
-            val saiz=box("saiz",ByteArray(4)+byteArrayOf(auxSize.toByte())+be32(1))
+            val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1))
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
-            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio))))+box("free",iv.copyOf(8)))
+            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio))))+box("free",sampleIv))
         }
         val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
-        return ftyp+padding+moov(auxOffset ?: initial.size-8)
+        return ftyp+padding+moov(auxOffset ?: initial.size-sampleIv.size)
     }
     @Test fun headerRestoresOriginalAvcCodecAndSampleIndex() {
         val data=fixture(); val prepared=MediaCrypto.prepare(data,key)
