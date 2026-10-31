@@ -10,7 +10,10 @@ import java.io.EOFException
 import java.io.IOException
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
+class VideoDataSource(
+    private val video: RemoteVideo,
+    private val onBytesRead: (Int) -> Unit = {}
+): BaseDataSource(true) {
     private var position=0L
     private var remaining=0L
     private var buffer=byteArrayOf()
@@ -59,6 +62,7 @@ class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
         position+=count.toLong()
         remaining-=count.toLong()
         bytesTransferred(count)
+        onBytesRead(count)
         return count
     }
 
