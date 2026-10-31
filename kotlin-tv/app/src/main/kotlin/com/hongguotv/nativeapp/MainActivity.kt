@@ -900,7 +900,7 @@ class MainActivity: Activity() {
         val width=size?.width?.takeIf { it>0 } ?: format?.width?.takeIf { it>0 } ?: 0
         val height=size?.height?.takeIf { it>0 } ?: format?.height?.takeIf { it>0 } ?: 0
         val resolution=if(width>0 && height>0) "${width}×${height}" else "分辨率获取中"
-        val fps=format?.frameRate?.takeIf { it.isFinite() && it>0f }?.let { "${it.toInt()}FPS" } ?: "帧率—"
+        val fps=format?.frameRate?.takeIf { it.isFinite() && it>0f }?.let { "${(it+0.5f).toInt()}FPS" } ?: "帧率—"
         if(library.videoInfoMode==1) return "$resolution · $fps"
         val codec=videoCodecLabel(format)
         val decoder=activeDecoderName.ifBlank { "解码器获取中" }
@@ -934,6 +934,7 @@ class MainActivity: Activity() {
     private fun applyNetworkSpeedOverlay() {
         networkSpeedView?.let { root.removeView(it) }; networkSpeedView=null
         if(!library.isLoaded || screen!="player" || !library.showNetworkSpeed) return
+        lastSpeedAt=android.os.SystemClock.elapsedRealtime(); lastSpeedBytes=playbackBytes.get(); currentSpeedBytesPerSecond=0L
         val mobile=widthDp()<600f
         val view=text("↓ ${formatSpeed(currentSpeedBytesPerSecond)}",if(mobile) 11f else 13f,Color.WHITE).apply {
             background=rounded(Color.argb(150,0,0,0))
@@ -943,7 +944,7 @@ class MainActivity: Activity() {
         }
         val margin=if(mobile) 12 else 22
         root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.END).apply {
-            bottomMargin=dp(if(mobile) 20 else 30); rightMargin=dp(margin)
+            bottomMargin=dp(if(mobile) 88 else 112); rightMargin=dp(margin)
         })
         networkSpeedView=view
     }
@@ -2968,7 +2969,7 @@ class MainActivity: Activity() {
         if(autoplay) sleepStopped=false
         screen="player"; episodeIndex=selectedIndex; group=episodeIndex/20
         playbackBytes.set(0L); lastSpeedBytes=0L; lastSpeedAt=android.os.SystemClock.elapsedRealtime(); currentSpeedBytesPerSecond=0L
-        activeVideoFormat=null; activeDecoderName=""
+        activeVideoFormat=null; if(!reuse) activeDecoderName=""
         if(commentPanel!=null) { commentReplyCursors.clear(); commentPanel?.setEpisode(data.series.title,episodeIndex+1); loadOfficialComments(false) }
         if(isStartupPreview) {
             startupPreviewEpisodeId=data.episodes[selectedIndex]
