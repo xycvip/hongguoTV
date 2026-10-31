@@ -40,6 +40,64 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Search result column owns vertical swipe gestures across the full column,
+ * not only on poster cards. Horizontal gestures and taps remain with children.
+ */
+private class SearchResultsColumn(context: Context): LinearLayout(context) {
+    var scrollTarget: RecyclerView?=null
+    private val touchSlop=ViewConfiguration.get(context).scaledTouchSlop
+    private var downX=0f
+    private var downY=0f
+    private var lastY=0f
+    private var dragging=false
+
+    init { orientation=VERTICAL }
+
+    // A child card/RecyclerView must not prevent this column from recognizing a vertical swipe.
+    override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+        if(!disallowIntercept) super.requestDisallowInterceptTouchEvent(false)
+    }
+
+    override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
+        when(event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX=event.x; downY=event.y; lastY=event.y; dragging=false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx=kotlin.math.abs(event.x-downX)
+                val dy=kotlin.math.abs(event.y-downY)
+                if(dy>touchSlop && dy>dx*1.15f) {
+                    val direction=if(event.y<downY) 1 else -1
+                    if(scrollTarget?.canScrollVertically(direction)==true) {
+                        dragging=true
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                        return true
+                    }
+                }
+            }
+            MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> dragging=false
+        }
+        return false
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if(!dragging) return super.onTouchEvent(event)
+        when(event.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val delta=(lastY-event.y).toInt()
+                if(delta!=0) scrollTarget?.scrollBy(0,delta)
+                lastY=event.y
+            }
+            MotionEvent.ACTION_UP,MotionEvent.ACTION_CANCEL -> {
+                dragging=false
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+        }
+        return true
+    }
+}
+
 private const val TYPE_CARD=0
 private const val TYPE_FOOTER=1
 private const val FOOTER_NONE=0
@@ -1372,7 +1430,7 @@ class MainActivity: Activity() {
                 // 让联想列表的纵向容器占满实际可用高度，词条再按空间均分，避免栏内大块空白。
                 val midColumn=column().apply { setPadding(0,dp(2),dp(10),0) }
                 midScroll.addView(midColumn,ViewGroup.LayoutParams(-1,-1))
-                val rightColumn=column()
+                val rightColumn=SearchResultsColumn(this)
                 if(mode==3) {
                     suggestRow=midColumn; suggestVertical=true; suggestScrollRef=midScroll
                     contentRow.addView(midScroll,lp(if(roomy) dp(180) else dp(140),-1))
@@ -1659,6 +1717,7 @@ class MainActivity: Activity() {
             }
         }
         catalogRecycler=recycler; catalogAdapter=adapter
+        (searchBody as? SearchResultsColumn)?.scrollTarget=recycler
         adapter.footer=when {
             localCatalog() -> if(collection=="hot" && collectionReturn?.hasMore==true) FOOTER_MORE_HOT else FOOTER_NONE
             hasMore -> FOOTER_NONE
