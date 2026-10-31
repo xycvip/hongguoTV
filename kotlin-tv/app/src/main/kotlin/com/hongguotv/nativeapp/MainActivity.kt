@@ -3724,9 +3724,14 @@ class MainActivity: Activity() {
         val loader=DanmakuLoader(danmakuRepo,data.series.id,data.episodes[episodeIndex],p.duration)
         danmakuLoader=loader
         layer.setBlockedFilter { text -> extras.blocks(text) }
-        layer.bind(loader,{ currentPosition() },playing=p.isPlaying)
+        layer.bind(
+            loader,
+            { currentPosition() },
+            { position -> runCatching { io.execute { runCatching { loader.loadUpTo(position) } } } },
+            playing=p.isPlaying
+        )
         val startPosition=currentPosition()
-        io.execute { runCatching { loader.loadUpTo(startPosition) } }
+        runCatching { io.execute { runCatching { loader.loadUpTo(startPosition) } } }
     }
     /** 播放中切换当前剧的弹幕并记住：全局弹幕关闭时先提示打开总开关，避免出现「开了却看不到」。 */
     private fun toggleSeriesDanmaku(seriesId: String) {
