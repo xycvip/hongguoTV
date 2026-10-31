@@ -1,4 +1,4 @@
-name: Verify Kotlin standalone APK # unified tests, lint, and debug build
+name: Kotlin 独立版 APK 验证
 on:
   push:
     branches: ['main', 'codex/kotlin-standalone', 'custom']
@@ -22,9 +22,9 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Validate publishing scripts Python syntax
+      - name: 检查发布脚本的 Python 语法
         run: python3 -m py_compile scripts/publish-tv-update.py
-      - name: Unit tests, Android lint, and installable development APK
+      - name: 运行单元测试、Android 代码检查并构建调试版 APK
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --console=plain
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
