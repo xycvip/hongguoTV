@@ -1225,7 +1225,6 @@ class MainActivity: Activity() {
         if(tab==0) {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
             homeRefreshControl=null
-            genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=navForTab().id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=navForTab().id }
             // 首页不再显示独立刷新按钮；点击首页导航即执行完整刷新。
             container.addView(types)
@@ -1417,6 +1416,10 @@ class MainActivity: Activity() {
                     tag=focusTag
                     nextFocusUpId=navForTab().id
                 }
+            }
+            genreButton=addButton(boardRow,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply {
+                tag="rank:genre"
+                nextFocusUpId=navForTab().id
             }
             rankRefresh=addButton(boardRow,"刷新") {
                 pendingRefreshFocus="rank:refresh"
@@ -2695,7 +2698,8 @@ class MainActivity: Activity() {
         dlg.setOnDismissListener { exitDialog=null }
     }
     private fun showGenrePicker() {
-        if (tab != 0) return
+        if (tab != 0 && tab != 2) return
+        val pickerTab = tab
         val anchor = genreButton ?: return
         var selectedType = library.contentType
         var requestId = 0
@@ -2753,7 +2757,7 @@ class MainActivity: Activity() {
             io.execute {
                 val result = runCatching { repository.genres(type) }
                 main.post {
-                    if (isDestroyed || !dialog.isShowing || ticket != requestId || screen != "catalog" || tab != 0) return@post
+                    if (isDestroyed || !dialog.isShowing || ticket != requestId || screen != "catalog" || tab != pickerTab) return@post
                     result.onSuccess { genres ->
                         loading.text = if (genres.isEmpty()) "暂无可选题材" else "选择${type.label}题材"
                         val labels = listOf("全部题材") + genres.map { it.name }
@@ -2762,6 +2766,7 @@ class MainActivity: Activity() {
                             val item = button(name, chosen) {
                                 library.contentType = type
                                 genre = if (index == 0) null else genres[index - 1]
+                                tab = 0
                                 page = 1; catalogFocus = ""; tabState.remove(0); tabFocus.remove(0)
                                 dialog.dismiss()
                                 showCatalog(true, focusType = true)
