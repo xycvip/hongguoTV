@@ -426,7 +426,7 @@ class MainActivity: Activity() {
             main.postDelayed(this,1000)
         }
     }
-    private val hideHud=Runnable { if(screen=="player" && !panel && player?.isPlaying==true && !playError) hidePlaybackOverlay() }
+    private val hideHud=Runnable { if(screen=="player" && commentPanel==null && episodePanel==null && player?.isPlaying==true && !playError) hidePlaybackOverlay() }
     private val seekRunnable=Runnable { pendingSeek?.let { player?.seekTo(it) }; pendingSeek=null }
     private fun dp(value: Number)=(value.toFloat()*resources.displayMetrics.density).toInt()
     private fun widthDp()=resources.displayMetrics.widthPixels/resources.displayMetrics.density
@@ -3553,7 +3553,7 @@ class MainActivity: Activity() {
     private fun showHud() {
         if(screen!="player") return
         hud.visibility=View.VISIBLE; updatePlaybackText(); main.removeCallbacks(hideHud)
-        if(!panel && !ffActive && player?.isPlaying==true) main.postDelayed(hideHud,5000)
+        if(commentPanel==null && episodePanel==null && !ffActive && player?.isPlaying==true) main.postDelayed(hideHud,5000)
     }
     private fun updatePlaybackText() {
         transportPlay?.text=if(player?.playWhenReady==true) "暂停" else "播放"
