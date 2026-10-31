@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
+    name: 红果TV正式版构建与发布
     if: ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[release]') }}
     permissions:
       contents: write
@@ -50,8 +51,8 @@ jobs:
             exit 1
           fi
           echo "HONGGUOTV_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
-          # APP_VERSION is the desired semantic-version baseline. If it matches the
-          # latest release, automatically increment PATCH; if manually raised, honor it.
+          # APP_VERSION 是期望使用的语义化版本基准。如果它与
+          # 最新发布版本相同，则自动递增修订号；如果手动调高，则采用手动设置的版本。
           APP_VERSION="$(sed -nE 's/^APP_VERSION=([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' kotlin-tv/version.properties | head -n 1)"
           if [[ ! "$APP_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "kotlin-tv/version.properties 中 APP_VERSION 必须为 MAJOR.MINOR.PATCH，例如 1.0.0。" >&2
@@ -59,8 +60,8 @@ jobs:
           fi
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
-          # Resolve the previous HongguoTV manifest through the same resilient
-          # order as the app: Releases API first, then Raw, then proxy mirrors.
+          # 按照客户端相同的容错顺序读取上一版红果TV更新清单：
+          # 优先读取 Releases API，其次读取 Raw 地址，最后尝试代理镜像。
           python3 - "$LATEST_MANIFEST" <<'PY'
           import json, sys, time, urllib.request, urllib.error
           output = sys.argv[1]
@@ -79,7 +80,7 @@ jobs:
               return data
           manifest = None
           errors = []
-          # 1) Find the newest non-draft HongguoTV release and its update.json.
+          # 1）查找最新的非草稿红果TV发布版本及其 update.json。
           try:
               releases = json.loads(get(
                   "https://api.github.com/repos/xycvip/AppDownload/releases?per_page=100"
@@ -100,7 +101,7 @@ jobs:
           except Exception as exc:
               errors.append("发布接口读取失败：" + str(exc))
               manifest = None
-          # 2/3) Raw manifest, direct first, then supported proxy mirrors.
+          # 2/3）读取 Raw 更新清单，先尝试直连，再依次尝试可用的代理镜像。
           if manifest is None:
               raw = "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json"
               candidates = [raw, "https://gh-proxy.com/" + raw,
@@ -138,7 +139,7 @@ jobs:
           PY
           )"
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
-          # Date + unique workflow run number makes versionCode monotonic across daily builds.
+          # 使用日期与唯一的工作流运行编号，确保每日构建的 versionCode 持续递增。
           VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
           if (( LATEST_VERSION_CODE >= VERSION_CODE )); then
             VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
@@ -184,7 +185,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
-          name: tv-update-verification
+          name: 红果TV发布验证报告
           path: |
             kotlin-tv/core/build/reports/tests/test/
             kotlin-tv/app/build/reports/lint-results-release.*
