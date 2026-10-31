@@ -143,13 +143,9 @@ jobs:
           print(".".join(map(str, chosen)))
           PY
           )"
-          # UTC epoch day 提供日期区间，末三位运行号提供区间内序号。
-          # 无论重跑或历史版本情况如何，最终 versionCode 都严格大于上一版。
-          EPOCH_DAY="$(( $(date -u +%s) / 86400 ))"
-          VERSION_CODE="$(( EPOCH_DAY * 1000 + GITHUB_RUN_NUMBER % 1000 ))"
-          if (( VERSION_CODE <= LATEST_VERSION_CODE )); then
-            VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
-          fi
+          # versionCode 直接基于已验证的上一版递增，不依赖日期、时区或工作流运行编号。
+          # 这样可避免并发/重跑造成冲突，并兼容历史上较大的旧版 versionCode。
+          VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
 
           if (( VERSION_CODE > 2100000000 )); then
             echo "versionCode 超出 Android 支持上限，已停止发布。" >&2
