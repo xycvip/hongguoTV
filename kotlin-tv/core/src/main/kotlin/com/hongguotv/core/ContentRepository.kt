@@ -112,8 +112,8 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         val data=router("$site/category/${categoryPath(type)}")
         val section=data.optJSONObject("category_page") ?: data.optJSONObject("category_$") ?: throw IOException("剧场筛选暂不可用")
         val rows=section.optJSONArray("selectorList") ?: throw IOException("剧场筛选暂不可用")
-        val groups=rows.objects().mapNotNull { row ->
-            val label=listOf("show_name","name","title","selector_name","selector_type_name").firstNotNullOfOrNull { key -> row.optString(key).takeIf { it.isNotBlank() } } ?: return@mapNotNull null
+        val groups=rows.objects().mapIndexedNotNull { rowIndex,row ->
+            val label=listOf("show_name","name","title","selector_name","selector_type_name").firstNotNullOfOrNull { key -> row.optString(key).takeIf { it.isNotBlank() } } ?: "筛选${rowIndex+1}"
             val options=linkedMapOf<String,Genre>()
             for(item in row.optJSONArray("items")?.objects() ?: emptyList()) {
                 val ids=item.optJSONArray("category_json_ids") ?: continue
