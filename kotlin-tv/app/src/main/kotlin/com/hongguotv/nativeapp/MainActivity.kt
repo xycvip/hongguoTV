@@ -2133,8 +2133,8 @@ class MainActivity: Activity() {
             categoryIndicators.forEachIndexed { index,indicator ->
                 val active=index==focusedCategory
                 val focused=indicator.hasFocus()
-                // Reuse the same focus-card drawable as the content cards throughout the app.
-                indicator.background=TvStyle.card(this@MainActivity,focused)
+                // 当前分类的状态提示留在左侧栏；真正获得遥控器焦点时再叠加焦点态。
+                indicator.background=TvStyle.card(this@MainActivity,focused || active)
                 indicator.setTextColor(if(focused || active) white else muted)
                 indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
             }
@@ -2312,7 +2312,8 @@ class MainActivity: Activity() {
         fun paintStartupAutoplayButton(focused:Boolean=startupAutoplayButton.hasFocus()) {
             val enabled=startupAutoplayEnabled()
             startupAutoplayButton.text="启动时播放推荐  ·  ${if(enabled) "开启" else "关闭"}"
-            startupAutoplayButton.background=rounded(if(focused) TvStyle.raised else TvStyle.selectedSurface,if(focused) accent else TvStyle.outline)
+            // 开启/关闭仅作为文字状态显示，不在失焦后留下类似光标的选中底色。
+            startupAutoplayButton.background=TvStyle.card(this@MainActivity,focused)
         }
         startupAutoplayButton=setting(playback,0,"启动时播放推荐") {
             val enabled=!startupAutoplayEnabled()
