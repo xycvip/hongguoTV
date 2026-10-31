@@ -3901,11 +3901,11 @@ class MainActivity: Activity() {
             refreshDanmakuLabel()
         }
         val mark=library.skipMark(seriesId)
-        fun skipLabel(seconds: Int)=if(seconds>0) "${seconds}秒" else "关闭"
+        fun skipButtonLabel(intro: Boolean,seconds: Int)=if(seconds>0) "跳过${if(intro) "片头" else "片尾"} ${seconds}秒" else if(intro) "片头" else "片尾"
         lateinit var introButton: TextView
-        introButton=addButton(transport,"片头") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
+        introButton=addButton(transport,skipButtonLabel(true,mark?.introSeconds ?: 0)) { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
         lateinit var outroButton: TextView
-        outroButton=addButton(transport,"片尾") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
+        outroButton=addButton(transport,skipButtonLabel(false,mark?.outroSeconds ?: 0)) { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
         play.requestFocus()
     }
     /** Season finale auto-continues into the next season only when both the master autoplay and the season switch are on. */
@@ -3963,7 +3963,7 @@ class MainActivity: Activity() {
             val next=if(intro) old.copy(introSeconds=options[index]) else old.copy(outroSeconds=options[index])
             library.setSkipMark(data.series.id,next)
             if(!intro) { outroSkipSeconds=next.outroSeconds; outroTriggered=false }
-            if(anchor.isAttachedToWindow) anchor.text=if(intro) "片头" else "片尾"
+            if(anchor.isAttachedToWindow) anchor.text=skipButtonLabel(intro,options[index])
             Toast.makeText(this,"已保存，仅对《${data.series.title}》生效",Toast.LENGTH_SHORT).show()
             showHud()
         },"当前 ${if(current>0) "$current 秒" else "关闭"}") {}
