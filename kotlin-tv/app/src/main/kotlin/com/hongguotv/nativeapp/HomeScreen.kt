@@ -153,7 +153,7 @@ class HomeScreen(
                 val width=if(shelf.key=="random") dp(320)
                     else ((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
                 val key=if(entry!=null) "${shelf.key}:${entry.series.id}" else "${shelf.key}:more"
-                val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
+                val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),if(shelf.key=="random") dp(4) else dp(8)); background=shape(false) }
                 val image=if(entry!=null) ImageView(context).apply { scaleType=ImageView.ScaleType.FIT_CENTER; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO } else null
                 val posterHeight=if(shelf.key=="random") dp(76) else ((width-dp(8))/TvStyle.POSTER_ASPECT).toInt()
                 if(image!=null) {
@@ -198,7 +198,7 @@ class HomeScreen(
                             setPadding(0,dp(6),0,0)
                         })
                     }
-                    view.addView(moreTile,LayoutParams(-1,posterHeight))
+                    view.addView(moreTile,LayoutParams(-1,if(shelf.key=="random") dp(96) else posterHeight))
                 }
                 val title=label(entry?.series?.title ?: "查看全部",14f).apply { minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
                 val badge=label(entry?.label ?: shelf.title,12f,TvStyle.muted).apply { minLines=1; maxLines=1; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(2),0,0) }
