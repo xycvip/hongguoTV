@@ -2439,13 +2439,28 @@ class MainActivity: Activity() {
         }
         fileBackup=setting(data,2,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         backup=setting(data,2,"手机备份与恢复") {
-            runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
+            runCatching {
+                val snapshot=library.snapshot()
+                val completeSettings=snapshot.settings.copy(
+                    startupAutoplay=startupAutoplayEnabled(),
+                    sleepActionMode=sleepActionMode,
+                    theme=library.theme,
+                    videoInfoMode=library.videoInfoMode,
+                    showNetworkSpeed=library.showNetworkSpeed
+                )
+                LibraryBackup.encode(snapshot.copy(
+                    settings=completeSettings,
+                    accountState=cloudAccount.backupJson(),
+                    playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot())
+                ))
+            }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { restored,restoreSettings ->
                     favoriteMonitor.stop(); library.restore(restored,restoreSettings)
                     if(restoreSettings) {
                         val restoredExtras=restored.playbackExtras ?: BackupPlaybackExtras()
                         extras.restoreBackup(restoredExtras)
                         library.restoreSkipMarks(restoredExtras.skipMarks)
+                        TvStyle.apply(library.theme)
                     }
                     tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
                     showCatalog()
