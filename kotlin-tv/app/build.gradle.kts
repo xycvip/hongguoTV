@@ -33,6 +33,7 @@ android {
     packaging { resources.excludes += setOf("META-INF/versions/**", "META-INF/*.kotlin_module", "org/bouncycastle/pqc/**", "org/bouncycastle/x509/**") }
 }
 dependencies {
+    // Use Android's built-in emoji font; do not bundle Emoji2's large font assets.
     implementation("androidx.core:core:1.8.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.google.zxing:core:3.5.3")
