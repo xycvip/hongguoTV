@@ -1351,10 +1351,14 @@ class MainActivity: Activity() {
                 // 历史与键盘分开滚动，历史条数不会挤压键盘高度；焦点移动时各自滚入可视区。
                 val contentRow=row().apply { gravity=Gravity.TOP }
                 val leftPane=column()
-                // 搜索栏右边缘与下方键盘最右边缘对齐：键盘区右侧留有 10dp 内边距。
-                leftPane.addView(searchRow,lp(-1,-2).apply { rightMargin=dp(10) })
-                val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
                 val history=library.searches()
+                // 搜索栏与下方键盘使用完全相同的水平起止位置，避免搜索栏横跨左侧历史栏。
+                val keyboardLeftInset=dp((if(history.isNotEmpty()) (if(roomy) 160 else 145) else 0)+14)
+                leftPane.addView(searchRow,lp(-1,-2).apply {
+                    leftMargin=keyboardLeftInset
+                    rightMargin=dp(10)
+                })
+                val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
                 if(history.isNotEmpty()) {
                     val historyScroll=ScrollView(this).apply {
                         isVerticalScrollBarEnabled=false; clipToPadding=false; isFillViewport=true
