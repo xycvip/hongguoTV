@@ -2296,14 +2296,10 @@ class MainActivity: Activity() {
         fun syncDanmakuRows() {
             val visibleRows=listOf(danmakuButton)+danmakuPrefRows.filter { library.danmaku }
             val allRows=listOf(danmakuButton)+danmakuPrefRows
-            // 保留同一播放分组中的其他设置项。该 GridLayout 同时承载启动推荐、
-            // 默认清晰度、倍速、画面模式和连播设置，不能 removeAllViews 后只加回弹幕项。
-            val preservedRows=(0 until danmaku.childCount)
-                .map { danmaku.getChildAt(it) }
-                .filter { it !in allRows }
+            // 重新加入可见项，避免 GridLayout 中隐藏项留下空格或断层。
             danmaku.removeAllViews()
             allRows.filter { it !in visibleRows }.forEach { it.visibility=View.GONE }
-            (preservedRows+visibleRows).forEach { item ->
+            visibleRows.forEach { item ->
                 item.visibility=View.VISIBLE
                 val params=item.layoutParams as? GridLayout.LayoutParams
                     ?: GridLayout.LayoutParams(
