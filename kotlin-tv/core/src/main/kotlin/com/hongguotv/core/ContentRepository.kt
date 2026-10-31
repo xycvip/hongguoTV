@@ -38,6 +38,7 @@ data class ComicRanking(val positions: Map<String,RankPosition>, val totalPages:
 data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val ranking: ComicRanking? = null)
 /** One website genre selector entry; the slug selects the category path, ids echo back for validation. */
 data class Genre(val slug: String, val name: String, val ids: List<String>)
+data class TheaterFilterGroup(val label: String, val options: List<Genre>)
 data class StreamInfo(val url: String, val key: ByteArray?, val quality: String, val mimeType: String = "video/mp4")
 class SearchSessionExpiredException: IOException("搜索结果已过期，请从第 1 页重新搜索")
 /** 平台对该集只产出了 ByteVC2 等电视无法解码的编码，重试与换清晰度都不会成功。 */
@@ -106,21 +107,31 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
     }
     fun comicRanking(page: Int = 1)=ranking(RankBoard.COMIC,page)
     fun realRanking(page: Int = 1)=ranking(RankBoard.REAL,page)
-    /** Genre selectors from the website's category page; cached briefly because they rarely change. */
+    /** Native theater selector rows from the same category payload used by the official filtering page. */
+    open fun theaterFilters(type: ContentType): List<TheaterFilterGroup> {
+        val data=router("$site/category/${categoryPath(type)}")
+        val section=data.optJSONObject("category_page") ?: data.optJSONObject("category_$") ?: throw IOException("剧场筛选暂不可用")
+        val rows=section.optJSONArray("selectorList") ?: throw IOException("剧场筛选暂不可用")
+        val groups=rows.objects().mapNotNull { row ->
+            val label=listOf("show_name","name","title","selector_name","selector_type_name").firstNotNullOfOrNull { key -> row.optString(key).takeIf { it.isNotBlank() } } ?: return@mapNotNull null
+            val options=linkedMapOf<String,Genre>()
+            for(item in row.optJSONArray("items")?.objects() ?: emptyList()) {
+                val ids=item.optJSONArray("category_json_ids") ?: continue
+                val list=(0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() }
+                val slug=item.str("selector_item_id"); val name=item.str("show_name")
+                if(slug.isNotBlank() && name.isNotBlank() && list.isNotEmpty()) options.putIfAbsent(slug,Genre(slug,name,list))
+            }
+            if(options.isEmpty()) null else TheaterFilterGroup(label,options.values.toList())
+        }
+        if(groups.isEmpty()) throw IOException("剧场筛选数据结构暂不可用")
+        return groups
+    }
+    /** Backward-compatible flat genre list used by the home-page picker. */
     open fun genres(type: ContentType): List<Genre> {
         synchronized(genreCache) { genreCache[type]?.let { if(clock()-it.first<600_000) return it.second } }
-        val data=router("$site/category/${categoryPath(type)}")
-        val section=data.optJSONObject("category_page") ?: data.optJSONObject("category_$") ?: throw IOException("题材列表暂不可用")
-        val rows=section.optJSONArray("selectorList") ?: throw IOException("题材列表暂不可用")
-        val genres=linkedMapOf<String,Genre>()
-        for(row in rows.objects()) for(item in row.optJSONArray("items")?.objects() ?: emptyList()) {
-            val ids=item.optJSONArray("category_json_ids") ?: continue
-            val list=(0 until ids.length()).map { ids.optString(it) }.filter { it.isNotBlank() }
-            val slug=item.str("selector_item_id"); val name=item.str("show_name")
-            if(slug.isNotBlank() && name.isNotBlank() && list.isNotEmpty()) genres.putIfAbsent(slug,Genre(slug,name,list))
+        return theaterFilters(type).flatMap { it.options }.distinctBy { it.slug }.also { list ->
+            synchronized(genreCache) { genreCache[type]=clock() to list }
         }
-        if(genres.isEmpty()) throw IOException("题材列表暂不可用")
-        return genres.values.toList().also { list -> synchronized(genreCache) { genreCache[type]=clock() to list } }
     }
     open fun home(page: Int = 1, type: ContentType = ContentType.SHORT, genre: Genre? = null): CatalogPage {
         require(page in 1..100)
