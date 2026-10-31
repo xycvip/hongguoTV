@@ -4846,6 +4846,12 @@ class MainActivity: Activity() {
             else -> if(tab==1) {
                 // 搜索页按返回时固定回到“搜索”导航项，避免系统焦点回退到相邻的“剧场”。
                 nav.getOrNull(navIndexForTab(1))?.requestFocus()
+            } else if(tab==7) {
+                // 剧场页单独处理：无论焦点在筛选区、片单还是顶部导航，都回到“剧场”本身。
+                // 避免通用 nav.any 分支切回首页，或由系统按相邻顺序落到“搜索”。
+                val theaterNav=nav.getOrNull(navIndexForTab(7))
+                theaterNav?.requestFocus()
+                theaterNav?.post { if(screen=="catalog" && tab==7 && theaterNav.isAttachedToWindow) theaterNav.requestFocus() }
             } else if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else navForTab().requestFocus()
         }
     }
