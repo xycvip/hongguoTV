@@ -1084,11 +1084,11 @@ class MainActivity: Activity() {
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
         val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
-        addButton(types,"全部",theaterContentType==null) {
+        addButton(types,"全部体裁",theaterContentType==null) {
             if(theaterContentType!=null) { theaterContentType=null; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
         }
-        listOf(ContentType.SHORT,ContentType.COMIC,ContentType.AI).forEach { type ->
-            addButton(types,type.label,theaterContentType==type) {
+        listOf(ContentType.SHORT to "真人剧",ContentType.COMIC to "漫剧",ContentType.AI to "AI剧").forEach { (type,label) ->
+            addButton(types,label,theaterContentType==type) {
                 if(theaterContentType!=type) { theaterContentType=type; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
             }
         }
