@@ -30,7 +30,13 @@ class RemoteVideoRangeTest {
         val iv=byteArrayOf(1,2,3,4,5,6,7,8)
         iv.copyInto(payload,1024-(ftyp.size+16))
         val mdat=extendedBox("mdat",payload)
-        val entry=box("encv",ByteArray(78)+box("sinf",box("frma","avc1".toByteArray())))
+        val tenc=ByteArray(4)+byteArrayOf(0,1,8)+ByteArray(16)
+        val sinf=box("sinf",
+            box("frma","avc1".toByteArray())+
+            box("schm",ByteArray(4)+"cenc".toByteArray()+be32(0x00010000))+
+            box("schi",box("tenc",tenc))
+        )
+        val entry=box("encv",ByteArray(78)+sinf)
         val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
         val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
         val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
