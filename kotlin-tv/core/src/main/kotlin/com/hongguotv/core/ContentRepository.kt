@@ -536,6 +536,10 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         if(declaredMime.contains("mpegurl") || declaredMime.contains("m3u8") || urlPath.endsWith(".m3u8")) {
             throw UnsupportedVideoFormatException("当前片源为 HLS 格式，现有加密分段播放链路暂不支持")
         }
+        val unsupportedExtension=listOf(".mpd",".ts",".webm",".mkv",".avi").firstOrNull { urlPath.endsWith(it) }
+        if(unsupportedExtension!=null) {
+            throw UnsupportedVideoFormatException("当前片源容器 $unsupportedExtension 暂不支持，现有播放链路需要 MP4 资源")
+        }
         if(declaredMime.isNotBlank() && !declaredMime.contains("mp4") && !declaredMime.contains("octet-stream")) {
             throw UnsupportedVideoFormatException("当前片源格式暂不支持：$declaredMime")
         }
