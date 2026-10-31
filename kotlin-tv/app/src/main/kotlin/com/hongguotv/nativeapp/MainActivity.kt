@@ -1075,7 +1075,7 @@ class MainActivity: Activity() {
     }
     private fun inlineHomeFilters()=tab==0 && resources.configuration.fontScale<=1.2f && widthDp()>=900
     private fun navIndexForTab(value:Int)=when(value) { 7 -> 2; 2 -> 3; 3 -> 4; 4 -> 5; 5 -> 6; 6 -> 7; else -> value }
-    private fun navForTab()=nav.getOrNull(navIndexForTab(tab)) ?: nav.firstOrNull()
+    private fun navForTab():View=nav.getOrNull(navIndexForTab(tab)) ?: root
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
         val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
@@ -1131,7 +1131,7 @@ class MainActivity: Activity() {
         listOf(0 to "首页",1 to "搜索",7 to "剧场",2 to "排行榜",3 to "收藏",4 to "最近观看",5 to "设置",6 to "红果账户").forEach { (tabId,label) ->
             val item=addButton(top,label,tabId==tab || (tabId==6 && screen=="account")) { switchTab(tabId) }
             fun paint(focused: Boolean) {
-                item.setTextColor(if(focused) bg else if(index==tab) accent else muted)
+                item.setTextColor(if(focused) bg else if(tabId==tab) accent else muted)
                 item.background=rounded(if(focused) white else if(index==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
                 item.setTypeface(null,if(focused || index==tab) Typeface.BOLD else Typeface.NORMAL)
             }
@@ -1198,7 +1198,7 @@ class MainActivity: Activity() {
                 showCatalog(true)
             }.apply {
                 tag="home:refresh"
-                nextFocusUpId=nav[tab].id
+                nextFocusUpId=navForTab().id
             }
             genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=nav[tab].id }
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
@@ -1407,7 +1407,7 @@ class MainActivity: Activity() {
             rankSubtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText?.ifBlank { defaultSource } ?: defaultSource,13f,muted).apply { setPadding(0,0,0,dp(8)) }
             container.addView(rankSubtitle)
             nav.forEach { it.nextFocusDownId=boardRow.getChildAt(0)?.id ?: View.NO_ID }
-        } else if(tab>2) {
+        } else if(tab>2 && tab!=7) {
             val heading=row().apply { setPadding(0,dp(14),0,dp(6)) }
             heading.addView(text(if(tab==3) "我的收藏" else "接着上次看",25f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             if(tab==3) {
@@ -4131,7 +4131,7 @@ class MainActivity: Activity() {
         sleepTimer.cancel(); sleepStopped=false; startupAutoPlaybackActive=false; saveProgress(); bootAutoPlaybackPending=false; hideBootSplash(); library.flush(); invalidatePage(); releasePlayer()
         if(directPlayback && !forceDetail) {
             showCatalog()
-            if(tab==6) navForTab()?.post { if(tab==6 && screen=="catalog") nav.getOrNull(6)?.requestFocus() }
+            if(tab==6) navForTab()?.post { if(tab==6 && screen=="catalog") navForTab()?.requestFocus() }
         } else { directPlayback=false; showDetail(true) }
     }
 
