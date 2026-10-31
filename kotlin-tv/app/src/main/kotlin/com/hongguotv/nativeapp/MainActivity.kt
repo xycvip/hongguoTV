@@ -2127,7 +2127,17 @@ class MainActivity: Activity() {
         // A single seamless settings surface: subtle separators define sections instead of nested cards.
         val contentHost=row().apply { gravity=Gravity.TOP }
         parent.addView(contentHost,lp())
-        val headingWidth=if(widthDp()<600f) 82 else 126
+        // 左侧分类栏按当前可用屏幕尺寸自适应，避免手机端过窄、电视端比例失衡。
+        val screenWidthDp=widthDp().coerceAtLeast(1f)
+        val screenHeightDp=heightDp().coerceAtLeast(1f)
+        val headingWidth=(screenWidthDp*0.105f).toInt().coerceIn(76,150)
+        val categoryScale=minOf(
+            (screenWidthDp/800f).coerceIn(0.88f,1.16f),
+            (screenHeightDp/600f).coerceIn(0.88f,1.12f)
+        )
+        val categoryTitleSize=(headingWidth*0.18f*categoryScale).coerceIn(14f,22f)
+        val categoryTitleHeight=(headingWidth*0.43f*categoryScale).toInt().coerceIn(46,64)
+        val categorySubtitleSize=(categoryTitleSize*0.58f).coerceIn(9f,12f)
         val separatorColor=Color.argb(38,255,255,255)
         fun horizontalSeparator()=View(this).apply { setBackgroundColor(separatorColor) }
         val categoryCard=column()
@@ -2146,7 +2156,7 @@ class MainActivity: Activity() {
         contentHost.addView(sectionsHost,LinearLayout.LayoutParams(0,-2,1f))
 
         fun section(title:String,subtitle:String): Pair<LinearLayout,GridLayout> {
-            val headingTitle=text(title,if(widthDp()<600f) 16f else 19f).apply {
+            val headingTitle=text(title,categoryTitleSize).apply {
                 typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                 gravity=Gravity.CENTER
                 textAlignment=View.TEXT_ALIGNMENT_CENTER
@@ -2169,8 +2179,8 @@ class MainActivity: Activity() {
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
                 setPadding(dp(3),dp(9),dp(3),dp(9))
-                addView(headingTitle,lp(-1,dp(54)))
-                addView(text(subtitle,11f,muted).apply {
+                addView(headingTitle,lp(-1,dp(categoryTitleHeight)))
+                addView(text(subtitle,categorySubtitleSize,muted).apply {
                     maxLines=2; ellipsize=TextUtils.TruncateAt.END
                     setPadding(dp(5),dp(3),dp(2),0)
                 })
