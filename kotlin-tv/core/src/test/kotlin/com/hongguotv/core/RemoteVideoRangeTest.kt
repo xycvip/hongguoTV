@@ -26,7 +26,7 @@ class RemoteVideoRangeTest {
         val ftyp=box("ftyp","isom0000".toByteArray())
         val payload=ByteArray(4080) { (it % 251).toByte() }
         val iv=byteArrayOf(1,2,3,4,5,6,7,8)
-        iv.copyInto(payload,256-(ftyp.size+8))
+        iv.copyInto(payload,1024-(ftyp.size+8))
         val mdat=box("mdat",payload)
         val entry=box("encv",ByteArray(78)+box("sinf",box("frma","avc1".toByteArray())))
         val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
@@ -34,7 +34,7 @@ class RemoteVideoRangeTest {
         val stsc=box("stsc",ByteArray(4)+be32(1)+be32(1)+be32(1)+be32(1))
         val stco=box("stco",ByteArray(4)+be32(1)+be32(128))
         val saiz=box("saiz",ByteArray(4)+byteArrayOf(8)+be32(1))
-        val saio=box("saio",ByteArray(4)+be32(1)+be32(256))
+        val saio=box("saio",ByteArray(4)+be32(1)+be32(1024))
         val stbl=box("stbl",stsd+stsz+stsc+stco+saiz+saio)
         val moov=box("moov",box("trak",box("mdia",box("minf",stbl)))+box("free",iv))
         val offset=(ftyp.size+mdat.size).toLong()
