@@ -2226,14 +2226,19 @@ class MainActivity: Activity() {
         val remote=section("遥控器","自定义方向键与确认键操作").second
         val system=section("关于","软件信息与恢复设置").second
 
+        // 右侧设置项与左侧分类栏共用屏幕缩放系数，保持两侧视觉比例一致。
+        val settingTextSize=(14f*categoryScale).coerceIn(12f,16f)
+        val settingItemHeight=(66f*categoryScale).toInt().coerceIn(54,76)
+        val settingHorizontalPadding=(9f*categoryScale).toInt().coerceIn(7,12)
+        val settingVerticalPadding=(10f*categoryScale).toInt().coerceIn(7,13)
         fun setting(group:GridLayout,category:Int,label:String,action:()->Unit):TextView {
             val view=button(label,onClick=action).apply {
                 gravity=Gravity.CENTER
-                textSize=14f
+                textSize=settingTextSize
                 maxLines=1
                 ellipsize=TextUtils.TruncateAt.END
-                setPadding(dp(9),dp(10),dp(9),dp(10))
-                minHeight=dp(66)
+                setPadding(dp(settingHorizontalPadding),dp(settingVerticalPadding),dp(settingHorizontalPadding),dp(settingVerticalPadding))
+                minHeight=dp(settingItemHeight)
                 background=TvStyle.card(this@MainActivity,false)
                 setOnFocusChangeListener { _,focused ->
                     background=TvStyle.card(this@MainActivity,focused)
