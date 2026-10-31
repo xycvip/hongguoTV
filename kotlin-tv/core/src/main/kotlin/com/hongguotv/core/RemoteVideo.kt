@@ -101,7 +101,7 @@ class RemoteVideo(
         var offset=start
         var copied=0
         while(copied<length) {
-            val count=minOf(chunkBytes,length-copied)
+            val count=minOf(chunkBytes,8*1024*1024,length-copied)
             val part=range(offset,offset+count-1L).bytes
             if(part.size!=count) throw IOException("视频分段数据不完整")
             part.copyInto(result,copied)
