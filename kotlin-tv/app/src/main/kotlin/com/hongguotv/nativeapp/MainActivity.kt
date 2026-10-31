@@ -2134,7 +2134,8 @@ class MainActivity: Activity() {
                 val active=index==focusedCategory
                 val focused=indicator.hasFocus()
                 // 左侧分类栏恢复原来的焦点行为：只有遥控器实际聚焦时才显示底色。
-                indicator.background=TvStyle.card(this@MainActivity,focused)
+                // 右侧设置项获得焦点时，对应的左侧分类同步保留底色；左侧自身聚焦时也显示底色。
+                indicator.background=TvStyle.card(this@MainActivity,focused || active)
                 indicator.setTextColor(if(focused || active) white else muted)
                 indicator.setTypeface(null,if(focused || active) Typeface.BOLD else Typeface.NORMAL)
             }
