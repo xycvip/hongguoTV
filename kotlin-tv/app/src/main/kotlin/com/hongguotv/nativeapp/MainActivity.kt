@@ -1943,7 +1943,11 @@ class MainActivity: Activity() {
             card.setOnLongClickListener { catalogFocus=item.id; quickActions(item,card); true }
             card.setOnKeyListener { _,key,event -> if(key==KeyEvent.KEYCODE_MENU) { if(event.action==KeyEvent.ACTION_UP) { catalogFocus=item.id; quickActions(item,card) }; true } else false }
             card.setOnFocusChangeListener { _,focused -> card.background=TvStyle.card(this@MainActivity,focused); if(focused) { catalogFocus=item.id; loadCover(holder.image,item.cover); selectionPreview?.show(item,selectionStatus(item)) } }
-            card.nextFocusUpId=if(position<cols) suggestFirst?.id ?: historyFirst?.id ?: azLastRow.firstOrNull()?.id ?: searchInput?.id ?: collectionBack?.id ?: genreClear?.id ?: typeButtons[library.contentType]?.id ?: rankSwitch?.id ?: rankRefresh?.id ?: favoriteFilterFirst?.id ?: favoriteCheck?.id ?: historyManage?.id ?: navForTab().id else View.NO_ID
+            card.nextFocusUpId=if(position<cols) {
+                // 搜索页右侧海报栏的首行向上直接回到顶部“搜索”导航，避免被中栏联想/历史区截走。
+                if(tab==1) navByTab[1]?.id ?: View.NO_ID
+                else suggestFirst?.id ?: historyFirst?.id ?: azLastRow.firstOrNull()?.id ?: searchInput?.id ?: collectionBack?.id ?: genreClear?.id ?: typeButtons[library.contentType]?.id ?: rankSwitch?.id ?: rankRefresh?.id ?: favoriteFilterFirst?.id ?: favoriteCheck?.id ?: historyManage?.id ?: navForTab().id
+            } else View.NO_ID
             if(position>=displayed.size-12) catalogRecycler?.post { maybeLoadMore() }
         }
         override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
