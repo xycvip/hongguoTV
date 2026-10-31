@@ -12,7 +12,7 @@ concurrency:
 jobs:
   release:
     name: 红果TV正式版构建与发布
-    if: ${{ github.event_name != 'push' || contains(github.event.head_commit.message, '[release]') }}
+    if: ${{ github.ref == 'refs/heads/custom' && (github.event_name != 'push' || contains(github.event.head_commit.message, '[release]')) }}
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -113,13 +113,18 @@ jobs:
                   except Exception as exc:
                       errors.append(url.split("/")[2] + ": " + str(exc))
           if manifest is None:
-              print("无法读取上一版更新清单，将使用仓库配置的版本号作为基准：" + " | ".join(errors), file=sys.stderr)
-              open(output, "w", encoding="utf-8").write("{}")
-          else:
-              if manifest.get("packageName") != "com.x.hongguotv":
-                  raise SystemExit("上一版更新清单中的应用包名不匹配，已停止版本号计算。")
-              open(output, "w", encoding="utf-8").write(json.dumps(manifest, ensure_ascii=False))
-              print("已成功读取上一版红果TV更新清单：" + str(manifest.get("versionName", "?")))
+              raise SystemExit("无法读取上一版红果TV更新清单，已停止正式发布，避免版本号倒退或重复。详情：" + " | ".join(errors))
+          if manifest.get("packageName") != "com.x.hongguotv":
+              raise SystemExit("上一版更新清单中的应用包名不匹配，已停止版本号计算。")
+          try:
+              latest_code = int(manifest["versionCode"])
+              latest_name = str(manifest["versionName"])
+              if latest_code <= 0 or not __import__("re").fullmatch(r"\d+\.\d+\.\d+(?:-build\.\d+)?", latest_name):
+                  raise ValueError("versionCode/versionName 格式无效")
+          except Exception as exc:
+              raise SystemExit("上一版更新清单缺少有效的 versionCode/versionName，已停止发布：" + str(exc))
+          open(output, "w", encoding="utf-8").write(json.dumps(manifest, ensure_ascii=False))
+          print("已成功读取并验证上一版红果TV更新清单：" + latest_name + "（versionCode=" + str(latest_code) + ")")
           PY
           LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
           VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
@@ -138,12 +143,14 @@ jobs:
           print(".".join(map(str, chosen)))
           PY
           )"
-          DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
-          # 使用日期与唯一的工作流运行编号，确保每日构建的 versionCode 持续递增。
-          VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
-          if (( LATEST_VERSION_CODE >= VERSION_CODE )); then
+          # UTC epoch day 提供日期区间，末三位运行号提供区间内序号。
+          # 无论重跑或历史版本情况如何，最终 versionCode 都严格大于上一版。
+          EPOCH_DAY="$(( $(date -u +%s) / 86400 ))"
+          VERSION_CODE="$(( EPOCH_DAY * 1000 + GITHUB_RUN_NUMBER % 1000 ))"
+          if (( VERSION_CODE <= LATEST_VERSION_CODE )); then
             VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
           fi
+
           if (( VERSION_CODE > 2100000000 )); then
             echo "versionCode 超出 Android 支持上限，已停止发布。" >&2
             exit 1
@@ -184,6 +191,7 @@ jobs:
         run: python3 scripts/publish-tv-update.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
+        continue-on-error: true
         with:
           name: 红果TV发布验证报告
           path: |
