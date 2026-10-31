@@ -1461,8 +1461,6 @@ class MainActivity: Activity() {
         }
         // 三栏/两栏搜索页的结果区已在 contentRow 内挂载，其余页面走全宽纵向容器
         val body=searchBody ?: column().also { container.addView(it,lp(-1,0).apply { weight=1f }) }
-        // 三栏/两栏搜索页的结果区已在 contentRow 内挂载，其余页面走全宽纵向容器
-        val body=searchBody ?: column().also { container.addView(it,lp(-1,0).apply { weight=1f }) }
         if(tab==3) {
             val groups=library.groups()
             if(favoriteGroupFilter!=null && favoriteGroupFilter !in groups) favoriteGroupFilter=null
