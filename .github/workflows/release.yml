@@ -1,4 +1,4 @@
-name: Build and publish TV update
+name: 红果TV正式构建与发布
 on:
   push:
     branches:
@@ -29,9 +29,9 @@ jobs:
         with:
           packages: platform-tools
       - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
-      - name: Validate publishing scripts
+      - name: 检查发布脚本语法
         run: python3 -m py_compile scripts/publish-tv-update.py
-      - name: Set monotonic build version and validate signing key
+      - name: 生成递增版本号并验证签名文件
         env:
           KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
@@ -75,7 +75,7 @@ jobs:
               with urllib.request.urlopen(req, timeout=20) as response:
                   data = response.read(limit + 1)
               if len(data) > limit:
-                  raise RuntimeError("response too large")
+                  raise RuntimeError("响应内容超过允许大小")
               return data
           manifest = None
           errors = []
@@ -96,9 +96,9 @@ jobs:
                   if manifest is not None:
                       break
               if manifest is None:
-                  raise RuntimeError("no HongguoTV update.json asset found")
+                  raise RuntimeError("未找到红果TV的 update.json 发布附件")
           except Exception as exc:
-              errors.append("Release API: " + str(exc))
+              errors.append("发布接口读取失败：" + str(exc))
               manifest = None
           # 2/3) Raw manifest, direct first, then supported proxy mirrors.
           if manifest is None:
@@ -112,13 +112,13 @@ jobs:
                   except Exception as exc:
                       errors.append(url.split("/")[2] + ": " + str(exc))
           if manifest is None:
-              print("无法读取上一版清单，将使用仓库配置版本作为基准：" + " | ".join(errors), file=sys.stderr)
+              print("无法读取上一版更新清单，将使用仓库配置的版本号作为基准：" + " | ".join(errors), file=sys.stderr)
               open(output, "w", encoding="utf-8").write("{}")
           else:
               if manifest.get("packageName") != "com.x.hongguotv":
-                  raise SystemExit("上一版更新清单包名不匹配，拒绝计算版本号。")
+                  raise SystemExit("上一版更新清单中的应用包名不匹配，已停止版本号计算。")
               open(output, "w", encoding="utf-8").write(json.dumps(manifest, ensure_ascii=False))
-              print("已读取上一版红果TV清单：" + str(manifest.get("versionName", "?")))
+              print("已成功读取上一版红果TV更新清单：" + str(manifest.get("versionName", "?")))
           PY
           LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
           VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
@@ -144,22 +144,22 @@ jobs:
             VERSION_CODE="$((LATEST_VERSION_CODE + 1))"
           fi
           if (( VERSION_CODE > 2100000000 )); then
-            echo "versionCode 超出 Android 支持上限，拒绝发布。" >&2
+            echo "versionCode 超出 Android 支持上限，已停止发布。" >&2
             exit 1
           fi
           echo "HONGGUOTV_VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          echo "Using monotonic versionCode: $VERSION_CODE (latest published: $LATEST_VERSION_CODE)"
+          echo "采用递增版本号 versionCode：$VERSION_CODE（上一版已发布：$LATEST_VERSION_CODE)"
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=hongguotv-v${VERSION_NAME}" >> "$GITHUB_ENV"
-      - name: Unit tests and release lint
+      - name: 运行单元测试和正式版代码检查
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:testReleaseUnitTest :app:lintRelease --console=plain
-      - name: Build signed APK
+      - name: 构建并签名正式版 APK
         env:
           HONGGUOTV_STORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
           HONGGUOTV_KEY_ALIAS: ${{ secrets.HONGGUOTV_KEY_ALIAS }}
           HONGGUOTV_KEY_PASSWORD: ${{ secrets.HONGGUOTV_KEY_PASSWORD }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :app:assembleRelease --console=plain
-      - name: Verify APK package name and versionCode
+      - name: 验证 APK 应用包名和版本号
         run: |
           set -euo pipefail
           EXPECTED_VERSION_CODE="$HONGGUOTV_VERSION_CODE"
@@ -169,15 +169,15 @@ jobs:
           ACTUAL_PACKAGE="$(printf '%s\n' "$BADGING" | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" | head -n 1)"
           ACTUAL_VERSION_CODE="$(printf '%s\n' "$BADGING" | sed -n "s/.*versionCode='\\([0-9]*\\)'.*/\\1/p" | head -n 1)"
           if [[ "$ACTUAL_PACKAGE" != "com.x.hongguotv" ]]; then
-            echo "APK 包名不匹配：$ACTUAL_PACKAGE" >&2
+            echo "APK 应用包名不匹配：$ACTUAL_PACKAGE" >&2
             exit 1
           fi
           if [[ "$ACTUAL_VERSION_CODE" != "$EXPECTED_VERSION_CODE" ]]; then
-            echo "APK 实际 versionCode=$ACTUAL_VERSION_CODE，预期=$EXPECTED_VERSION_CODE，拒绝发布。" >&2
+            echo "APK 实际版本号 版本号 versionCode=$ACTUAL_VERSION_CODE，预期版本号=$EXPECTED_VERSION_CODE，已停止发布。" >&2
             exit 1
           fi
-          echo "Verified APK package=$ACTUAL_PACKAGE versionCode=$ACTUAL_VERSION_CODE"
-      - name: Publish APK and update manifest
+          echo "APK 验证通过：应用包名=$ACTUAL_PACKAGE 版本号 versionCode=$ACTUAL_VERSION_CODE"
+      - name: 发布 APK 并更新版本清单
         env:
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
         run: python3 scripts/publish-tv-update.py
@@ -189,9 +189,9 @@ jobs:
             kotlin-tv/core/build/reports/tests/test/
             kotlin-tv/app/build/reports/lint-results-release.*
             outputs/update.json
-      - name: Remove temporary signing material
+      - name: 清理临时签名文件
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12"
 
-# Push a commit marked [release] only after custom-branch verification succeeds.
-# Unit tests, lint, signed APK verification, and AppDownload publication are mandatory.
+# 只有定制分支验证通过后，才提交带有 [release] 标记的提交以启动正式发布。
+# 单元测试、代码检查、APK 签名验证和 AppDownload 发布均为正式发布的必经步骤。
