@@ -1228,7 +1228,7 @@ class MainActivity: Activity() {
             val types=row().apply { setPadding(0,dp(8),0,dp(6)) }
             homeRefreshControl=addButton(types,"刷新") {
                 pendingRefreshFocus="home"
-                showCatalog(true)
+                refreshAllHome()
             }.apply {
                 tag="home:refresh"
                 nextFocusUpId=navForTab().id
