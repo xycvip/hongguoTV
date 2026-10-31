@@ -29,6 +29,12 @@ class MediaCryptoTest {
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("IV")) }
     }
 
+    @Test fun rejectsSeigSampleGroupOverridesInsteadOfUsingTrackDefaults() {
+        val data=fixture(seig=true)
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported seig sample group") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("seig")) }
+    }
+
     @Test fun rejectsCbcsInsteadOfTreatingItAsCtr() {
         val data=fixture()
         val marker="cenc".toByteArray()
@@ -82,7 +88,7 @@ class MediaCryptoTest {
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun extendedBox(type: String, body: ByteArray): ByteArray =
         be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null): ByteArray {
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null,seig: Boolean=false): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
         val actualAuxSize=if(constantIv!=null) 0 else auxSize
         val sampleIv=constantIv ?: if(ivSize==16) iv+ByteArray(8) else iv.copyOf(8)
@@ -97,7 +103,8 @@ class MediaCryptoTest {
             val stco=box("stco",ByteArray(4)+be32(1)+be32(4096))
             val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1)+(if(actualAuxSize==0) byteArrayOf(0) else byteArrayOf()))
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
-            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio))))+box("free",sampleIv))
+            val sampleGroups=if(seig) box("sgpd",ByteArray(4)+"seig".toByteArray()+be32(0)) else byteArrayOf()
+            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio+sampleGroups))))+box("free",sampleIv))
         }
         val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
