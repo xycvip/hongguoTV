@@ -133,12 +133,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
           RELEASE_NOTES: |
-            - 题材选择记住手动切换的短剧、漫剧和 AI 剧，冷启动仍默认短剧。
-            - 题材类型标签按屏幕宽度自适应分配空间与间距。
-            - 搜索热搜推荐改为短剧与漫剧混合展示，不再清一色 AI 剧。
-            - 修复清除所有数据：停止后台任务、等待写入完成，再清空本机设置与记录后重启。
-            - 修复播放评论分页：加载更多后从新增评论继续向下浏览，浏览到底部再加载下一页。
-            - 优化检查更新弹窗：状态提示固定醒目展示，更新说明可滚动查看。
+            - 设置页改为横向分类导航与网格卡片布局，标题和选项尽量单行显示。
+            - 优化设置分类切换与遥控器焦点导航，保留原有设置功能。
         run: python3 scripts/publish-tv-update.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
@@ -152,5 +148,5 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/release.p12"
 
-# Release trigger marker: account artwork refresh [skip-tests]
-# Manual release trigger: publish current custom build without tests or lint. [release] [skip-tests]
+# Release trigger marker: horizontal settings grid redesign [release]
+# Manual release trigger: publish current custom build with tests and lint. [release]
