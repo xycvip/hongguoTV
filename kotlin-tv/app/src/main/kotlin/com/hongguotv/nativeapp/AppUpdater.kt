@@ -116,8 +116,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         }
         proxyButton?.apply {
             text = "换源下载"
-            // 未发现新版时也允许切换线路重新检查；下载过程中允许主动换源，
-            // 正在检查时禁用，避免并发请求。
+            // 未发现新版时也允许切换线路重新检查；下载过程中允许主动换源。
+            // 检查进行中保留按钮可聚焦状态，点击回调负责拦截重复请求。
             // 不因检查请求期间 busy=true 而禁用当前焦点控件；点击回调会拦截重复请求。
             // Android TV 部分 ROM 在禁用当前焦点按钮时会直接清空焦点。
             isEnabled = active && idle()
@@ -171,9 +171,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 }, LinearLayout.LayoutParams(-1, -2))
                 addView(TvDialog.body(
                     activity,
-                    "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\\n\\n" +
-                        "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\\n" +
-                        "AndroidX Media3 / OkHttp：Apache-2.0\\nKotlin：Apache-2.0\\nBouncy Castle：MIT。\\n\\n" +
+                    "红果TV 是面向 Android 电视与大屏设备的影视播放客户端，支持内容浏览、搜索、剧集播放、收藏与观看记录管理。\n\n" +
+                        "本原生版以 GPL-3.0 发布。内容协议与加密处理移植自 drpys（22261ad）。\n" +
+                        "AndroidX Media3 / OkHttp：Apache-2.0\nKotlin：Apache-2.0\nBouncy Castle：MIT。\n\n" +
                         "应用不提供、不存储、不传播视频内容；播放内容由用户选择的来源提供，相关内容版权归原平台及权利人所有。"
                 ))
             } else {
