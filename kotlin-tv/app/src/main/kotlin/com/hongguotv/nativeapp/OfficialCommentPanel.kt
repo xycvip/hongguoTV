@@ -12,8 +12,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.emoji2.widget.EmojiEditText
-import androidx.emoji2.widget.EmojiTextView
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import com.hongguotv.core.OfficialComment
@@ -53,7 +51,7 @@ internal class OfficialCommentPanel(
     private val countLabel = label("本集评论", 17f, true)
     private val statusLabel = label("", 13f, false, mutedColor).apply { isFocusable = true }
     private val composerLabel = label("", 12f, false, mutedColor)
-    private val input = EmojiEditText(context).apply {
+    private val input = EditText(context).apply {
         setTextColor(textColor)
         setHintTextColor(mutedColor)
         textSize = 14f
@@ -345,7 +343,7 @@ internal class OfficialCommentPanel(
     }
 
     private fun label(value: String, size: Float, bold: Boolean, color: Int = textColor) =
-        EmojiTextView(context).apply {
+        TextView(context).apply {
             text = value
             textSize = size
             setTextColor(color)
