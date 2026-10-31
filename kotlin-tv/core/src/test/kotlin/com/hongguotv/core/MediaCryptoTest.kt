@@ -8,6 +8,52 @@ class MediaCryptoTest {
     private val iv=hex("f0f1f2f3f4f5f6f7f8f9fafbfcfdfeff")
     private val plain=hex("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710")
     private val encrypted=hex("874d6191b620e3261bef6864990db6ce9806f66b7970fdff8617187bb9fffdff5ae4df3edbd5d35e5b4f09020db03eab1e031dda2fbe03d1792170a0f3009cee")
+    private fun deriveKeyFixture(expectedHex: String): String {
+        val work=ByteArray(33)
+        work[0]=0x40
+        expectedHex.toByteArray(Charsets.US_ASCII).copyInto(work,1)
+        var a=85; var b=246
+        for(i in work.indices) {
+            val output=work[i].u()
+            val previous=if(i and 1 != 0) a else b
+            val old=previous xor ((output+21+Integer.bitCount(i)) and 255)
+            work[i]=old.toByte()
+            if(i and 1 != 0) a=old else b=old
+        }
+        val prefix=(47 xor work[0].u() xor work[1].u()).toByte()
+        return java.util.Base64.getEncoder().encodeToString(byteArrayOf(prefix)+work)
+    }
+
+    private fun encryptedUrlFixture(url: String,seed: ByteArray): String {
+        val constants=hex("4dd4c2e6b83162090e52b3c7a6733ba41cb2462b829ab58a196b39db57177524f49baf7f08e8d68d26a72e37c1a95a2f1f05a51892aef2949732b62a38aadd58")
+        val h=digest("SHA-512",digest("SHA-512",seed)+constants)
+        val plain=url.toByteArray(Charsets.UTF_8)
+        val padded=ByteArray(((plain.size+15)/16)*16).also { plain.copyInto(it) }
+        val cipher=javax.crypto.Cipher.getInstance("AES/CBC/NoPadding").apply {
+            init(javax.crypto.Cipher.ENCRYPT_MODE,javax.crypto.spec.SecretKeySpec(h.copyOfRange(0,16),"AES"),javax.crypto.spec.IvParameterSpec(h.copyOfRange(16,32)))
+        }.doFinal(padded)
+        return java.util.Base64.getEncoder().encodeToString(byteArrayOf(0xa8.toByte(),0,1,0)+cipher)
+    }
+
+    @Test fun derivesSixteenByteVideoKeyFromProtocolTransformFixture() {
+        val expected="00112233445566778899aabbccddeeff"
+        assertArrayEquals(hex(expected),MediaCrypto.deriveKey(deriveKeyFixture(expected)))
+    }
+
+    @Test fun decryptsUrlFromCompleteAesCbcFixture() {
+        val seed=byteArrayOf(1,2,3,4,5,6,7,8)
+        val url="https://media.example.test/video.mp4"
+        assertEquals(url,MediaCrypto.decryptUrl(encryptedUrlFixture(url,seed),seed))
+    }
+
+    @Test fun rejectsUrlCiphertextWithTruncatedFinalBlock() {
+        val seed=byteArrayOf(1,2,3,4)
+        val valid=java.util.Base64.getDecoder().decode(encryptedUrlFixture("https://media.example.test/a.mp4",seed))
+        val truncated=java.util.Base64.getEncoder().encodeToString(valid+byteArrayOf(1))
+        try { MediaCrypto.decryptUrl(truncated,seed); fail("truncated AES block must be rejected") }
+        catch(e: IllegalArgumentException) { assertTrue(e.message.orEmpty().contains("密文长度")) }
+    }
+
     @Test fun parsesAndDecryptsSamplesWithSixteenBytePerSampleIv() {
         val data=fixture(ivSize=16,auxSize=16)
         val prepared=MediaCrypto.prepare(data,key)
@@ -27,6 +73,11 @@ class MediaCryptoTest {
         val data=fixture(ivSize=12,auxSize=12)
         try { MediaCrypto.prepare(data,key); fail("expected unsupported IV length") }
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("IV")) }
+    }
+
+    @Test fun ignoresFakeBoxSignaturesInsideOtherBoxPayloads() {
+        try { MediaCrypto.prepare(fixture(omitSaiz=true,nestedFakeSaiz=true),key); fail("nested payload is not an stbl child") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().isNotBlank()) }
     }
 
     @Test fun rejectsSeigSampleGroupOverridesInsteadOfUsingTrackDefaults() {
@@ -88,7 +139,7 @@ class MediaCryptoTest {
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun extendedBox(type: String, body: ByteArray): ByteArray =
         be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
-    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null,seig: Boolean=false): ByteArray {
+    private fun fixture(codec: String="avc1",auxSize: Int=8,spacer: Boolean=false,extendedSpacer: Boolean=false,auxOffset: Int?=null,ivSize: Int=8,constantIv: ByteArray?=null,seig: Boolean=false,omitSaiz: Boolean=false,nestedFakeSaiz: Boolean=false): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())
         val actualAuxSize=if(constantIv!=null) 0 else auxSize
         val sampleIv=constantIv ?: if(ivSize==16) iv+ByteArray(8) else iv.copyOf(8)
@@ -104,7 +155,8 @@ class MediaCryptoTest {
             val saiz=box("saiz",ByteArray(4)+byteArrayOf(actualAuxSize.toByte())+be32(1)+(if(actualAuxSize==0) byteArrayOf(0) else byteArrayOf()))
             val saio=box("saio",ByteArray(4)+be32(1)+be32(offset))
             val sampleGroups=if(seig) box("sgpd",ByteArray(4)+"seig".toByteArray()+be32(0)) else byteArrayOf()
-            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+saiz+saio+sampleGroups))))+box("free",sampleIv))
+            val nested=if(nestedFakeSaiz) box("free",saiz) else byteArrayOf()
+            return box("moov",box("trak",box("mdia",box("minf",box("stbl",stsd+stsz+stsc+stco+(if(omitSaiz) byteArrayOf() else saiz)+saio+sampleGroups+nested))))+box("free",sampleIv))
         }
         val padding=when { extendedSpacer -> extendedBox("free",byteArrayOf(1,2,3,4)); spacer -> box("free",byteArrayOf(1,2,3,4)); else -> byteArrayOf() }
         val initial=ftyp+padding+moov(0)
