@@ -87,14 +87,60 @@ def changelog():
     """Build concise Chinese release notes from commits since the previous AppDownload build."""
     current_commit = os.environ.get("GITHUB_SHA", "HEAD")
     previous_ref = ""
-    # AppDownload manifests record the source commit, avoiding a separate tag lookup.
+    # Prefer the app-scoped Release API asset; retain Raw as the fallback.
+    previous_manifest = None
+    api_headers = {
+        "User-Agent": "HongguoTV-AppDownload-Publisher",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Cache-Control": "no-cache",
+    }
     try:
-        manifest_url = (
+        releases_url = (
+            f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases"
+            f"?per_page=100&cachebust={os.getpid()}"
+        )
+        request = urllib.request.Request(releases_url, headers=api_headers)
+        with urllib.request.urlopen(request, timeout=30) as response:
+            releases = json.loads(response.read().decode("utf-8"))
+        for release in releases:
+            if release.get("draft") or not str(release.get("tag_name", "")).startswith("hongguotv-v"):
+                continue
+            for asset in release.get("assets", []):
+                if asset.get("name") == "update.json" and asset.get("browser_download_url"):
+                    request = urllib.request.Request(asset["browser_download_url"], headers={
+                        "User-Agent": "HongguoTV-AppDownload-Publisher",
+                        "Cache-Control": "no-cache",
+                    })
+                    with urllib.request.urlopen(request, timeout=30) as response:
+                        previous_manifest = json.loads(response.read().decode("utf-8"))
+                    break
+            if previous_manifest is not None:
+                break
+    except Exception:
+        previous_manifest = None
+
+    # Fallback to the stable Raw manifest if the API/asset cannot be read.
+    if previous_manifest is None:
+        raw_url = (
             "https://raw.githubusercontent.com/xycvip/AppDownload/main/"
             "hongguoTV/latest.json?cachebust=" + str(os.getpid())
         )
-        with urllib.request.urlopen(manifest_url, timeout=30) as response:
-            previous_manifest = json.loads(response.read().decode("utf-8"))
+        raw_candidates = [
+            raw_url,
+            "https://gh-proxy.com/" + raw_url,
+            "https://ghfast.top/" + raw_url,
+            "https://gh-proxy.net/" + raw_url,
+        ]
+        for manifest_url in raw_candidates:
+            try:
+                with urllib.request.urlopen(manifest_url, timeout=30) as response:
+                    previous_manifest = json.loads(response.read().decode("utf-8"))
+                break
+            except Exception:
+                continue
+
+    if previous_manifest is not None:
         candidate = str(previous_manifest.get("sourceCommit", "")).strip()
         if re.fullmatch(r"[0-9a-fA-F]{40}", candidate):
             check = subprocess.run(
@@ -103,8 +149,6 @@ def changelog():
             )
             if check.returncode == 0:
                 previous_ref = candidate
-    except Exception:
-        pass
 
     # One-time migration fallback: older manifests have no sourceCommit field.
     if not previous_ref:
@@ -240,7 +284,7 @@ except urllib.error.HTTPError as exc:
         "body": f"红果 TV {VERSION_NAME}\n\n{notes}",
         "draft": False,
         "prerelease": False,
-        "make_latest": "true",
+        "make_latest": "false",
     }, ensure_ascii=False).encode("utf-8")
     request = urllib.request.Request(
         f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases",
