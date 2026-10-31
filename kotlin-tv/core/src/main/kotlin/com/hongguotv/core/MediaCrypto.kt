@@ -129,8 +129,9 @@ object MediaCrypto {
             val auxLengthLong=auxSizes.sumOf { it.toLong() }
             if(aux<0 || auxLengthLong>8L*1024L*1024L || aux>Long.MAX_VALUE-auxLengthLong) throw IOException("辅助数据范围异常")
             val auxEnd=aux+auxLengthLong
-            val auxBytes=if(auxEnd<=data.size) data.copyOfRange(aux.toInt(),auxEnd.toInt()) else
-                auxiliaryReader?.invoke(aux,auxLengthLong.toInt()) ?: throw IOException("辅助数据超出索引范围")
+            val auxBytes=if(auxiliaryReader!=null) auxiliaryReader.invoke(aux,auxLengthLong.toInt())
+                else if(auxEnd<=data.size) data.copyOfRange(aux.toInt(),auxEnd.toInt())
+                else throw IOException("辅助数据超出索引范围")
             if(auxBytes.size!=auxLengthLong.toInt()) throw IOException("辅助数据读取不完整")
             var auxCursor=0
             var sampleIndex=0; var entry=0
