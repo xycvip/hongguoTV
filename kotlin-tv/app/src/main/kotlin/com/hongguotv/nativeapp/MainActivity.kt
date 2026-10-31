@@ -1722,7 +1722,7 @@ class MainActivity: Activity() {
         val grid=GridLayoutManager(this,cols)
         grid.spanSizeLookup=object: GridLayoutManager.SpanSizeLookup() { override fun getSpanSize(position: Int)=if(adapter.isFooter(position)) cols else 1 }
         val recycler=RecyclerView(this).apply {
-            id=View.generateViewId(); clipToPadding=false; isVerticalScrollBarEnabled=false; itemAnimator=null
+            id=View.generateViewId(); clipToPadding=false; isVerticalScrollBarEnabled=false; itemAnimator=null; isNestedScrollingEnabled=true
             layoutManager=grid; this.adapter=adapter
             // Focus entering the grid lands on the first visible card, keeping the user's place.
             isFocusable=true; isFocusableInTouchMode=true
