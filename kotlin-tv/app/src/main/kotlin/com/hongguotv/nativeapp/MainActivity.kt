@@ -2402,7 +2402,7 @@ class MainActivity: Activity() {
         }
 
         resetButton=setting(system,5,"重置软件") { showResetOptions(resetButton) }
-        aboutButton=setting(system,4,"关于软件") { updater.show(aboutButton,aboutMode=true) }
+        aboutButton=setting(system,5,"关于软件") { updater.show(aboutButton,aboutMode=true) }
 
         rechainSettings={
             val visibleByCategory=categoryItems.map { items -> items.filter { it.visibility==View.VISIBLE } }
