@@ -110,7 +110,7 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
     fun comicRanking(page: Int = 1)=ranking(RankBoard.COMIC,page)
     fun realRanking(page: Int = 1)=ranking(RankBoard.REAL,page)
     private data class TheaterCursor(val offset:Int,val sessionId:String)
-    private data class TheaterSession(val filters:List<TheaterFilterGroup>,val cursors:MutableMap<Int,TheaterCursor>,val shown:LinkedHashSet<String>)
+    private data class TheaterSession(var filters:List<TheaterFilterGroup>,val cursors:MutableMap<Int,TheaterCursor>,val shown:LinkedHashSet<String>)
     private val theaterSessions=linkedMapOf<String,TheaterSession>()
     private fun theaterKey(type:ContentType?,selected:Map<String,String>) =
         (type?.name ?: "ALL")+"|"+selected.toSortedMap().entries.joinToString("|") { "${it.key}=${it.value}" }
