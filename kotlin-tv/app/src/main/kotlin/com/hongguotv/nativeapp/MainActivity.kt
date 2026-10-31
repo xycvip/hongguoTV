@@ -1741,6 +1741,7 @@ class MainActivity: Activity() {
                 tab==1 -> searchInput?.id ?: recycler.id
                 tab==0 -> homeRefreshControl?.id ?: recycler.id
                 tab==7 -> theaterFilterHost?.getChildAt(0)?.id ?: recycler.id
+                tab==4 -> root.findViewWithTag<View>("recent:watch-stats")?.id ?: historyManage?.id ?: recycler.id
                 else -> favoriteCheck?.id ?: historyManage?.id ?: recycler.id
             }
         }
