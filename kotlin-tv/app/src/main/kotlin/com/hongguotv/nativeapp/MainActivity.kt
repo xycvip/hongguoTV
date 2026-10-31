@@ -204,7 +204,7 @@ class MainActivity: Activity() {
     private val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
     private val sleepActionMode: Int
         get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).let { if(it in 0..1) it else 0 }
-    private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("暂停播放", "退出软件")[mode.coerceIn(0, 1)]
+    private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("播放", "软件")[mode.coerceIn(0, 1)]
     private var sleepStopped=false
     private var playerView: PlayerView?=null
     private var danmakuView: DanmakuView?=null
@@ -2330,10 +2330,10 @@ class MainActivity: Activity() {
             if(focused) markFocusedCategory(0)
         }
         lateinit var sleepActionButton: TextView
-        sleepActionButton=setting(playback,0,"定时关闭 · ${sleepActionLabel()}") {
+        sleepActionButton=setting(playback,0,"定时关闭·${sleepActionLabel()}") {
             val next=(sleepActionMode+1)%2
             getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().putInt("sleep_action_mode",next).apply()
-            sleepActionButton.text="定时关闭 · ${sleepActionLabel(next)}"
+            sleepActionButton.text="定时关闭·${sleepActionLabel(next)}"
         }
         qualityButton=setting(playback,0,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
         defaultSpeed=setting(playback,0,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
