@@ -38,7 +38,7 @@ data class ComicRanking(val positions: Map<String,RankPosition>, val totalPages:
 data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val ranking: ComicRanking? = null)
 /** One website genre selector entry; the slug selects the category path, ids echo back for validation. */
 data class Genre(val slug: String, val name: String, val ids: List<String>)
-data class StreamInfo(val url: String, val key: ByteArray?, val quality: String)
+data class StreamInfo(val url: String, val key: ByteArray?, val quality: String, val mimeType: String = "video/mp4")
 class SearchSessionExpiredException: IOException("搜索结果已过期，请从第 1 页重新搜索")
 /** 平台对该集只产出了 ByteVC2 等电视无法解码的编码，重试与换清晰度都不会成功。 */
 class UnplayableVideoException(message: String): IOException(message)
@@ -527,9 +527,21 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         val item=selected.third; var url=cleanUrl(item.str("main_url")); val seed=info.str("key_seed")
         if(seed.isNotEmpty()) url=MediaCrypto.decryptUrl(url,decode64(seed))
         if(!url.startsWith("https://") && !url.startsWith("http://")) throw IOException("播放地址无效")
+        val declaredMime=item.str("mime_type").ifEmpty { item.str("mime") }.lowercase(Locale.ROOT)
+        val urlPath=runCatching { java.net.URI(url).path.orEmpty().lowercase(Locale.ROOT) }.getOrDefault("")
+        // RemoteVideo performs MP4 sample parsing/decryption before ExoPlayer sees the bytes.
+        // Do not mislabel an HLS playlist or another container as MP4: that path needs a different
+        // data source and media-source pipeline, so fail clearly until that pipeline is implemented.
+        if(declaredMime.contains("mpegurl") || declaredMime.contains("m3u8") || urlPath.endsWith(".m3u8")) {
+            throw IOException("当前片源为 HLS 格式，现有加密分段播放链路暂不支持")
+        }
+        if(declaredMime.isNotBlank() && !declaredMime.contains("mp4") && !declaredMime.contains("octet-stream")) {
+            throw IOException("当前片源格式暂不支持：$declaredMime")
+        }
+        val mimeType="video/mp4"
         val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
         val quality=if(selected.first>0) "${selected.first}P"+(if(selected.first>maxQuality) "（兼容资源）" else "") else "自动"
-        return StreamInfo(url,key,quality)
+        return StreamInfo(url,key,quality,mimeType)
     }
     private fun playerRequest(id: String,payload: ByteArray,identity: PlaybackDeviceSession.Profile): Request {
         val query=Signer.encode(identity.values+("_rticket" to clock().toString()))
