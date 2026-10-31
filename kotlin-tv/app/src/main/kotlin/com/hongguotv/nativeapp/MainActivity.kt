@@ -32,6 +32,7 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.media3.common.*
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.hongguotv.core.*
@@ -2866,7 +2867,12 @@ class MainActivity: Activity() {
                 setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
             }
             playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
-            val danmakuLayer=DanmakuView(this)
+            val danmakuLayer=DanmakuView(this).apply {
+                isClickable=false
+                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                elevation=dp(4).toFloat()
+                clipToOutline=false
+            }
             danmakuView=danmakuLayer
             danmakuLayer.setBlockedFilter { text -> extras.blocks(text) }
             danmakuLayer.applyPrefs(library.danmakuOpacity,library.danmakuFont,library.danmakuSpeed,library.danmakuRows)
@@ -2877,7 +2883,13 @@ class MainActivity: Activity() {
             progressBar=ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal).apply { max=1000; progressTintList=android.content.res.ColorStateList.valueOf(accent); progressBackgroundTintList=android.content.res.ColorStateList.valueOf(surface) }; hud.addView(progressBar,lp(-1,dp(4)))
             hud.addView(text("确认 播放/暂停    ↑ 上一集    ↓ 下一集    左右 快退/快进    菜单 播放菜单    返回 收起 / 退出",13f,muted).apply { setPadding(0,dp(12),0,0) })
             controls=column().apply { setPadding(0,dp(12),0,0); visibility=View.GONE }; hud.addView(controls)
-            root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+            root.addView(ScrollView(this).apply {
+                isVerticalScrollBarEnabled=false
+                clipChildren=false
+                clipToPadding=false
+                elevation=dp(8).toFloat()
+                addView(hud)
+            },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
         }
         if(bootAutoPlaybackPending && !reuse) showBootSplash()
         applyClock()
@@ -2889,12 +2901,26 @@ class MainActivity: Activity() {
         work({ prefetched ?: RemoteVideo(repository.http,repository.stream(requestedId,maxQuality)).prepare() }, { remote ->
             video=remote; quality=remote.info.quality
             val p=player ?: run {
-                val load=DefaultLoadControl.Builder().setBufferDurationsMs(15000,30000,1000,2000).setTargetBufferBytes(12*1024*1024).build()
                 val renderers=androidx.media3.exoplayer.DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-                ExoPlayer.Builder(this,renderers).setLoadControl(load).build().also {
+                ExoPlayer.Builder(this,renderers).setLoadControl(buildPlaybackLoadControl()).build().also {
                     player=it; playerView?.player=it
                     it.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),true)
                     it.setHandleAudioBecomingNoisy(true)
+                    it.addAnalyticsListener(object: AnalyticsListener {
+                        override fun onVideoDecoderInitialized(
+                            eventTime: AnalyticsListener.EventTime,
+                            decoderName: String,
+                            initializedTimestampMs: Long,
+                            initializationDurationMs: Long
+                        ) {
+                            val kind=when {
+                                decoderName.contains("ffmpeg",true) -> "software/FFmpeg"
+                                decoderName.contains("google",true) || decoderName.contains("c2.android",true) -> "system software"
+                                else -> "platform decoder (hardware status depends on device implementation)"
+                            }
+                            android.util.Log.i("HongguoTV","Video decoder initialized: $decoderName kind=$kind init=${initializationDurationMs}ms")
+                        }
+                    })
                 }
             }
             p.setPlaybackSpeed(library.playbackSpeed)
@@ -2932,16 +2958,29 @@ class MainActivity: Activity() {
                 override fun onIsPlayingChanged(playing: Boolean) {
                     if(active()) {
                         if(playing && playbackReady) markStartupRecommendationPlaying()
+                        danmakuView?.setPlaybackActive(playing)
                         if(hud.visibility==View.VISIBLE) showHud()
                         syncMediaSession()
                     }
+                }
+                override fun onVideoSizeChanged(videoSize: VideoSize) {
+                    if(active()) android.util.Log.i(
+                        "HongguoTV",
+                        "Video size ${videoSize.width}x${videoSize.height} pixelRatio=${videoSize.pixelWidthHeightRatio} rotation=${videoSize.unappliedRotationDegrees}"
+                    )
                 }
                 override fun onPlaybackParametersChanged(parameters: PlaybackParameters) { if(active()) syncMediaSession() }
                 override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) { if(active()) { syncMediaSession(); danmakuView?.seekTo(newPosition.positionMs) } }
                 override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
             }
             playerListener=listener; p.addListener(listener)
-            val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hongguotv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
+            val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(
+                MediaItem.Builder()
+                    .setMediaId(requestedId)
+                    .setUri("hongguotv://episode/$requestedId")
+                    .setMimeType(remote.info.mimeType)
+                    .build()
+            )
             val introSkip=if(position<=0 && (skipMark?.introSeconds ?: 0)>0) skipMark!!.introSeconds*1000L else position.coerceAtLeast(0)
             p.setMediaSource(source); p.seekTo(introSkip); p.prepare(); p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle && episodePanel==null
             if(introSkip>0 && position<=0) Toast.makeText(this,"已跳过片头 ${skipMark!!.introSeconds} 秒",Toast.LENGTH_SHORT).show()
@@ -3019,7 +3058,7 @@ class MainActivity: Activity() {
         playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
         val incompatible=problem is UnplayableVideoException
         val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
-        val retryable=!incompatible && (if(problem is PlaybackException) problem.errorCode in 2000..2999 || problem.errorCode==PlaybackException.ERROR_CODE_TIMEOUT else problem is java.io.IOException)
+        val retryable=!incompatible && !decoding && (if(problem is PlaybackException) problem.errorCode in 2000..2999 || problem.errorCode==PlaybackException.ERROR_CODE_TIMEOUT else problem is java.io.IOException)
         playbackText.text=when {
             incompatible -> "本集片源暂不兼容：平台未提供电视可解码的清晰度，可播放下一集。"
             decoding -> "电视无法解码当前视频，可尝试更低清晰度。"
@@ -3048,7 +3087,7 @@ class MainActivity: Activity() {
             addButton(controls,"停止自动重试") { cancelRecovery(); playbackText.text="自动重试已停止，观看位置已保留。" }
             autoRecovery=true; scheduleRecovery()
         }
-        android.util.Log.e("HongguoTV","Playback failure: ${problem.javaClass.simpleName} msg=${problem.message}"+(if(problem is PlaybackException) " code=${problem.errorCodeName}" else ""), problem)
+        android.util.Log.e("HongguoTV","Playback failure: ${playbackFailureDetails(problem)}",problem)
     }
     private fun hidePlaybackOverlay() {
         main.removeCallbacks(hideHud)
@@ -3121,6 +3160,49 @@ class MainActivity: Activity() {
             if(anchor.tag!="playback-settings") anchor.text="定时 ${sleepTimer.label()}"; updatePlaybackText(); showHud()
         })
     }
+    /** Device-aware buffering: keep low-memory boxes conservative and avoid oversized queues on metered links. */
+    private fun buildPlaybackLoadControl(): DefaultLoadControl {
+        val manager=getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val lowRam=manager.isLowRamDevice || manager.memoryClass<=128
+        val metered=runCatching { connectivity.isActiveNetworkMetered }.getOrDefault(false)
+        val minBuffer: Int
+        val maxBuffer: Int
+        val startBuffer: Int
+        val rebuffer: Int
+        val targetBytes: Int
+        when {
+            lowRam -> {
+                minBuffer=10_000; maxBuffer=25_000; startBuffer=1_000; rebuffer=2_000
+                targetBytes=6*1024*1024
+            }
+            metered -> {
+                minBuffer=12_000; maxBuffer=30_000; startBuffer=1_000; rebuffer=2_000
+                targetBytes=8*1024*1024
+            }
+            else -> {
+                minBuffer=15_000; maxBuffer=45_000; startBuffer=1_000; rebuffer=2_500
+                targetBytes=12*1024*1024
+            }
+        }
+        android.util.Log.i("HongguoTV","Playback buffer profile lowRam=$lowRam metered=$metered min=$minBuffer max=$maxBuffer target=${targetBytes/1024/1024}MB")
+        return DefaultLoadControl.Builder()
+            .setBufferDurationsMs(minBuffer,maxBuffer,startBuffer,rebuffer)
+            .setTargetBufferBytes(targetBytes)
+            .build()
+    }
+
+    private fun playbackFailureDetails(problem: Throwable): String {
+        val chain=mutableListOf<String>()
+        val seen=java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable,Boolean>())
+        var current: Throwable?=problem
+        while(current!=null && chain.size<5 && seen.add(current)) {
+            chain+= "${current.javaClass.simpleName}: ${current.message.orEmpty().take(140)}"
+            current=current.cause
+        }
+        val code=(problem as? PlaybackException)?.let { " code=${it.errorCode}(${it.errorCodeName})" }.orEmpty()
+        return problem.javaClass.simpleName+code+" causes="+chain.joinToString(" <- ")
+    }
+
     private fun frameResizeMode()=when(library.frameMode) {
         VideoFrameMode.FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
         VideoFrameMode.ZOOM -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -3628,7 +3710,7 @@ class MainActivity: Activity() {
         val loader=DanmakuLoader(danmakuRepo,data.series.id,data.episodes[episodeIndex],p.duration)
         danmakuLoader=loader
         layer.setBlockedFilter { text -> extras.blocks(text) }
-        layer.bind(loader,{ currentPosition() })
+        layer.bind(loader,{ currentPosition() },playing=p.isPlaying)
         val startPosition=currentPosition()
         io.execute { runCatching { loader.loadUpTo(startPosition) } }
     }
