@@ -1325,7 +1325,8 @@ class MainActivity: Activity() {
                 // 历史与键盘分开滚动，历史条数不会挤压键盘高度；焦点移动时各自滚入可视区。
                 val contentRow=row().apply { gravity=Gravity.TOP }
                 val leftPane=column()
-                leftPane.addView(searchRow,lp(-1,-2))
+                // 搜索栏右边缘与下方键盘最右边缘对齐：键盘区右侧留有 10dp 内边距。
+                leftPane.addView(searchRow,lp(-1,-2).apply { rightMargin=dp(10) })
                 val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
                 val history=library.searches()
                 if(history.isNotEmpty()) {
