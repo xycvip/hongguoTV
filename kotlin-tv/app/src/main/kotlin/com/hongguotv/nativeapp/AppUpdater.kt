@@ -46,6 +46,9 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
     private var statusDetailsView: TextView? = null
     private var anchor: View? = null
     private var actionButton: android.widget.Button? = null
+    private var proxyButton: android.widget.Button? = null
+    /** First manual retry starts with the first proxy; subsequent presses rotate through all routes. */
+    private var manualMirrorIndex = 0
     private var status = "当前版本 ${BuildConfig.VERSION_NAME}"
     private var retryAfter = 0L
     private var promptedThisSession = false
@@ -109,6 +112,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
             text = when { busy -> "处理中…"; ready -> "立即安装"; available != null -> "下载新版"; else -> "检查更新" }
             // Keep D-pad focus stable while the request runs; action methods reject duplicates.
             isEnabled = true
+        }
+        proxyButton?.apply {
+            text = "换代理下载最新版"
+            isEnabled = !busy
         }
     }
     fun show(from: View?, aboutMode: Boolean = false) {
@@ -206,6 +213,13 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val later = TvDialog.capsuleButton(activity, if (aboutMode) "关闭" else "稍后") { }
         val action = TvDialog.capsuleButton(activity,"检查更新") { }
         actionButton = action
+        val proxy = TvDialog.capsuleButton(activity, "换代理下载最新版") { }
+        proxyButton = proxy
+        if (!aboutMode) {
+            body.addView(proxy, LinearLayout.LayoutParams(-1, -2).apply {
+                topMargin = (8 * dp).toInt()
+            })
+        }
         buttons.addView(later, LinearLayout.LayoutParams(-2,-2).apply { rightMargin=(12*dp).toInt() })
         buttons.addView(action, LinearLayout.LayoutParams(-2,-2))
         body.addView(buttons)
@@ -213,11 +227,19 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         TvDialog.styleWindow(activity,next)
         dialog = next
         next.setOnDismissListener {
-            if (dialog === next) { dialog = null; statusView = null; statusDetailsView = null; actionButton = null }
+            if (dialog === next) { dialog = null; statusView = null; statusDetailsView = null; actionButton = null; proxyButton = null }
             if (from?.isAttachedToWindow == true) from.requestFocus()
         }
         next.show()
         later.setOnClickListener { next.dismiss() }
+        proxy.setOnClickListener {
+            if (aboutMode || busy || !active || !idle()) return@setOnClickListener
+            manualMirrorIndex = (manualMirrorIndex + 1) % AppUpdate.MIRRORS.size
+            val mirrorName = AppUpdate.MIRROR_NAMES[manualMirrorIndex]
+            if (available != null) download(manualMirrorIndex)
+            else check(true, manualMirrorIndex)
+            updateStatus("准备通过 $mirrorName 获取最新版…")
+        }
         action.setOnClickListener {
             if (aboutMode) {
                 // 关于页只保留更新入口；点击后进入独立的更新弹窗，再执行真正的版本检查。
@@ -250,7 +272,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         }
     }
     /** @return true when the request actually started; callers may retry later otherwise. */
-    private fun check(manual: Boolean): Boolean {
+    private fun check(manual: Boolean, mirrorIndex: Int? = null): Boolean {
         if (busy || !active || !idle()) return false
         preferences.edit().putLong("last_attempt", System.currentTimeMillis()).apply()
         updateStatus("正在检查新版…")
@@ -265,18 +287,26 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 worker.execute { apk.delete() }
             } else {
                 updateStatus("发现 ${update.versionName} · ${"%.1f".format(update.size/1048576.0)} MB\n${update.notes}")
-                if (manual || auto) download()
+                if (manual || auto) {
+                    if (mirrorIndex == null) download() else download(mirrorIndex)
+                }
             }
         }
         return true
     }
-    private fun download() {
+    private fun download(mirrorIndex: Int? = null) {
         val update = available ?: return
         if (busy || !active || !idle()) return
-        updateStatus("正在下载 ${update.versionName}…")
+        val mirrorName = mirrorIndex?.let { AppUpdate.MIRROR_NAMES.getOrNull(it) }
+        updateStatus(if (mirrorName == null) "正在下载 ${update.versionName}…" else "正在通过 $mirrorName 下载 ${update.versionName}…")
         val ticket = generation + 1
         work({
-            repository.download(update, apk) { percent -> main.post { if (generation == ticket && active) updateStatus("正在下载 ${update.versionName} · $percent%") } }
+            repository.download(update, apk, { percent -> main.post {
+                if (generation == ticket && active) updateStatus(
+                    if (mirrorName == null) "正在下载 ${update.versionName} · $percent%"
+                    else "正在通过 $mirrorName 下载 ${update.versionName} · $percent%"
+                )
+            } }, mirrorIndex)
             validateApk(update)
         }) {
             ready = true; updateStatus("${update.versionName} 已下载并校验\n${update.notes}\n\n确认后由系统覆盖安装，保留本机记录。")
