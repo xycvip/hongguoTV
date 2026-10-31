@@ -1,4 +1,4 @@
-name: 清理全部历史 Actions 记录
+name: 清理全部历史工作流运行记录
 
 on:
   workflow_dispatch:
@@ -13,6 +13,7 @@ concurrency:
 
 jobs:
   cleanup:
+    name: 清理历史运行记录与旧标签
     runs-on: ubuntu-latest
     steps:
       - name: 批量删除历史运行记录
