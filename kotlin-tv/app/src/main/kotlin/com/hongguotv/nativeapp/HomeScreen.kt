@@ -7,8 +7,42 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.*
 import com.hongguotv.core.Series
+
+/** Keeps vertical swipes available to the parent page while retaining horizontal shelf scrolling. */
+class VerticalFriendlyHorizontalScrollView(context: Context): HorizontalScrollView(context) {
+    private val touchSlop=ViewConfiguration.get(context).scaledTouchSlop
+    private var downX=0f
+    private var downY=0f
+
+    override fun onInterceptTouchEvent(event: android.view.MotionEvent): Boolean {
+        when(event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                downX=event.x
+                downY=event.y
+                parent?.requestDisallowInterceptTouchEvent(false)
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                val dx=kotlin.math.abs(event.x-downX)
+                val dy=kotlin.math.abs(event.y-downY)
+                if(dy>touchSlop && dy>dx*1.15f) {
+                    // A vertical gesture belongs to the page's ScrollView/RecyclerView.
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    return false
+                }
+                if(dx>touchSlop && dx>dy*1.15f) {
+                    // A horizontal gesture belongs to this shelf.
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            android.view.MotionEvent.ACTION_UP,android.view.MotionEvent.ACTION_CANCEL ->
+                parent?.requestDisallowInterceptTouchEvent(false)
+        }
+        return super.onInterceptTouchEvent(event)
+    }
+}
 
 /** Fixed text slots keep D-pad movement from resizing the content below the preview. */
 class SeriesPreview(context: Context): LinearLayout(context) {
@@ -110,7 +144,7 @@ class HomeScreen(
             heading.addView(label(shelf.title,16f).apply { setTypeface(null,Typeface.BOLD) },LayoutParams(0,-2,1f))
             heading.addView(label("左右选剧  ·  上下切换分区",10f,TvStyle.muted))
             block.addView(heading)
-            val horizontal=HorizontalScrollView(context).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; setPadding(dp(2),dp(2),dp(2),dp(2)); isFillViewport=shelf.key=="random" }
+            val horizontal=VerticalFriendlyHorizontalScrollView(context).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false; setPadding(dp(2),dp(2),dp(2),dp(2)); isFillViewport=shelf.key=="random" }
             val line=LinearLayout(context).apply { orientation=HORIZONTAL; gravity=if(shelf.key=="random") Gravity.CENTER else Gravity.TOP }
             horizontal.addView(line, if(shelf.key=="random") LayoutParams(-1,-2) else LayoutParams(-2,-2)); block.addView(horizontal)
             val rowCards=mutableListOf<Card>()
