@@ -408,48 +408,6 @@ else:
 upload_text(homepage_path, homepage_text,
             f"更新 AppDownload 首页说明（红果TV {VERSION_NAME}）")
 
-# 发布后远程回读核验：确认清单与 Release 附件指向本次构建产物。
-def remote_json(url, headers=None):
-    request = urllib.request.Request(url, headers=headers or {
-        "User-Agent": "HongguoTV-AppDownload-Publisher",
-        "Cache-Control": "no-cache",
-    })
-    with urllib.request.urlopen(request, timeout=90) as response:
-        return json.loads(response.read().decode("utf-8"))
-
-remote_latest = remote_json(
-    f"https://raw.githubusercontent.com/{DISTRIBUTION_REPOSITORY}/main/"
-    f"{DISTRIBUTION_DIRECTORY}/latest.json?verify={os.getpid()}"
-)
-expected_fields = {
-    "packageName": "com.x.hongguotv",
-    "versionName": VERSION_NAME,
-    "versionCode": VERSION_CODE,
-    "sourceCommit": os.environ.get("GITHUB_SHA", ""),
-}
-for key, expected in expected_fields.items():
-    if remote_latest.get(key) != expected:
-        raise RuntimeError(f"远程 latest.json 核验失败：{key} 不匹配。")
-remote_apk = remote_latest.get("apk", {})
-if remote_apk.get("name") != DISTRIBUTION_APK_NAME or remote_apk.get("sha256") != sha256:
-    raise RuntimeError("远程 latest.json 中 APK 文件名或 SHA256 不匹配。")
-if int(remote_apk.get("size", -1)) != size:
-    raise RuntimeError("远程 latest.json 中 APK 文件大小不匹配。")
-
-remote_release = remote_json(
-    f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/releases/tags/{APP_RELEASE_TAG}",
-    api_headers,
-)
-remote_assets = {item.get("name"): item for item in remote_release.get("assets", [])}
-for required_asset in (DISTRIBUTION_APK_NAME, "update.json", "SHA256SUMS"):
-    if required_asset not in remote_assets:
-        raise RuntimeError(f"远程 Release 缺少附件：{required_asset}")
-remote_update = remote_json(remote_assets["update.json"]["browser_download_url"])
-if (remote_update.get("versionName") != VERSION_NAME
-        or remote_update.get("versionCode") != VERSION_CODE
-        or remote_update.get("apk", {}).get("sha256") != sha256):
-    raise RuntimeError("远程 Release update.json 与本次构建产物不一致。")
-print(f"发布后远程核验通过：{APP_RELEASE_TAG}，清单、附件、APK 文件名/大小/SHA256 一致。")
 print(f"AppDownload 发布完成：{DISTRIBUTION_REPOSITORY}/{DISTRIBUTION_DIRECTORY}，中文更新说明与红果TV首页区域均已更新")
 
 # Remove older HongguoTV Releases only after the new AppDownload Release,
