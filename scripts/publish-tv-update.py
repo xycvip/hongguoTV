@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish one signed APK to AppDownload and the matching source Kotlin Release."""
+"""Publish one signed APK and update metadata in the central AppDownload repository."""
 import hashlib
 import json
 import os
@@ -167,8 +167,6 @@ with open(sha_path, "w", encoding="utf-8") as f:
 token = os.environ.get("APPDOWNLOAD_TOKEN", "").strip()
 if not token:
     raise SystemExit("缺少 APPDOWNLOAD_TOKEN：请在 hongguoTV 仓库 Actions Secrets 中配置。")
-if not os.environ.get("GH_TOKEN", "").strip():
-    raise SystemExit("缺少 GH_TOKEN：无法在源码仓库创建 kotlin-v 版本 Release。")
 
 def github_contents_request(path, method="GET", payload=None):
     url = f"https://api.github.com/repos/{DISTRIBUTION_REPOSITORY}/contents/{path}"
@@ -286,9 +284,6 @@ with open(json_path, "w", encoding="utf-8") as f:
 # Upload the manifest only after the APK URL is known and the APK asset is in place.
 upload_release_asset(json_path, "update.json", "application/json")
 print(f"AppDownload Release 已发布：{APP_RELEASE_TAG}，APK={DISTRIBUTION_APK_NAME}")
-
-# Verify the AppDownload APK and mirror those exact bytes into the source kotlin-v Release.
-subprocess.run(["python3", "scripts/sync-source-release.py", json_path], check=True)
 
 with open(json_path, "r", encoding="utf-8") as manifest_file:
     manifest_text = manifest_file.read() + "\n"
