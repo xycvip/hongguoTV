@@ -4,6 +4,12 @@ on:
     branches:
       - custom
   workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: '跳过单元测试与 lint，仅构建、签名并正式发布'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: write
 concurrency:
@@ -156,7 +162,7 @@ jobs:
           echo "HONGGUOTV_VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
           echo "UPDATE_TAG=hongguotv-v${VERSION_NAME}" >> "$GITHUB_ENV"
       - name: 运行单元测试和正式版代码检查
-        if: ${{ !contains(github.event.head_commit.message || '', '[skip tests]') }}
+        if: ${{ !contains(github.event.head_commit.message || '', '[skip tests]') && !inputs.skip_tests }}
         run: ./kotlin-tv/gradlew -p kotlin-tv :core:test :app:testReleaseUnitTest :app:lintRelease --console=plain
       - name: 构建并签名正式版 APK
         env:
