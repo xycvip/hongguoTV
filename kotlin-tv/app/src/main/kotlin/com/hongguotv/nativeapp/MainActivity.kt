@@ -1204,7 +1204,7 @@ class MainActivity: Activity() {
             addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=navForTab().id }
             // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
             container.addView(types)
-            nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: nav[tab].id }
+            nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: navForTab().id }
         }
         if(tab==1) {
             // 机型分级：≥900dp 三栏（键盘+历史 / 联想 / 结果），700-900dp 两栏，<700dp 回退纵向堆叠
@@ -1221,7 +1221,7 @@ class MainActivity: Activity() {
             val searchRow=row(); val input=EditText(this).apply { id=View.generateViewId(); hint="输入剧名，或用字母键拼首拼"; setText(query); textSize=16f; setTextColor(white); setHintTextColor(muted); isSingleLine=true; maxLines=1; filters=arrayOf(android.text.InputFilter.LengthFilter(80)); imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH }
             searchRow.addView(input,lp(0,dp(45)).apply { weight=1f; rightMargin=dp(10) })
             fun search() { val next=input.text.toString().trim(); if(next.isBlank()) { input.requestFocus(); return }; runSearch(next) }
-            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }; input.nextFocusUpId=nav[tab].id; searchButton?.nextFocusUpId=input.id
+            searchInput=input; searchButton=addButton(searchRow,"搜索") { search() }; input.nextFocusUpId=navForTab().id; searchButton?.nextFocusUpId=input.id
             nav.forEach { it.nextFocusDownId=input.id }
             if(mode==0) {
                 lateinit var recent: TextView
@@ -1390,7 +1390,7 @@ class MainActivity: Activity() {
                     }
                 }.apply {
                     tag=focusTag
-                    nextFocusUpId=nav[tab].id
+                    nextFocusUpId=navForTab().id
                 }
             }
             rankRefresh=addButton(boardRow,"刷新") {
@@ -1400,7 +1400,7 @@ class MainActivity: Activity() {
                 showCatalog(true)
             }.apply {
                 tag="rank:refresh"
-                nextFocusUpId=nav[tab].id
+                nextFocusUpId=navForTab().id
             }
             container.addView(boardRow)
             val defaultSource="来源：红果${rankBoard.label}热播榜"
@@ -1415,7 +1415,7 @@ class MainActivity: Activity() {
                     if(favoriteMonitor.running) Toast.makeText(this,"正在检查收藏更新…",Toast.LENGTH_SHORT).show()
                     else if(library.favorites().isEmpty()) Toast.makeText(this,"先收藏几部剧，再来检查更新",Toast.LENGTH_SHORT).show()
                     else { favoriteMonitor.check(force=true); Toast.makeText(this,"开始检查收藏更新…",Toast.LENGTH_SHORT).show() }
-                }.apply { nextFocusUpId=nav[tab].id }
+                }.apply { nextFocusUpId=navForTab().id }
             }
             if(tab==4 && library.history().isNotEmpty()) {
                 historyManage=addButton(heading,"管理记录") {
@@ -1423,7 +1423,7 @@ class MainActivity: Activity() {
                     tvTools.choose("选择要管理的观看记录",rows.map { it.series.title },historyManage,{ index -> manageHistory(rows[index].series,historyManage) },"清空记录") {
                         tvTools.confirm("清空观看记录","将删除本机所有观看进度，收藏会保留。",historyManage) { library.clearHistory(); catalogFocus=""; showCatalog() }
                     }
-                }.apply { nextFocusUpId=nav[tab].id }
+                }.apply { nextFocusUpId=navForTab().id }
             }
             container.addView(heading)
             if(tab==3) {
@@ -1462,7 +1462,7 @@ class MainActivity: Activity() {
                 favoriteFilterButtons=options.mapIndexed { index,group ->
                     addButton(filterRow,group ?: "全部",favoriteGroupFilter==group) {
                         favoriteGroupFilter=group; favoriteFilterFocus=index; showCatalog(focusFilter=true)
-                    }.apply { nextFocusUpId=favoriteCheck?.id ?: nav[tab].id }
+                    }.apply { nextFocusUpId=favoriteCheck?.id ?: navForTab().id }
                 }
                 favoriteFilterFirst=favoriteFilterButtons.first()
                 container.addView(filterRow,container.indexOfChild(favoriteStatus))
@@ -1476,7 +1476,7 @@ class MainActivity: Activity() {
             else {
                 message(body,"正在加载…")
                 if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus()
-                else if(pendingRefreshFocus==null) nav[tab].requestFocus()
+                else if(pendingRefreshFocus==null) navForTab().requestFocus()
             }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
@@ -1570,7 +1570,7 @@ class MainActivity: Activity() {
         if(collection!=null) {
             val heading=row()
             collectionBack=addButton(heading,"‹ 返回首页") { leaveCollection(); showCatalog() }.apply {
-                nextFocusUpId=typeButtons[library.contentType]?.id ?: nav[tab].id
+                nextFocusUpId=typeButtons[library.contentType]?.id ?: navForTab().id
                 nextFocusDownId=id
             }
             heading.addView(text(when(collection) { "later" -> "稍后看"; "updates" -> "收藏有更新"; "hot" -> "热门发现"; "hot-short" -> "热门发现 · 短剧"; "hot-comic" -> "热门发现 · 漫剧"; "hot-ai" -> "热门发现 · AI剧"; else -> "接着看" },22f))
@@ -1587,7 +1587,7 @@ class MainActivity: Activity() {
                 if(tab==7) theaterGenre=null else genre=null; page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
             }.apply {
                 tag="home:genre-clear"
-                nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: nav[tab].id
+                nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: navForTab().id
             }
             body.addView(bar)
             typeButtons.values.forEach { it.nextFocusDownId=genreClear!!.id }
@@ -1601,7 +1601,7 @@ class MainActivity: Activity() {
                 aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true)
             }.apply {
                 tag="rank:ai:genre-clear"
-                nextFocusUpId=aiGenreButton?.id ?: nav[tab].id
+                nextFocusUpId=aiGenreButton?.id ?: navForTab().id
             }
             body.addView(bar)
             aiGenreButton?.nextFocusDownId=genreClear!!.id
@@ -1617,7 +1617,7 @@ class MainActivity: Activity() {
             else if(pendingRefreshFocus==null) {
                 if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
                 else if(collectionBack!=null && !focusNav) collectionBack?.requestFocus()
-                else nav[tab].requestFocus()
+                else navForTab().requestFocus()
             }
             return
         }
@@ -1671,7 +1671,7 @@ class MainActivity: Activity() {
         searchButton?.nextFocusDownId=azFirst?.id ?: recycler.id
         searchActions.forEach { it.nextFocusDownId=azFirst?.id ?: recycler.id }
         wireSearchPanel(recycler)
-        if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else if(focusNav) nav[tab].requestFocus()
+        if(focusType) (if(tab==1) searchInput else homeRefreshControl)?.requestFocus() else if(focusNav) navForTab().requestFocus()
         else if(focusFilter && favoriteFilterButtons.isNotEmpty()) favoriteFilterButtons[favoriteFilterFocus.coerceIn(0,favoriteFilterButtons.size-1)].requestFocus()
         else {
             val found=displayed.indexOfFirst { it.id==catalogFocus }
@@ -1821,7 +1821,7 @@ class MainActivity: Activity() {
             card.setOnLongClickListener { catalogFocus=item.id; quickActions(item,card); true }
             card.setOnKeyListener { _,key,event -> if(key==KeyEvent.KEYCODE_MENU) { if(event.action==KeyEvent.ACTION_UP) { catalogFocus=item.id; quickActions(item,card) }; true } else false }
             card.setOnFocusChangeListener { _,focused -> card.background=TvStyle.card(this@MainActivity,focused); if(focused) { catalogFocus=item.id; loadCover(holder.image,item.cover); selectionPreview?.show(item,selectionStatus(item)) } }
-            card.nextFocusUpId=if(position<cols) suggestFirst?.id ?: historyFirst?.id ?: azLastRow.firstOrNull()?.id ?: searchInput?.id ?: collectionBack?.id ?: genreClear?.id ?: typeButtons[library.contentType]?.id ?: rankSwitch?.id ?: rankRefresh?.id ?: favoriteFilterFirst?.id ?: favoriteCheck?.id ?: historyManage?.id ?: nav[tab].id else View.NO_ID
+            card.nextFocusUpId=if(position<cols) suggestFirst?.id ?: historyFirst?.id ?: azLastRow.firstOrNull()?.id ?: searchInput?.id ?: collectionBack?.id ?: genreClear?.id ?: typeButtons[library.contentType]?.id ?: rankSwitch?.id ?: rankRefresh?.id ?: favoriteFilterFirst?.id ?: favoriteCheck?.id ?: historyManage?.id ?: navForTab().id else View.NO_ID
             if(position>=displayed.size-12) catalogRecycler?.post { maybeLoadMore() }
         }
         override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
@@ -2336,11 +2336,11 @@ class MainActivity: Activity() {
                     val next=visibleByCategory.getOrNull(category+1).orEmpty()
                     val up=previous.getOrNull((index%columns).coerceAtMost((previous.size-1).coerceAtLeast(0)))
                     val down=next.getOrNull((index%columns).coerceAtMost((next.size-1).coerceAtLeast(0)))
-                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: up?.id ?: nav[tab].id
+                    view.nextFocusUpId=visible.getOrNull(index-columns)?.id ?: up?.id ?: navForTab().id
                     view.nextFocusDownId=visible.getOrNull(index+columns)?.id ?: down?.id ?: view.id
                 }
             }
-            nav[tab].nextFocusDownId=settingRows.firstOrNull()?.id ?: nav[tab].id
+            navForTab().nextFocusDownId=settingRows.firstOrNull()?.id ?: navForTab().id
         }
         rechainSettings()
 
@@ -4563,8 +4563,8 @@ class MainActivity: Activity() {
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
             "detail" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
-            "account" -> { showCatalog(); if(tab==6) nav.getOrNull(6)?.requestFocus() }
-            else -> if(tab==6) nav.getOrNull(6)?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
+            "account" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
+            else -> if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
     }
     /** 手机触屏：轻触唤起播放信息与进度条，左右滑动按比例快退/快进。 */
