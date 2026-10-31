@@ -1,8 +1,8 @@
-name: Review upstream changes for custom
+name: 检查上游更新并生成定制分支差异报告
 
 on:
   workflow_run:
-    workflows: ["Sync upstream main"]
+    workflows: ["同步上游主分支"]
     types: [completed]
   workflow_dispatch:
 
@@ -19,13 +19,13 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout custom branch and fetch main
+      - name: 检出定制分支并获取主分支
         uses: actions/checkout@v4
         with:
           ref: custom
           fetch-depth: 0
 
-      - name: Compare upstream changes without modifying custom
+      - name: 对比上游改动（不修改定制分支）
         id: compare
         shell: bash
         run: |
@@ -33,7 +33,7 @@ jobs:
           git fetch origin main custom
           base="$(git merge-base origin/custom origin/main)"
           if [ -z "$base" ]; then
-            echo "No common ancestor found between custom and main." >&2
+            echo "定制分支与主分支之间没有共同的历史基点。" >&2
             exit 1
           fi
 
@@ -84,7 +84,7 @@ jobs:
             echo "HAS_UPDATES=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Upload upstream review report and patch
+      - name: 上传上游更新报告和补丁文件
         uses: actions/upload-artifact@v4
         with:
           name: upstream-review-${{ github.run_number }}
