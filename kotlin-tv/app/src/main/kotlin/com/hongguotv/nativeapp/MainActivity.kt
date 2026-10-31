@@ -312,7 +312,7 @@ class MainActivity: Activity() {
     private val homeShelfLoads=mutableSetOf<ContentType>()
     private val queuedHomeShelfRefresh=mutableSetOf<ContentType>()
     private var searchInput: View?=null
-    private var searchButton: View?=null
+    private var searchButton: TextView?=null
     private val searchActions=mutableListOf<View>()
     private var azFirst: View?=null
     private val azLastRow=mutableListOf<View>()
@@ -427,7 +427,7 @@ class MainActivity: Activity() {
     private fun button(label: String,selected: Boolean=false,onClick: ()->Unit): TextView = text(label,15f).apply {
         gravity=Gravity.CENTER; setPadding(dp(14),dp(10),dp(14),dp(10)); minHeight=dp(42); focusStyle(this,selected); setOnClickListener { onClick() }
     }
-    private fun addButton(parent: LinearLayout,label: String,selected: Boolean=false,onClick: ()->Unit): TextView {
+    private fun addButton(parent: LinearLayout,label: String,selected: Boolean=false,onClick: ()->Unit = {}): TextView {
         val view=button(label,selected,onClick); parent.addView(view,lp().apply { width=LinearLayout.LayoutParams.WRAP_CONTENT; rightMargin=dp(8) }); return view
     }
     /**
