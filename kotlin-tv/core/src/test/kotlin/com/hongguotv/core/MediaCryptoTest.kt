@@ -47,6 +47,25 @@ class MediaCryptoTest {
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("cens")) }
     }
 
+    @Test fun rejectsCbc1InsteadOfTreatingItAsCtr() {
+        val data=fixture()
+        val marker="cenc".toByteArray()
+        val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
+        "cbc1".toByteArray().copyInto(data,at)
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported scheme") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("cbc1")) }
+    }
+
+    @Test fun rejectsPatternEncryptionFieldsEvenWhenSchemeIsCenc() {
+        val data=fixture()
+        val marker="tenc".toByteArray()
+        val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
+        data[at+12]=0x11
+        data[at+8]=1
+        try { MediaCrypto.prepare(data,key); fail("expected unsupported pattern") }
+        catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("模式")) }
+    }
+
     @Test fun nistCtrVectorsAcrossEveryUnalignedRange() {
         val prefix=ByteArray(23){0x66}; val source=prefix+encrypted+ByteArray(12){0x77}
         val expected=prefix+plain+ByteArray(12){0x77}
