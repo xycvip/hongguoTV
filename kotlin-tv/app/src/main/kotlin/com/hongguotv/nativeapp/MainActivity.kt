@@ -3057,17 +3057,19 @@ class MainActivity: Activity() {
         }
         playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
         val incompatible=problem is UnplayableVideoException
+        val unsupportedFormat=problem is UnsupportedVideoFormatException
         val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
-        val retryable=!incompatible && !decoding && (if(problem is PlaybackException) problem.errorCode in 2000..2999 || problem.errorCode==PlaybackException.ERROR_CODE_TIMEOUT else problem is java.io.IOException)
+        val retryable=!incompatible && !unsupportedFormat && !decoding && (if(problem is PlaybackException) problem.errorCode in 2000..2999 || problem.errorCode==PlaybackException.ERROR_CODE_TIMEOUT else problem is java.io.IOException)
         playbackText.text=when {
+            unsupportedFormat -> "当前片源格式暂不支持，现有播放链路需要 MP4 资源。"
             incompatible -> "本集片源暂不兼容：平台未提供电视可解码的清晰度，可播放下一集。"
             decoding -> "电视无法解码当前视频，可尝试更低清晰度。"
             else -> "播放失败，可重试或切换清晰度。"
         }
         val actions=row(); controls.addView(actions)
-        if(incompatible) {
+        if(incompatible || unsupportedFormat) {
             val hasNext=episodeIndex<detail?.episodes.orEmpty().lastIndex
-            if(hasNext && extras.autoSkipUnplayable && incompatibleSkips<5) {
+            if(incompatible && hasNext && extras.autoSkipUnplayable && incompatibleSkips<5) {
                 // 整批集数可能都是不可解码片源：最多连跳 5 集，避免无限空转
                 incompatibleSkips++
                 playbackText.text="本集片源暂不兼容，自动跳过 · 已跳过 $incompatibleSkips 集"
