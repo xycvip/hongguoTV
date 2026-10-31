@@ -4255,7 +4255,8 @@ class MainActivity: Activity() {
         view.setEpisode(data.series.title,episodeIndex+1)
         loadOfficialComments(false)
         view.post { if(commentPanel===view) view.focusCommentArea() }
-        showHud()
+        // 评论界面打开时立即隐藏播放进度 HUD 和下方播放选项栏，评论面板自身不受影响。
+        hidePlaybackOverlay()
     }
     private fun closeOfficialComments() {
         val view=commentPanel ?: return
