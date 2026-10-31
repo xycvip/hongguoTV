@@ -10,6 +10,7 @@ permissions:
   contents: read
 jobs:
   android:
+    name: 安卓应用验证构建
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -29,7 +30,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: kotlin-native-verification
+          name: Kotlin 独立版验证结果
           path: |
             kotlin-tv/core/build/reports/tests/test/
             kotlin-tv/app/build/reports/lint-results-debug.*
