@@ -2169,8 +2169,8 @@ class MainActivity: Activity() {
             categoryItems+=mutableListOf<TextView>()
             return panel to grid
         }
-        val playback=section("播放","清晰度、倍速、连播与弹幕设置").second
-        val danmaku=playback
+        val playback=section("播放","清晰度、倍速与连播设置").second
+        val danmaku=section("弹幕","官方弹幕、显示效果与屏蔽词设置").second
         val appearance=section("外观","界面风格与播放画面显示").second
         val data=section("数据","备份记录、统计与缓存管理").second
         val remote=section("遥控器","自定义方向键与确认键操作").second
@@ -2265,40 +2265,15 @@ class MainActivity: Activity() {
             autoSeasonButton.text="系列剧连播  ·  ${if(library.autoSeason) "开启" else "关闭"}"
         }
 
-        fun syncDanmakuRows() {
-            val visibleRows=listOf(danmakuButton)+danmakuPrefRows.filter { library.danmaku }
-            val allRows=listOf(danmakuButton)+danmakuPrefRows
-            // 播放分组还包含启动推荐、清晰度、倍速、画面模式和连播等设置；
-            // 只重建弹幕行时必须先保留这些非弹幕控件，不能将整个分组清空后丢弃。
-            val preservedRows=(0 until danmaku.childCount)
-                .map { danmaku.getChildAt(it) }
-                .filter { it !in allRows }
-            danmaku.removeAllViews()
-            allRows.filter { it !in visibleRows }.forEach { it.visibility=View.GONE }
-            (preservedRows+visibleRows).forEach { item ->
-                item.visibility=View.VISIBLE
-                val params=item.layoutParams as? GridLayout.LayoutParams
-                    ?: GridLayout.LayoutParams(
-                        GridLayout.spec(GridLayout.UNDEFINED),
-                        GridLayout.spec(GridLayout.UNDEFINED,1f)
-                    ).apply {
-                        width=0; height=dp(66)
-                        setMargins(dp(5),dp(5),dp(5),dp(5))
-                    }
-                danmaku.addView(item,params)
-            }
-            rechainSettings()
-        }
-        danmakuButton=setting(playback,0,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
+        danmakuButton=setting(danmaku,1,"官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}") {
             library.danmaku=!library.danmaku
             danmakuButton.text="官方弹幕  ·  ${if(library.danmaku) "开启" else "关闭"}"
-            syncDanmakuRows()
         }
-        danmakuOpacity=setting(playback,0,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
-        danmakuFont=setting(playback,0,"字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
-        danmakuSpeed=setting(playback,0,"移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
-        danmakuRows=setting(playback,0,"展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
-        danmakuReset=setting(playback,0,"恢复弹幕默认") {
+        danmakuOpacity=setting(danmaku,1,"不透明度  ·  ${library.danmakuOpacity}%") { showDanmakuOpacityPicker(danmakuOpacity) }
+        danmakuFont=setting(danmaku,1,"字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}") { showDanmakuFontPicker(danmakuFont) }
+        danmakuSpeed=setting(danmaku,1,"移动速度  ·  ${DanmakuPrefs.speedLabel(library.danmakuSpeed)}") { showDanmakuSpeedPicker(danmakuSpeed) }
+        danmakuRows=setting(danmaku,1,"展示行数  ·  ${library.danmakuRows} 行") { showDanmakuRowsPicker(danmakuRows) }
+        danmakuReset=setting(danmaku,1,"恢复弹幕默认") {
             resetDanmakuPrefs()
             danmakuOpacity.text="不透明度  ·  ${library.danmakuOpacity}%"
             danmakuFont.text="字体大小  ·  ${DanmakuPrefs.fontLabel(library.danmakuFont)}"
@@ -2306,9 +2281,9 @@ class MainActivity: Activity() {
             danmakuRows.text="展示行数  ·  ${library.danmakuRows} 行"
             Toast.makeText(this,"弹幕设置已恢复默认",Toast.LENGTH_SHORT).show()
         }
-        blockedWords=setting(playback,0,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
+        blockedWords=setting(danmaku,1,"屏蔽词  ·  ${extras.blockedWords.size} 个") { showBlockedWordDialog(blockedWords) }
         danmakuPrefRows.addAll(listOf(danmakuOpacity,danmakuFont,danmakuSpeed,danmakuRows,danmakuReset,blockedWords))
-        syncDanmakuRows()
+        rechainSettings()
 
         val remoteActions=listOf(
             PlaybackExtras.REMOTE_PREVIOUS,
@@ -2325,7 +2300,7 @@ class MainActivity: Activity() {
         fun remoteKeySetting(title:String,current:()->String,update:(String)->Unit):TextView {
             lateinit var item:TextView
             fun sync() { item.text="$title  ·  ${remoteActionLabel(current())}" }
-            item=setting(remote,3,"$title  ·  ${remoteActionLabel(current())}") {
+            item=setting(remote,4,"$title  ·  ${remoteActionLabel(current())}") {
                 TvDialog.choose(this,"${title}功能",remoteActionLabels,{ index ->
                     update(remoteActions[index])
                     sync()
@@ -2339,7 +2314,7 @@ class MainActivity: Activity() {
         remoteKeySetting("确认键",{ extras.remoteConfirmAction },{ extras.remoteConfirmAction=it })
         remoteKeySetting("菜单键",{ extras.remoteMenuAction },{ extras.remoteMenuAction=it })
 
-        themeButton=setting(appearance,1,"系统风格  ·  ${TvStyle.theme.label}") {
+        themeButton=setting(appearance,2,"系统风格  ·  ${TvStyle.theme.label}") {
             library.theme=TvStyle.toggle().name
             settingsFocusKey="系统风格"
             showCatalog()
@@ -2349,7 +2324,7 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        fileBackup=setting(data,2,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
+        fileBackup=setting(data,3,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         backup=setting(data,2,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { restored,restoreSettings ->
@@ -2396,7 +2371,7 @@ class MainActivity: Activity() {
             main.post { if(!isDestroyed) clearCache.text=cacheLabel(bytes) }
         }
 
-        resetButton=setting(system,4,"重置软件") { showResetOptions(resetButton) }
+        resetButton=setting(system,5,"重置软件") { showResetOptions(resetButton) }
         aboutButton=setting(system,4,"关于软件") { updater.show(aboutButton,aboutMode=true) }
 
         rechainSettings={
