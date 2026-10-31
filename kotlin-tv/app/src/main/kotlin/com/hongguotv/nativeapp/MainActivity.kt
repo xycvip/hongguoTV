@@ -2204,9 +2204,9 @@ class MainActivity: Activity() {
         }
         val playback=section("播放","清晰度、倍速与连播设置").second
         val danmaku=section("弹幕","官方弹幕、显示效果与屏蔽词设置").second
-        val appearance=section("外观","界面风格与播放画面显示").second
         val data=section("数据","备份记录、统计与缓存管理").second
         val remote=section("遥控器","自定义方向键与确认键操作").second
+        val appearance=section("外观","界面风格与播放画面显示").second
         val system=section("关于","软件信息与恢复设置").second
 
         // 右侧设置项与左侧分类栏共用屏幕缩放系数，保持两侧视觉比例一致。
@@ -2331,7 +2331,7 @@ class MainActivity: Activity() {
         fun remoteKeySetting(title:String,current:()->String,update:(String)->Unit):TextView {
             lateinit var item:TextView
             fun sync() { item.text="$title  ·  ${remoteActionLabel(current())}" }
-            item=setting(remote,4,"$title  ·  ${remoteActionLabel(current())}") {
+            item=setting(remote,3,"$title  ·  ${remoteActionLabel(current())}") {
                 TvDialog.choose(this,"${title}功能",remoteActionLabels,{ index ->
                     update(remoteActions[index])
                     sync()
@@ -2345,17 +2345,17 @@ class MainActivity: Activity() {
         remoteKeySetting("确认键",{ extras.remoteConfirmAction },{ extras.remoteConfirmAction=it })
         remoteKeySetting("菜单键",{ extras.remoteMenuAction },{ extras.remoteMenuAction=it })
 
-        themeButton=setting(appearance,2,"系统风格  ·  ${TvStyle.theme.label}") {
+        themeButton=setting(appearance,4,"系统风格  ·  ${TvStyle.theme.label}") {
             library.theme=TvStyle.toggle().name
             settingsFocusKey="系统风格"
             showCatalog()
         }
-        clockButton=setting(appearance,1,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
+        clockButton=setting(appearance,4,"显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}") {
             library.showClock=!library.showClock
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        fileBackup=setting(data,3,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
+        fileBackup=setting(data,2,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         backup=setting(data,2,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
                 tvTools.libraryTransfer(encoded,backup) { restored,restoreSettings ->
