@@ -1201,7 +1201,7 @@ class MainActivity: Activity() {
                 nextFocusUpId=navForTab().id
             }
             genreButton=addButton(types,genre?.let { "题材 · ${it.name}" } ?: "题材") { showGenrePicker() }.apply { tag="home:genre"; nextFocusUpId=navForTab().id }
-            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=nav[tab].id }
+            addButton(types,"随机") { showRandomPicks() }.apply { nextFocusUpId=navForTab().id }
             // 首页快捷操作放在接口状态区下方的横线之后，避免与检测指示器争用顶栏位置。
             container.addView(types)
             nav.forEach { it.nextFocusDownId=homeRefreshControl?.id ?: nav[tab].id }
@@ -1583,7 +1583,7 @@ class MainActivity: Activity() {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text(if(tab==7) "筛选 · ${theaterGenre?.name}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             genreClear=addButton(bar,if(tab==7) "清除筛选" else "全部题材") {
-                pendingRefreshFocus="focus:home:genre"
+                pendingRefreshFocus=if(tab==7) null else "focus:home:genre"
                 if(tab==7) theaterGenre=null else genre=null; page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
             }.apply {
                 tag="home:genre-clear"
@@ -4562,7 +4562,7 @@ class MainActivity: Activity() {
         if(screen=="player" && commentPanel!=null) { closeOfficialComments(); return }
         when(screen) {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
-            "detail" -> { showCatalog(); if(tab==6) nav.getOrNull(6)?.requestFocus() }
+            "detail" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
             "account" -> { showCatalog(); if(tab==6) nav.getOrNull(6)?.requestFocus() }
             else -> if(tab==6) nav.getOrNull(6)?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
         }
