@@ -1106,7 +1106,12 @@ class MainActivity: Activity() {
             }
             group.options.forEach { option ->
                 addButton(choices,option.label,selected==option.id) {
-                    if(selected!=option.id) { theaterSelections[group.type]=option.id; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+                    if(selected!=option.id) {
+                        if(group.type in setOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status")) {
+                            listOf("category_dim_theme","category_dim_role","category_dim_epoch","creation_status").forEach(theaterSelections::remove)
+                        }
+                        theaterSelections[group.type]=option.id; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
+                    }
                 }
             }
             scroll.addView(choices,ViewGroup.LayoutParams(-2,dp(40)))
@@ -1588,7 +1593,7 @@ class MainActivity: Activity() {
             typeButtons.values.forEach { it.nextFocusDownId=collectionBack!!.id }
         }
         val focusGenre=if(tab==2 && aiCatalog) aiGenre else genre
-        catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:${if(tab==7) theaterSelections.toSortedMap() else ""}:$page:$query"
+        catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:${if(tab==7) theaterFilterKey(theaterContentType)+theaterSelections.toSortedMap() else ""}:$page:$query"
         if((tab==0 && genre!=null) || (tab==7 && theaterSelections.isNotEmpty())) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text(if(tab==7) "筛选 · ${theaterFilterSummary()}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
