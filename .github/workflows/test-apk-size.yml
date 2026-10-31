@@ -1,0 +1,87 @@
+name: 红果TV非正式APK体积验证
+
+on:
+  push:
+    branches:
+      - custom
+    paths:
+      - "kotlin-tv/app/build.gradle.kts"
+      - "kotlin-tv/app/src/main/kotlin/com/hongguotv/nativeapp/OfficialCommentPanel.kt"
+      - ".github/workflows/test-apk-size.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hongguotv-test-apk-size
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 构建非正式测试APK（不发布）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: custom
+
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          packages: platform-tools
+
+      - name: 安装 Android 构建工具
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: 配置签名文件（仅用于测试APK，不执行发布）
+        env:
+          KEYSTORE_B64: ${{ secrets.HONGGUOTV_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.HONGGUOTV_KEY_ALIAS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64"
+          test -n "$KEYSTORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          umask 077
+          KEYSTORE_PATH="$RUNNER_TEMP/test-release.p12"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          keytool -list -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" >/dev/null
+          echo "HONGGUOTV_KEYSTORE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: 构建 Release 变体（不生成版本、不创建 Tag、不上传正式仓库）
+        env:
+          HONGGUOTV_STORE_PASSWORD: ${{ secrets.HONGGUOTV_STORE_PASSWORD }}
+          HONGGUOTV_KEY_ALIAS: ${{ secrets.HONGGUOTV_KEY_ALIAS }}
+          HONGGUOTV_KEY_PASSWORD: ${{ secrets.HONGGUOTV_KEY_PASSWORD }}
+        run: ./kotlin-tv/gradlew -p kotlin-tv :app:assembleRelease --no-daemon --console=plain
+
+      - name: 记录 APK 体积
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="kotlin-tv/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          BYTES="$(stat -c '%s' "$APK")"
+          echo "测试APK大小：$BYTES bytes（$(awk "BEGIN {printf \"%.2f\", $BYTES/1024/1024}") MB）" | tee apk-size.txt
+          sha256sum "$APK" | tee apk-sha256.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: HongguoTV-Emoji2-removed-test
+          if-no-files-found: error
+          path: |
+            kotlin-tv/app/build/outputs/apk/release/app-release.apk
+            apk-size.txt
+            apk-sha256.txt
+
+      - name: 清理临时签名文件
+        if: always()
+        run: rm -f "$RUNNER_TEMP/test-release.p12"
