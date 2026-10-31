@@ -37,6 +37,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
     private var generation = 0
     private var active = false
     private var busy = false
+    private var downloadInProgress = false
     private var available: AppUpdate? = null
     private var ready = false
     private var permissionRequested = false
@@ -88,7 +89,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         dialog?.dismiss()
     }
     fun interrupt() {
-        generation++; task?.cancel(true); task = null; repository.cancel(); busy = false
+        generation++; task?.cancel(true); task = null; repository.cancel(); busy = false; downloadInProgress = false
     }
     fun destroy() {
         pause(); worker.shutdownNow()
@@ -115,7 +116,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         }
         proxyButton?.apply {
             text = "换源下载"
-            isEnabled = !busy
+            // 下载过程中允许主动换源；检查更新过程中仍禁用，避免并发请求。
+            isEnabled = active && idle() && available != null && (!busy || downloadInProgress)
         }
     }
     fun show(from: View?, aboutMode: Boolean = false) {
@@ -233,7 +235,10 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         next.show()
         later.setOnClickListener { next.dismiss() }
         proxy.setOnClickListener {
-            if (aboutMode || busy || !active || !idle()) return@setOnClickListener
+            if (aboutMode || !active || !idle() || available == null) return@setOnClickListener
+            // 下载太慢时允许立即取消当前请求，并从下一条线路重新开始。
+            if (busy && downloadInProgress) interrupt()
+            else if (busy) return@setOnClickListener
             manualMirrorIndex = (manualMirrorIndex + 1) % AppUpdate.MIRRORS.size
             val mirrorName = AppUpdate.MIRROR_NAMES[manualMirrorIndex]
             if (available != null) {
@@ -268,7 +273,7 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
                 main.post { if (active && generation == ticket) { busy = false; done(result); renderActions() } }
             } catch (e: Exception) {
                 main.post { if (active && generation == ticket) {
-                    busy = false; ready = false; retryAfter = System.currentTimeMillis()+30*60*1000L
+                    busy = false; downloadInProgress = false; ready = false; retryAfter = System.currentTimeMillis()+30*60*1000L
                     updateStatus(if (e is IOException) e.message ?: "更新失败，请重试" else "更新校验失败，请重试"); renderActions()
                 } }
             }
@@ -301,6 +306,8 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         val update = available ?: return
         if (busy || !active || !idle()) return
         val mirrorName = mirrorIndex?.let { AppUpdate.MIRROR_NAMES.getOrNull(it) }
+        downloadInProgress = true
+        renderActions()
         updateStatus(if (mirrorName == null) "正在下载 ${update.versionName}…" else "正在通过 $mirrorName 下载 ${update.versionName}…")
         val ticket = generation + 1
         work({
