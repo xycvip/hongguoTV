@@ -115,7 +115,8 @@ class HomeScreen(
             horizontal.addView(line); block.addView(horizontal)
             val rowCards=mutableListOf<Card>()
             fun addCard(entry: Entry?,moreAction: (() -> Unit)?=null) {
-                val width=((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
+                val width=if(shelf.key=="random") (resources.displayMetrics.widthPixels*.92f).toInt().coerceAtLeast(dp(220))
+                    else ((resources.displayMetrics.widthPixels*.9f-dp(70))/6).toInt().coerceAtLeast(dp(100))
                 val key=if(entry!=null) "${shelf.key}:${entry.series.id}" else "${shelf.key}:more"
                 val view=LinearLayout(context).apply { orientation=VERTICAL; id=View.generateViewId(); tag=key; isFocusable=true; isFocusableInTouchMode=true; setPadding(dp(4),dp(4),dp(4),dp(8)); background=shape(false) }
                 val image=if(entry!=null) ImageView(context).apply { scaleType=ImageView.ScaleType.FIT_CENTER; importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO } else null
@@ -136,18 +137,32 @@ class HomeScreen(
                             setStroke(dp(1),accent)
                         }
                     }
-                    moreTile.addView(label("✦",30f,accent).apply {
-                        gravity=Gravity.CENTER
-                        setPadding(0,0,0,dp(8))
-                    })
-                    moreTile.addView(label("探索更多",14f,TvStyle.text).apply {
-                        gravity=Gravity.CENTER
-                        typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
-                    })
-                    moreTile.addView(label("发现精彩剧集  ›",10f,TvStyle.muted).apply {
-                        gravity=Gravity.CENTER
-                        setPadding(0,dp(6),0,0)
-                    })
+                    if(shelf.key=="random") {
+                        moreTile.orientation=HORIZONTAL
+                        moreTile.gravity=Gravity.CENTER
+                        moreTile.addView(label("✦",25f,accent).apply {
+                            gravity=Gravity.CENTER
+                            setPadding(0,0,dp(14),0)
+                        })
+                        moreTile.addView(label("不知道看什么·随便点一下",16f,TvStyle.text).apply {
+                            gravity=Gravity.CENTER
+                            typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                        })
+                        moreTile.addView(label("  ›",20f,accent).apply { gravity=Gravity.CENTER })
+                    } else {
+                        moreTile.addView(label("✦",30f,accent).apply {
+                            gravity=Gravity.CENTER
+                            setPadding(0,0,0,dp(8))
+                        })
+                        moreTile.addView(label("探索更多",14f,TvStyle.text).apply {
+                            gravity=Gravity.CENTER
+                            typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                        })
+                        moreTile.addView(label("发现精彩剧集  ›",10f,TvStyle.muted).apply {
+                            gravity=Gravity.CENTER
+                            setPadding(0,dp(6),0,0)
+                        })
+                    }
                     view.addView(moreTile,LayoutParams(-1,posterHeight))
                 }
                 val title=label(entry?.series?.title ?: "查看全部",14f).apply { minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END; setPadding(dp(3),dp(5),dp(3),0) }
