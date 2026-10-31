@@ -203,8 +203,8 @@ class MainActivity: Activity() {
     private lateinit var mediaSession: TvMediaSession
     private val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
     private val sleepActionMode: Int
-        get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).coerceIn(0, 2)
-    private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("暂停播放", "退出软件", "关闭电视")[mode.coerceIn(0, 2)]
+        get() = getSharedPreferences("playback-settings-v1", MODE_PRIVATE).getInt("sleep_action_mode", 0).let { if(it in 0..1) it else 0 }
+    private fun sleepActionLabel(mode: Int = sleepActionMode) = listOf("暂停播放", "退出软件")[mode.coerceIn(0, 1)]
     private var sleepStopped=false
     private var playerView: PlayerView?=null
     private var danmakuView: DanmakuView?=null
@@ -2331,7 +2331,7 @@ class MainActivity: Activity() {
         }
         lateinit var sleepActionButton: TextView
         sleepActionButton=setting(playback,0,"定时关闭 · ${sleepActionLabel()}") {
-            val next=(sleepActionMode+1)%3
+            val next=(sleepActionMode+1)%2
             getSharedPreferences("playback-settings-v1", MODE_PRIVATE).edit().putInt("sleep_action_mode",next).apply()
             sleepActionButton.text="定时关闭 · ${sleepActionLabel(next)}"
         }
@@ -3578,38 +3578,10 @@ class MainActivity: Activity() {
                 Toast.makeText(this,"定时关闭：正在退出红果TV",Toast.LENGTH_LONG).show()
                 library.flush(); killOnDestroy=true; finish()
             }
-            2 -> requestTvShutdown()
             else -> {
                 playbackText.text="定时关闭已生效 · 已暂停播放 · 观看位置已保存"
                 showHud(); if(!playError && episodePanel==null) showPanel(); syncMediaSession()
                 Toast.makeText(this,"定时关闭已生效，播放已暂停",Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-    /**
-     * Android 普通应用没有直接断电视电源的系统权限。
-     * 先请求系统关机界面；部分电视固件会拒绝第三方应用，此时尝试设备已授权的 su 电源键操作。
-     */
-    private fun requestTvShutdown() {
-        val shutdownIntent=Intent("android.intent.action.ACTION_REQUEST_SHUTDOWN")
-            .putExtra("android.intent.extra.KEY_CONFIRM", false)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
-            startActivity(shutdownIntent)
-            Toast.makeText(this,"已向电视系统发送关机请求",Toast.LENGTH_LONG).show()
-        } catch (_: Exception) {
-            io.execute {
-                val succeeded=runCatching {
-                    val process=Runtime.getRuntime().exec(arrayOf("su","-c","input keyevent 26"))
-                    process.waitFor() == 0
-                }.getOrDefault(false)
-                main.post {
-                    if(!succeeded && !isDestroyed) {
-                        playbackText.text="设备不支持应用直接关机，播放已暂停"
-                        showHud(); if(!playError && episodePanel==null) showPanel(); syncMediaSession()
-                        Toast.makeText(this,"电视系统未授权关机；已暂停播放。若设备支持 Root，可启用后再试",Toast.LENGTH_LONG).show()
-                    }
-                }
             }
         }
     }
