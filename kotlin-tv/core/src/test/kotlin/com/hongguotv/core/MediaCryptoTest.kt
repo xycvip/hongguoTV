@@ -60,8 +60,8 @@ class MediaCryptoTest {
         val data=fixture()
         val marker="tenc".toByteArray()
         val at=data.indices.first { i -> i+4<=data.size && data.copyOfRange(i,i+4).contentEquals(marker) }
-        data[at+12]=0x11
-        data[at+8]=1
+        data[at+8]=0x11
+        data[at+4]=1
         try { MediaCrypto.prepare(data,key); fail("expected unsupported pattern") }
         catch(e: java.io.IOException) { assertTrue(e.message.orEmpty().contains("模式")) }
     }
