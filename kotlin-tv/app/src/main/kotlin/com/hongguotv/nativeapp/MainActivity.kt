@@ -3888,24 +3888,24 @@ class MainActivity: Activity() {
         lateinit var speedButton: TextView
         speedButton=addButton(transport,speedLabel()) { showSpeedPicker(speedButton) }
         lateinit var qualityButton: TextView
-        qualityButton=addButton(transport,"画质 ${library.maxQuality}P") { showQualityPicker(qualityButton,true) }
+        qualityButton=addButton(transport,"画质") { showQualityPicker(qualityButton,true) }
         lateinit var timerButton: TextView
         timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
         val seriesId=detail?.series?.id.orEmpty()
         lateinit var danmakuButton: TextView
         fun refreshDanmakuLabel() {
-            danmakuButton.text="弹幕 ${if(extras.danmakuEnabled(seriesId,library.danmaku)) "开启" else "关闭"}"
+            danmakuButton.text="弹幕"
         }
-        danmakuButton=addButton(transport,"弹幕 ${if(extras.danmakuEnabled(seriesId,library.danmaku)) "开启" else "关闭"}") {
+        danmakuButton=addButton(transport,"弹幕") {
             toggleSeriesDanmaku(seriesId)
             refreshDanmakuLabel()
         }
         val mark=library.skipMark(seriesId)
         fun skipLabel(seconds: Int)=if(seconds>0) "${seconds}秒" else "关闭"
         lateinit var introButton: TextView
-        introButton=addButton(transport,"片头 ${skipLabel(mark?.introSeconds ?: 0)}") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
+        introButton=addButton(transport,"片头") { showSkipPicker(introButton,true) }.apply { tag="player:skip-intro" }
         lateinit var outroButton: TextView
-        outroButton=addButton(transport,"片尾 ${skipLabel(mark?.outroSeconds ?: 0)}") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
+        outroButton=addButton(transport,"片尾") { showSkipPicker(outroButton,false) }.apply { tag="player:skip-outro" }
         play.requestFocus()
     }
     /** Season finale auto-continues into the next season only when both the master autoplay and the season switch are on. */
@@ -3963,7 +3963,7 @@ class MainActivity: Activity() {
             val next=if(intro) old.copy(introSeconds=options[index]) else old.copy(outroSeconds=options[index])
             library.setSkipMark(data.series.id,next)
             if(!intro) { outroSkipSeconds=next.outroSeconds; outroTriggered=false }
-            if(anchor.isAttachedToWindow) anchor.text=(if(intro) "跳过片头 " else "跳过片尾 ")+(if(options[index]>0) "${options[index]}秒" else "关闭")
+            if(anchor.isAttachedToWindow) anchor.text=if(intro) "片头" else "片尾"
             Toast.makeText(this,"已保存，仅对《${data.series.title}》生效",Toast.LENGTH_SHORT).show()
             showHud()
         },"当前 ${if(current>0) "$current 秒" else "关闭"}") {}
@@ -3983,7 +3983,7 @@ class MainActivity: Activity() {
             val target=options[index]
             val changed=library.maxQuality!=target
             library.maxQuality=target
-            if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "画质 " else "默认清晰度  ·  ")+ "${target}P"
+            if(anchor.tag!="playback-settings") anchor.text=if(inPlayer) "画质" else "默认清晰度  ·  ${target}P"
             if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
         })
     }
