@@ -150,10 +150,10 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
         val cursor=synchronized(theaterSessions) { session.cursors[page] } ?: throw IOException("剧场分页游标缺失，请重新加载")
         val values=theaterValues()
         val select=JSONObject().apply {
-            put("genre",JSONArray().apply { theaterGenre(type).takeIf { it.isNotBlank() }?.let(::put) })
-            put("sort",JSONArray().apply { selected["sort"]?.let(::put) ?: put("hot_score") })
+            put("genre",JSONArray().apply { theaterGenre(type).takeIf { it.isNotBlank() }?.let { put(it) } })
+            put("sort",JSONArray().apply { selected["sort"]?.let { put(it) } })
             for(field in listOf("category_dim_theme","category_dim_role","category_dim_epoch","gender","online_time","creation_status")) {
-                put(field,JSONArray().apply { selected[field]?.let(::put) })
+                put(field,JSONArray().apply { selected[field]?.let { put(it) } })
             }
         }
         val body=JSONObject().apply {
@@ -167,10 +167,17 @@ open class ContentRepository(val http: OkHttpClient = OkHttpClient.Builder().con
             put("req_type",if(page==1) "default" else "only_content")
             put("client_req_type",3)
         }.toString().toByteArray(Charsets.UTF_8)
-        val signed=signer.sign("https://api5-normal-sinfonlinea.fqnovel.com/reading/distribution/category/landpage/v/",values,body)
-        val payload=JSONObject(text(signed.url,signed))
-        if(payload.optInt("code",-1)!=0) throw IOException("红果剧场接口暂不可用（code ${payload.optInt("code",-1)}）")
-        val data=payload.optJSONObject("data") ?: throw IOException("红果剧场返回缺少 data")
+        val endpoint="/reading/distribution/category/landpage/v/"
+        var payload:JSONObject?=null
+        var lastError:Throwable?=null
+        for(host in listOf("https://api5-normal-sinfonlineb.fqnovel.com","https://api5-normal-sinfonlinea.fqnovel.com")) {
+            val signed=signer.sign(host+endpoint,values,body)
+            val candidate=runCatching { JSONObject(text(signed.url,signed)) }.getOrElse { lastError=it; null } ?: continue
+            if(candidate.optInt("code",-1)==0) { payload=candidate; break }
+            lastError=IOException("红果剧场接口暂不可用（code ${candidate.optInt("code",-1)}）")
+        }
+        val response=payload ?: throw IOException("红果剧场接口暂不可用",lastError)
+        val data=response.optJSONObject("data") ?: throw IOException("红果剧场返回缺少 data")
         val filters=if(page==1) {
             val rows=data.optJSONArray("selector_rows") ?: throw IOException("红果剧场未返回筛选面板")
             rows.objects().mapNotNull { row ->
