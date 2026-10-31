@@ -2146,10 +2146,13 @@ class MainActivity: Activity() {
         contentHost.addView(sectionsHost,LinearLayout.LayoutParams(0,-2,1f))
 
         fun section(title:String,subtitle:String): Pair<LinearLayout,GridLayout> {
-            val headingTitle=text(title,if(widthDp()<600f) 14f else 17f).apply {
+            val headingTitle=text(title,if(widthDp()<600f) 16f else 19f).apply {
                 typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
+                gravity=Gravity.CENTER
+                textAlignment=View.TEXT_ALIGNMENT_CENTER
+                includeFontPadding=false
                 maxLines=1; ellipsize=TextUtils.TruncateAt.END
-                setPadding(dp(5),dp(3),dp(5),dp(3))
+                setPadding(dp(2),0,dp(2),0)
                 isFocusable=true
                 isFocusableInTouchMode=true
             }
@@ -2166,7 +2169,7 @@ class MainActivity: Activity() {
             val heading=column().apply {
                 gravity=Gravity.CENTER_VERTICAL
                 setPadding(dp(3),dp(9),dp(3),dp(9))
-                addView(headingTitle)
+                addView(headingTitle,lp(-1,dp(54)))
                 addView(text(subtitle,11f,muted).apply {
                     maxLines=2; ellipsize=TextUtils.TruncateAt.END
                     setPadding(dp(5),dp(3),dp(2),0)
