@@ -1495,6 +1495,12 @@ class MainActivity: Activity() {
             theaterFilterHost=host
             container.addView(host,lp(-1,-2))
             renderTheaterFilters(host)
+            // 重建剧场页面时立即恢复筛选焦点，避免网络结果返回前焦点短暂落到顶部「剧场」导航。
+            theaterFocusTag?.let { focusTag ->
+                root.post {
+                    if(screen=="catalog" && tab==7) root.findViewWithTag<View>(focusTag)?.requestFocus()
+                }
+            }
         }
         // 三栏/两栏搜索页的结果区已在 contentRow 内挂载，其余页面走全宽纵向容器
         val body=searchBody ?: column().also { container.addView(it,lp(-1,0).apply { weight=1f }) }
@@ -1539,7 +1545,15 @@ class MainActivity: Activity() {
             }, { result ->
                 if(requestTab==7 && responseTheaterFilters.isNotEmpty()) {
                     theaterFiltersByType[theaterFilterKey(requestTheaterType)]=responseTheaterFilters
-                    theaterFilterHost?.takeIf { it.isAttachedToWindow }?.let(::renderTheaterFilters)
+                    theaterFilterHost?.takeIf { it.isAttachedToWindow }?.let { host ->
+                        renderTheaterFilters(host)
+                        // 官方筛选条件异步刷新会重建标签，同样保持当前焦点，不让焦点跳回导航栏。
+                        theaterFocusTag?.let { focusTag ->
+                            root.post {
+                                if(screen=="catalog" && tab==7) root.findViewWithTag<View>(focusTag)?.requestFocus()
+                            }
+                        }
+                    }
                 }
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
                     library.cacheHome(requestType,result.items,result.hasMore)
@@ -1550,13 +1564,6 @@ class MainActivity: Activity() {
                     val keepNav=nav.any { it.hasFocus() }; val keepType=typeButtons.values.any { it.hasFocus() }
                     if(requestTab==2) rankSubtitle?.text=if(requestAi) "来源：红果AI剧分类" else ranking?.updatedText?.ifBlank { "来源：红果${rankBoard.label}热播榜" } ?: "来源：红果${rankBoard.label}热播榜"
                     body.removeAllViews(); catalogGrid(body,keepNav || focusNav,keepType || focusType)
-                    if(requestTab==7) {
-                        theaterFocusTag?.let { focusTag ->
-                            root.post {
-                                if(screen=="catalog" && tab==7) root.findViewWithTag<View>(focusTag)?.requestFocus()
-                            }
-                        }
-                    }
                     pendingRefreshFocus?.let { restore ->
                         pendingRefreshFocus=null
                         root.post {
