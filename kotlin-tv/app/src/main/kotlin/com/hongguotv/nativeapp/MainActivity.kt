@@ -185,6 +185,8 @@ class MainActivity: Activity() {
     private var homeContentLogged=false
     private var pendingCloudProgress: CloudProgress? = null
     private var accountContentHost: FrameLayout? = null
+    /** Ignore delayed focus restores from an older account-page render. */
+    private var accountRenderRevision = 0
     private var renderedAccountAvatarRevision = -1L
     private var accountQrAutoStarted = false
     private var accountApiCheckStarted = false
@@ -4270,6 +4272,7 @@ class MainActivity: Activity() {
     /** Account page: compact centered QR sign-in; full-width account dashboard after login. */
     private fun renderAccountContent(host: FrameLayout) {
         if (!::cloudAccount.isInitialized || tab != 6 || screen != "catalog") return
+        val renderTicket = ++accountRenderRevision
         val previousFocus = host.findFocus()?.tag?.toString()
         val previousScrollY = (host.getChildAt(0) as? ScrollView)?.scrollY ?: 0
         // Replacing the account section removes the currently focused tab/card. Keep focus
@@ -4671,11 +4674,17 @@ class MainActivity: Activity() {
         scroll.addView(page, ViewGroup.LayoutParams(-1, -2))
         host.addView(scroll, FrameLayout.LayoutParams(-1, -1))
         // 页面因云端刷新而重绘时，恢复原按钮/卡片焦点与滚动位置，避免焦点掉回顶部导航。
-        val restoreTag = previousFocus?.takeIf { it.startsWith("account:") }
-            ?: "account:tab:$accountSection"
+        // 切换账户子栏目时，焦点应落在新选中的栏目，而不是重建前的旧栏目。
+        // 云端数据连续回调可能触发多次重绘，只允许最后一次渲染恢复焦点。
+        val restoreTag = when {
+            previousFocus?.startsWith("account:tab:") == true -> "account:tab:$accountSection"
+            previousFocus?.startsWith("account:") == true -> previousFocus
+            else -> "account:tab:$accountSection"
+        }
         host.post {
-            if (tab != 6 || screen != "catalog" || host.parent == null) return@post
+            if (renderTicket != accountRenderRevision || tab != 6 || screen != "catalog" || host.parent == null) return@post
             scroll.post {
+                if (renderTicket != accountRenderRevision || tab != 6 || screen != "catalog" || host.parent == null) return@post
                 scroll.scrollTo(0, previousScrollY.coerceAtMost((page.height - scroll.height).coerceAtLeast(0)))
                 val target = host.findViewWithTag<View>(restoreTag)
                     ?: host.findViewWithTag<View>("account:tab:$accountSection")
@@ -4693,7 +4702,7 @@ class MainActivity: Activity() {
             "player" -> if(player?.playbackState==Player.STATE_ENDED) returnToDetail() else if(hud.visibility==View.VISIBLE && !playError) hidePlaybackOverlay() else returnToDetail()
             "detail" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
             "account" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
-            else -> if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else nav.getOrNull(tab)?.requestFocus()
+            else -> if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else navForTab().requestFocus()
         }
     }
     /** 手机触屏：轻触唤起播放信息与进度条，左右滑动按比例快退/快进。 */
