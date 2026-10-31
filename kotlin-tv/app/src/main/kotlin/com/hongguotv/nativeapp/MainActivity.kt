@@ -1097,6 +1097,15 @@ class MainActivity: Activity() {
                 }
             }
         }
+        if(theaterSelections.isNotEmpty()) {
+            addButton(types,"清除筛选").apply {
+                tag="theater-filter:clear"
+                setOnClickListener {
+                    theaterFocusTag=tag.toString()
+                    theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
+                }
+            }
+        }
         host.addView(types)
         val groups=theaterFiltersByType[theaterFilterKey(theaterContentType)].orEmpty().filterNot { it.type=="genre" }
         if(groups.isEmpty()) host.addView(text("正在读取红果官方筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
@@ -1649,7 +1658,7 @@ class MainActivity: Activity() {
         }
         val focusGenre=if(tab==2 && aiCatalog) aiGenre else genre
         catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:${if(tab==7) theaterFilterKey(theaterContentType)+theaterSelections.toSortedMap() else ""}:$page:$query"
-        if((tab==0 && genre!=null) || (tab==7 && theaterSelections.isNotEmpty())) {
+        if(tab==0 && genre!=null) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
             bar.addView(text(if(tab==7) "筛选 · ${theaterFilterSummary()}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             genreClear=addButton(bar,if(tab==7) "清除筛选" else "全部题材") {
