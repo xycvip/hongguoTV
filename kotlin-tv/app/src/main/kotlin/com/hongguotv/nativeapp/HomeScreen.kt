@@ -144,7 +144,7 @@ class HomeScreen(
                             gravity=Gravity.CENTER
                             setPadding(0,0,dp(14),0)
                         })
-                        moreTile.addView(label("不知道看什么·随便点一下",16f,TvStyle.text).apply {
+                        moreTile.addView(label("不知道看什么·点一下",16f,TvStyle.text).apply {
                             gravity=Gravity.CENTER
                             typeface=Typeface.create("sans-serif-medium",Typeface.NORMAL)
                         })
