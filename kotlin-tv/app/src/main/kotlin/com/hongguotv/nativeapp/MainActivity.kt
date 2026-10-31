@@ -38,6 +38,7 @@ import androidx.media3.ui.PlayerView
 import com.hongguotv.core.*
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicLong
 
 private const val TYPE_CARD=0
 private const val TYPE_FOOTER=1
@@ -90,6 +91,14 @@ class MainActivity: Activity() {
     private var libraryLoadError: Throwable?=null
     private var clockView: TextView?=null
     private var clockTick: Runnable?=null
+    private var videoInfoView: TextView?=null
+    private var networkSpeedView: TextView?=null
+    private var activeVideoFormat: Format?=null
+    private var activeDecoderName=""
+    private val playbackBytes=AtomicLong(0L)
+    private var lastSpeedBytes=0L
+    private var lastSpeedAt=0L
+    private var currentSpeedBytesPerSecond=0L
     private var workScope: RequestScope?=null
     private var workJob: java.util.concurrent.Future<*>?=null
     private var playerListener: Player.Listener?=null
@@ -294,6 +303,7 @@ class MainActivity: Activity() {
         override fun run() {
             if(!foreground || isDestroyed) return
             if(screen=="player") {
+                updateNetworkSpeed()
                 if(sleepTimer.poll()) stopForSleep()
                 if(hud.visibility==View.VISIBLE) updatePlaybackText()
                 danmakuLoader?.let { loader -> if(player?.isPlaying==true) { val position=currentPosition(); io.execute { runCatching { loader.loadUpTo(position) } } } }
@@ -827,37 +837,132 @@ class MainActivity: Activity() {
         }
         return container
     }
-    /** Re-adds the optional top-right clock after every root rebuild; ticks on minute boundaries. */
+    /** Re-adds the optional overlays after every root rebuild. The clock and network speed are independent. */
     private fun applyClock() {
         clockTick?.let(main::removeCallbacks); clockTick=null
         clockView?.let { root.removeView(it) }; clockView=null
-        if(!library.isLoaded || !library.showClock) return
-        // 时钟作为轻量辅助信息显示，避免抢占页面标题和导航的视觉焦点。
-        val screenWidth=widthDp()
-        val screenHeight=heightDp()
-        val mobile=screenWidth < 600f
-        val clockSize=if(mobile) 12f else 15f
-        val horizontalPadding=if(mobile) 4 else 7
-        val verticalPadding=if(mobile) 2 else 3
-        val view=text("",clockSize,muted).apply {
+        if(library.isLoaded && library.showClock) {
+            val screenWidth=widthDp()
+            val screenHeight=heightDp()
+            val mobile=screenWidth < 600f
+            val clockSize=if(mobile) 12f else 15f
+            val horizontalPadding=if(mobile) 4 else 7
+            val verticalPadding=if(mobile) 2 else 3
+            val view=text("",clockSize,muted).apply {
+                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                isFocusable=false; isClickable=false
+                alpha=0.88f
+                setPadding(dp(horizontalPadding),dp(verticalPadding),dp(horizontalPadding),dp(verticalPadding))
+            }
+            val topMargin=if(mobile) 8 else (screenHeight*0.025f).toInt().coerceIn(12,26)
+            val rightMargin=if(mobile) 14 else (screenWidth*0.03f).toInt().coerceIn(18,36)
+            root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=dp(topMargin); this.rightMargin=dp(rightMargin) })
+            clockView=view
+            val tick=object: Runnable {
+                override fun run() {
+                    clockView?.text=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault()).format(java.util.Date())
+                    main.postDelayed(this,60_000L-(System.currentTimeMillis()%60_000L)+100L)
+                }
+            }
+            clockTick=tick
+            tick.run()
+        }
+        applyVideoInfoOverlay()
+        applyNetworkSpeedOverlay()
+    }
+
+    private fun selectedVideoFormat(): Format? {
+        val p=player ?: return activeVideoFormat
+        val group=p.currentTracks.groups.firstOrNull { it.type==C.TRACK_TYPE_VIDEO && it.isSelected } ?: return activeVideoFormat
+        val selected=(0 until group.length).firstOrNull { group.isTrackSelected(it) } ?: return activeVideoFormat
+        return group.mediaTrackGroup.getFormat(selected)
+    }
+
+    private fun videoCodecLabel(format: Format?): String {
+        val mime=format?.sampleMimeType.orEmpty()
+        val label=when(mime) {
+            "video/avc" -> "H.264"
+            "video/hevc" -> "H.265/HEVC"
+            "video/av01" -> "AV1"
+            "video/x-vnd.on2.vp9" -> "VP9"
+            "video/mp4v-es" -> "MPEG-4"
+            "video/3gpp" -> "H.263"
+            else -> mime.removePrefix("video/").ifBlank { "编码未知" }
+        }
+        val codec=format?.codecs?.takeIf { it.isNotBlank() }
+        return if(codec!=null && !codec.equals(label,true)) "$label ($codec)" else label
+    }
+
+    private fun videoInfoText(): String {
+        val p=player
+        val format=selectedVideoFormat()
+        val size=p?.videoSize
+        val width=size?.width?.takeIf { it>0 } ?: format?.width?.takeIf { it>0 } ?: 0
+        val height=size?.height?.takeIf { it>0 } ?: format?.height?.takeIf { it>0 } ?: 0
+        val resolution=if(width>0 && height>0) "${width}×${height}" else "分辨率获取中"
+        val fps=format?.frameRate?.takeIf { it.isFinite() && it>0f }?.let { "${it.toInt()}FPS" } ?: "帧率—"
+        if(library.videoInfoMode==1) return "$resolution · $fps"
+        val codec=videoCodecLabel(format)
+        val decoder=activeDecoderName.ifBlank { "解码器获取中" }
+        return "$resolution · $fps · $codec · $decoder"
+    }
+
+    private fun applyVideoInfoOverlay() {
+        videoInfoView?.let { root.removeView(it) }; videoInfoView=null
+        if(!library.isLoaded || screen!="player" || library.videoInfoMode==0) return
+        val mobile=widthDp()<600f
+        val view=text(videoInfoText(),if(mobile) 10f else 12f,Color.WHITE).apply {
+            background=rounded(Color.argb(150,0,0,0))
+            setPadding(dp(if(mobile) 7 else 10),dp(if(mobile) 4 else 6),dp(if(mobile) 7 else 10),dp(if(mobile) 4 else 6))
+            maxLines=2
+            maxWidth=(resources.displayMetrics.widthPixels*0.68f).toInt()
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             isFocusable=false; isClickable=false
-            alpha=0.88f
-            setPadding(dp(horizontalPadding),dp(verticalPadding),dp(horizontalPadding),dp(verticalPadding))
         }
-        // 手机端靠近右上方但留足安全边距；电视端略微下移，避开系统状态区。
-        val topMargin=if(mobile) 8 else (screenHeight*0.025f).toInt().coerceIn(12,26)
-        val rightMargin=if(mobile) 14 else (screenWidth*0.03f).toInt().coerceIn(18,36)
-        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply { this.topMargin=dp(topMargin); this.rightMargin=dp(rightMargin) })
-        clockView=view
-        val tick=object: Runnable {
-            override fun run() {
-                clockView?.text=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault()).format(java.util.Date())
-                main.postDelayed(this,60_000L-(System.currentTimeMillis()%60_000L)+100L)
-            }
+        val margin=if(mobile) 10 else 20
+        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply {
+            topMargin=dp(if(mobile) 10 else 20); leftMargin=dp(margin)
+        })
+        videoInfoView=view
+    }
+
+    private fun refreshVideoInfoOverlay() {
+        activeVideoFormat=selectedVideoFormat()
+        videoInfoView?.text=videoInfoText()
+    }
+
+    private fun applyNetworkSpeedOverlay() {
+        networkSpeedView?.let { root.removeView(it) }; networkSpeedView=null
+        if(!library.isLoaded || screen!="player" || !library.showNetworkSpeed) return
+        val mobile=widthDp()<600f
+        val view=text("↓ ${formatSpeed(currentSpeedBytesPerSecond)}",if(mobile) 11f else 13f,Color.WHITE).apply {
+            background=rounded(Color.argb(150,0,0,0))
+            setPadding(dp(if(mobile) 8 else 10),dp(if(mobile) 4 else 6),dp(if(mobile) 8 else 10),dp(if(mobile) 4 else 6))
+            importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            isFocusable=false; isClickable=false
         }
-        clockTick=tick
-        tick.run()
+        val margin=if(mobile) 12 else 22
+        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.END).apply {
+            bottomMargin=dp(if(mobile) 20 else 30); rightMargin=dp(margin)
+        })
+        networkSpeedView=view
+    }
+
+    private fun formatSpeed(bytesPerSecond: Long): String = when {
+        bytesPerSecond>=1024L*1024L -> String.format(Locale.getDefault(),"%.1f MB/s",bytesPerSecond/(1024f*1024f))
+        bytesPerSecond>=1024L -> String.format(Locale.getDefault(),"%.1f KB/s",bytesPerSecond/1024f)
+        else -> "$bytesPerSecond B/s"
+    }
+
+    private fun updateNetworkSpeed() {
+        if(!library.isLoaded || !library.showNetworkSpeed) return
+        val now=android.os.SystemClock.elapsedRealtime()
+        val total=playbackBytes.get()
+        if(lastSpeedAt==0L) { lastSpeedAt=now; lastSpeedBytes=total; return }
+        val elapsed=(now-lastSpeedAt).coerceAtLeast(1L)
+        currentSpeedBytesPerSecond=((total-lastSpeedBytes).coerceAtLeast(0L)*1000L/elapsed)
+        lastSpeedAt=now; lastSpeedBytes=total
+        networkSpeedView?.text="↓ ${formatSpeed(currentSpeedBytesPerSecond)}"
     }
     private fun loadCover(view: ImageView,url: String) {
         var ancestor: View?=view
@@ -2096,6 +2201,23 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
+        lateinit var videoInfoButton: TextView
+        fun videoInfoModeLabel()=listOf("关","简洁","完整")[library.videoInfoMode]
+        videoInfoButton=setting(appearance,3,"视频信息显示  ·  ${videoInfoModeLabel()}") {
+            TvDialog.choose(this,"视频信息显示",listOf("关","简洁","完整"),{ index ->
+                library.videoInfoMode=index
+                videoInfoButton.text="视频信息显示  ·  ${videoInfoModeLabel()}"
+                applyVideoInfoOverlay()
+                videoInfoButton.requestFocus()
+            }).show()
+        }
+        lateinit var networkSpeedButton: TextView
+        networkSpeedButton=setting(appearance,3,"显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}") {
+            library.showNetworkSpeed=!library.showNetworkSpeed
+            networkSpeedButton.text="显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}"
+            applyNetworkSpeedOverlay()
+            networkSpeedButton.requestFocus()
+        }
 
         fileBackup=setting(data,4,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         backup=setting(data,4,"手机备份与恢复") {
@@ -2845,6 +2967,8 @@ class MainActivity: Activity() {
         outroSkipSeconds=skipMark?.outroSeconds ?: 0; outroTriggered=false; ffActive=false
         if(autoplay) sleepStopped=false
         screen="player"; episodeIndex=selectedIndex; group=episodeIndex/20
+        playbackBytes.set(0L); lastSpeedBytes=0L; lastSpeedAt=android.os.SystemClock.elapsedRealtime(); currentSpeedBytesPerSecond=0L
+        activeVideoFormat=null; activeDecoderName=""
         if(commentPanel!=null) { commentReplyCursors.clear(); commentPanel?.setEpisode(data.series.title,episodeIndex+1); loadOfficialComments(false) }
         if(isStartupPreview) {
             startupPreviewEpisodeId=data.episodes[selectedIndex]
@@ -2923,6 +3047,10 @@ class MainActivity: Activity() {
                                 else -> "platform decoder (hardware status depends on device implementation)"
                             }
                             android.util.Log.i("HongguoTV","Video decoder initialized: $decoderName kind=$kind init=${initializationDurationMs}ms")
+                            if(player===it) {
+                                activeDecoderName=decoderName
+                                main.post { if(player===it) refreshVideoInfoOverlay() }
+                            }
                         }
                     })
                 }
@@ -2968,17 +3096,23 @@ class MainActivity: Activity() {
                     }
                 }
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
-                    if(active()) android.util.Log.i(
-                        "HongguoTV",
-                        "Video size ${videoSize.width}x${videoSize.height} pixelRatio=${videoSize.pixelWidthHeightRatio} rotation=${videoSize.unappliedRotationDegrees}"
-                    )
+                    if(active()) {
+                        android.util.Log.i(
+                            "HongguoTV",
+                            "Video size ${videoSize.width}x${videoSize.height} pixelRatio=${videoSize.pixelWidthHeightRatio} rotation=${videoSize.unappliedRotationDegrees}"
+                        )
+                        refreshVideoInfoOverlay()
+                    }
+                }
+                override fun onTracksChanged(tracks: Tracks) {
+                    if(active()) refreshVideoInfoOverlay()
                 }
                 override fun onPlaybackParametersChanged(parameters: PlaybackParameters) { if(active()) syncMediaSession() }
                 override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) { if(active()) { syncMediaSession(); danmakuView?.seekTo(newPosition.positionMs) } }
                 override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
             }
             playerListener=listener; p.addListener(listener)
-            val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(
+            val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) { count -> playbackBytes.addAndGet(count.toLong()) } }.createMediaSource(
                 MediaItem.Builder()
                     .setMediaId(requestedId)
                     .setUri("hongguotv://episode/$requestedId")
@@ -3939,6 +4073,9 @@ class MainActivity: Activity() {
         speedDialog?.dismiss(); speedDialog=null
         main.removeCallbacks(hideHud); main.removeCallbacks(seekRunnable); pendingSeek=null
         playerListener?.let { player?.removeListener(it) }; playerListener=null
+        videoInfoView?.let { root.removeView(it) }; videoInfoView=null
+        networkSpeedView?.let { root.removeView(it) }; networkSpeedView=null
+        activeVideoFormat=null; activeDecoderName=""
         video?.close(); video=null; playerView?.player=null; playerView=null; player?.release(); player=null; playbackReady=false; transportPlay=null; sleepButton=null
         stopDanmaku(); danmakuView=null
         closeTransport(playbackHttp); playbackHttp=null
