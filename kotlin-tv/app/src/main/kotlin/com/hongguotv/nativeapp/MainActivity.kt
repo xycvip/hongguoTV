@@ -228,9 +228,14 @@ class MainActivity: Activity() {
     private var genreButton: View?=null
     private var genreClear: View?=null
     private var theaterFilterHost: LinearLayout?=null
-    private val theaterFiltersByType=mutableMapOf<ContentType,List<TheaterFilterGroup>>()
-    private var theaterGenre: Genre?=null
+    private val theaterFiltersByType=mutableMapOf<String,List<TheaterFilterGroup>>()
+    private var theaterContentType: ContentType?=null
+    private val theaterSelections=mutableMapOf<String,String>()
     private var theaterExpanded=true
+    private fun theaterFilterKey(type:ContentType?)=type?.name ?: "ALL"
+    private fun theaterFilterSummary()=theaterSelections.entries.joinToString(" · ") { (key,value) ->
+        theaterFiltersByType[theaterFilterKey(theaterContentType)].orEmpty().firstOrNull { it.type==key }?.options?.firstOrNull { it.id==value }?.label ?: value
+    }
     private val tabState=mutableMapOf<Int,CatalogState>()
     private val tabFocus=mutableMapOf<Int,String>()
     private val nav=mutableListOf<View>()
@@ -1079,26 +1084,39 @@ class MainActivity: Activity() {
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
         val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
+        addButton(types,"全部",theaterContentType==null) {
+            if(theaterContentType!=null) { theaterContentType=null; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+        }
         listOf(ContentType.SHORT,ContentType.COMIC,ContentType.AI).forEach { type ->
-            addButton(types,type.label,library.contentType==type) {
-                if(library.contentType!=type) { library.contentType=type; theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); tabFocus.remove(7); showCatalog(load=true) }
+            addButton(types,type.label,theaterContentType==type) {
+                if(theaterContentType!=type) { theaterContentType=type; theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
             }
         }
         host.addView(types)
-        val groups=theaterFiltersByType[library.contentType].orEmpty()
-        if(groups.isEmpty()) host.addView(text("正在读取剧场筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
+        val groups=theaterFiltersByType[theaterFilterKey(theaterContentType)].orEmpty()
+        if(groups.isEmpty()) host.addView(text("正在读取红果官方筛选条件…",13f,muted).apply { setPadding(0,dp(5),0,dp(10)) })
         else if(theaterExpanded) groups.forEach { group ->
             val line=row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,dp(2),0,dp(2)) }
             val scroll=HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled=false; clipToPadding=false }
             val choices=row().apply { gravity=Gravity.CENTER_VERTICAL }
+            val selected=theaterSelections[group.type]
             val allLabel=if(group.label.startsWith("全部")) group.label else "全部${group.label}"
-            addButton(choices,allLabel,theaterGenre==null) { theaterGenre=null; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
-            group.options.forEach { option -> addButton(choices,option.name,theaterGenre?.slug==option.slug) { theaterGenre=option; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) } }
+            addButton(choices,allLabel,selected.isNullOrBlank()) {
+                if(theaterSelections.remove(group.type)!=null) { page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+            }
+            group.options.forEach { option ->
+                addButton(choices,option.label,selected==option.id) {
+                    if(selected!=option.id) { theaterSelections[group.type]=option.id; page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true) }
+                }
+            }
             scroll.addView(choices,ViewGroup.LayoutParams(-2,dp(40)))
             line.addView(scroll,lp(0,dp(40)).apply { weight=1f })
             host.addView(line)
         }
         val control=row().apply { gravity=Gravity.CENTER; setPadding(0,dp(4),0,dp(8)) }
+        if(theaterSelections.isNotEmpty()) addButton(control,"清空筛选") {
+            theaterSelections.clear(); page=1; catalogFocus=""; tabState.remove(7); showCatalog(load=true)
+        }
         addButton(control,if(theaterExpanded) "收起⌃" else "展开⌄") { theaterExpanded=!theaterExpanded; theaterFilterHost?.let(::renderTheaterFilters) }
         host.addView(control)
     }
@@ -1435,19 +1453,6 @@ class MainActivity: Activity() {
             theaterFilterHost=host
             container.addView(host,lp(-1,-2))
             renderTheaterFilters(host)
-            if(theaterFiltersByType[library.contentType].isNullOrEmpty()) {
-                val filterType=library.contentType
-                io.execute {
-                    val result=runCatching { repository.theaterFilters(filterType) }
-                    main.post {
-                        if(!isDestroyed && screen=="catalog" && tab==7 && library.contentType==filterType) {
-                            result.onSuccess { theaterFiltersByType[filterType]=it }
-                                .onFailure { host.removeAllViews(); message(host,"剧场筛选条件暂时无法加载，请稍后重试") }
-                            if(host.isAttachedToWindow) renderTheaterFilters(host)
-                        }
-                    }
-                }
-            }
         }
         // 三栏/两栏搜索页的结果区已在 contentRow 内挂载，其余页面走全宽纵向容器
         val body=searchBody ?: column().also { container.addView(it,lp(-1,0).apply { weight=1f }) }
@@ -1480,17 +1485,22 @@ class MainActivity: Activity() {
             }
             val requestTab=tab; val requestPage=page; val requestQuery=query; val requestType=library.contentType
             val requestAggregate=requestTab==1 && aggregateSearch
-            val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else if(requestTab==7) theaterGenre else null
+            val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
+            val requestTheaterType=theaterContentType; val requestTheaterSelection=theaterSelections.toMap()
             val requestAi=if(requestTab==2) aiCatalog else false; val requestAiGenre=if(requestAi) aiGenre else null
+            var responseTheaterFilters:List<TheaterFilterGroup> = emptyList()
             work({
-                val result=when(requestTab) {
+                when(requestTab) {
                     0 -> repository.home(requestPage,requestType,requestGenre)
-                    7 -> repository.home(requestPage,requestType,requestGenre)
+                    7 -> repository.theater(requestPage,requestTheaterType,requestTheaterSelection).let { responseTheaterFilters=it.filters; it.catalog }
                     2 -> if(requestAi) repository.home(requestPage,ContentType.AI,requestAiGenre) else repository.ranking(requestBoard,requestPage)
                     else -> if(requestAggregate) repository.searchCombined(requestQuery,requestPage) else repository.search(requestQuery,requestPage,requestType)
                 }
-                result
             }, { result ->
+                if(requestTab==7 && responseTheaterFilters.isNotEmpty()) {
+                    theaterFiltersByType[theaterFilterKey(requestTheaterType)]=responseTheaterFilters
+                    theaterFilterHost?.takeIf { it.isAttachedToWindow }?.let(::renderTheaterFilters)
+                }
                 if(requestTab==0 && requestPage==1 && requestGenre==null) {
                     library.cacheHome(requestType,result.items,result.hasMore)
                 }
@@ -1577,14 +1587,14 @@ class MainActivity: Activity() {
             body.addView(heading)
             typeButtons.values.forEach { it.nextFocusDownId=collectionBack!!.id }
         }
-        val focusGenre=if(tab==7) theaterGenre else if(tab==2 && aiCatalog) aiGenre else genre
-        catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:$page:$query"
-        if((tab==0 && genre!=null) || (tab==7 && theaterGenre!=null)) {
+        val focusGenre=if(tab==2 && aiCatalog) aiGenre else genre
+        catalogPageKey="$tab:${if(aiCatalog) "ai" else ""}:${collection.orEmpty()}:${focusGenre?.slug.orEmpty()}:${if(tab==7) theaterSelections.toSortedMap() else ""}:$page:$query"
+        if((tab==0 && genre!=null) || (tab==7 && theaterSelections.isNotEmpty())) {
             val bar=row().apply { setPadding(0,0,0,dp(6)) }
-            bar.addView(text(if(tab==7) "筛选 · ${theaterGenre?.name}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
+            bar.addView(text(if(tab==7) "筛选 · ${theaterFilterSummary()}" else "题材 · ${genre?.name}",16f).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
             genreClear=addButton(bar,if(tab==7) "清除筛选" else "全部题材") {
                 pendingRefreshFocus=if(tab==7) null else "focus:home:genre"
-                if(tab==7) theaterGenre=null else genre=null; page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
+                if(tab==7) theaterSelections.clear() else genre=null; page=1; catalogFocus=""; tabState.remove(tab); tabFocus.remove(tab); showCatalog(true)
             }.apply {
                 tag="home:genre-clear"
                 nextFocusUpId=genreButton?.id ?: typeButtons[library.contentType]?.id ?: navForTab().id
@@ -1685,13 +1695,14 @@ class MainActivity: Activity() {
         if(randomDialog?.isShowing==true || loadingMore || !hasMore || localCatalog() || screen!="catalog") return
         if(page>=waterfallMaxPages || catalog.size>=waterfallMaxPages*20) { hasMore=false; adapter.updateFooter(FOOTER_END); return }
         val requestTab=tab; val requestPage=page+1; val requestQuery=query; val requestType=library.contentType
-        val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else if(requestTab==7) theaterGenre else null
+        val requestBoard=rankBoard; val requestGenre=if(requestTab==0) genre else null
+        val requestTheaterType=theaterContentType; val requestTheaterSelection=theaterSelections.toMap()
         val requestAi=if(requestTab==2) aiCatalog else false; val requestAiGenre=if(requestAi) aiGenre else null
         loadingMore=true; adapter.updateFooter(FOOTER_LOADING)
         work({
             when(requestTab) {
                 0 -> repository.home(requestPage,requestType,requestGenre)
-                7 -> repository.home(requestPage,requestType,requestGenre)
+                7 -> repository.theater(requestPage,requestTheaterType,requestTheaterSelection).catalog
                 2 -> if(requestAi) repository.home(requestPage,ContentType.AI,requestAiGenre) else repository.ranking(requestBoard,requestPage)
                 else -> repository.search(requestQuery,requestPage,requestType)
             }
