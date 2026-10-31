@@ -2102,7 +2102,8 @@ class MainActivity: Activity() {
                     setPadding(dp(5),dp(3),dp(2),0)
                 })
             }
-            categoryCard.addView(heading,lp(-1,-2))
+            val headingParams=lp(-1,-2).apply { bottomMargin=dp(8) }
+            categoryCard.addView(heading,headingParams)
             val panel=column().apply {
                 setPadding(dp(8),dp(7),dp(8),dp(7))
                 background=rounded(surface)
@@ -2110,6 +2111,21 @@ class MainActivity: Activity() {
             val grid=GridLayout(this).apply { columnCount=columns; useDefaultMargins=false }
             panel.addView(grid,lp(-1,-2))
             sectionsHost.addView(panel,lp(-1,-2).apply { bottomMargin=dp(8) })
+            // Keep each left category label vertically centered against its matching
+            // right-hand settings panel, including after width or content changes.
+            panel.addOnLayoutChangeListener { _,_,top,_,bottom,_,oldTop,_,oldBottom ->
+                val panelHeight=bottom-top
+                if(panelHeight>0 && panelHeight!=oldBottom-oldTop &&
+                    heading.layoutParams.height!=panelHeight) {
+                    heading.layoutParams=heading.layoutParams.apply { height=panelHeight }
+                }
+            }
+            panel.post {
+                val panelHeight=panel.height
+                if(panelHeight>0 && heading.layoutParams.height!=panelHeight) {
+                    heading.layoutParams=heading.layoutParams.apply { height=panelHeight }
+                }
+            }
             categoryItems+=mutableListOf<TextView>()
             return panel to grid
         }
