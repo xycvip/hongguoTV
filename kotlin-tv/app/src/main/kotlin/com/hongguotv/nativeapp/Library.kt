@@ -244,6 +244,20 @@ class Library(context: Context) {
         val current = snapshot()
         val restored = incoming.copy(settings = if (restoreSettings) incoming.settings else current.settings)
         index = LibraryIndex(restored, emptyMap())
+        if (restoreSettings) {
+            // A-D 设置中有一部分保存在独立 SharedPreferences，必须与 Library 设置一起恢复。
+            prefs.edit()
+                .putString("theme", restored.settings.theme)
+                .putInt("videoInfoMode", restored.settings.videoInfoMode.coerceIn(0, 2))
+                .putBoolean("showNetworkSpeed", restored.settings.showNetworkSpeed)
+                .apply()
+            app.getSharedPreferences("startup_playback", Context.MODE_PRIVATE).edit()
+                .putBoolean("autoplay_recommendation", restored.settings.startupAutoplay)
+                .apply()
+            app.getSharedPreferences("playback-settings-v1", Context.MODE_PRIVATE).edit()
+                .putInt("sleep_action_mode", restored.settings.sleepActionMode.coerceIn(0, 1))
+                .apply()
+        }
         persist("favorites", "later", "progress", "watched", "hidden", "searches", "favoriteUpdates", "favoriteGroups")
         // 同样按备份内容恢复三方数据，空列表也代表清空对应本机记录。
         runCatching { thirdSourcesRestore?.invoke(incoming.thirdSources) }
