@@ -25,21 +25,28 @@ class RemoteVideo(
     private lateinit var prepared: MediaCrypto.Prepared
     private val lock=Object()
     private val cache=HashMap<Long,ByteArray>()
-    private var fetchingRead=-1L
+    private val fetchingReads=mutableSetOf<Long>()
     private var fetchingAhead=-1L
     private var lastRead=0L
+    private val activeReadPositions=mutableMapOf<Long,Int>()
     private var aheadThread: Thread?=null
     private var hitChunks=0
     private var missChunks=0
     private var readerChunks=0
     private var aheadChunks=0
     private var fetchedBytes=0L
+    private var rangeRequests=0
+    private var rangeFailures=0
+    private var rangeElapsedMs=0L
     /** Playback-side counters. Pure JVM module: the app logs this, core never touches android.util.Log. */
-    data class Stats(val readerChunks:Int,val aheadChunks:Int,val cacheHits:Int,val cacheMisses:Int,val fetchedBytes:Long) {
+    data class Stats(
+        val readerChunks:Int,val aheadChunks:Int,val cacheHits:Int,val cacheMisses:Int,val fetchedBytes:Long,
+        val rangeRequests:Int,val rangeFailures:Int,val rangeElapsedMs:Long
+    ) {
         val aheadShare: Int get() { val all=readerChunks+aheadChunks; return if(all==0) 0 else aheadChunks*100/all }
-        override fun toString()="$readerChunks reader / $aheadChunks ahead chunks, hit=$cacheHits miss=$cacheMisses, aheadShare=$aheadShare%, fetched=${fetchedBytes/1048576}MB"
+        override fun toString()="$readerChunks reader / $aheadChunks ahead chunks, hit=$cacheHits miss=$cacheMisses, aheadShare=$aheadShare%, fetched=${fetchedBytes/1048576}MB, ranges=$rangeRequests failed=$rangeFailures network=${rangeElapsedMs}ms"
     }
-    fun stats(): Stats = synchronized(lock) { Stats(readerChunks,aheadChunks,hitChunks,missChunks,fetchedBytes) }
+    fun stats(): Stats = synchronized(lock) { Stats(readerChunks,aheadChunks,hitChunks,missChunks,fetchedBytes,rangeRequests,rangeFailures,rangeElapsedMs) }
 
     private fun range(start: Long,end: Long): Range {
         if(closed) throw IOException("播放请求已取消")
@@ -47,6 +54,9 @@ class RemoteVideo(
         val request=Request.Builder().url(info.url).header("User-Agent",VendorConstants.VIDEO_UA).header("Referer","https://novel.snssdk.com/").header("Range","bytes=$start-$end").header("Accept-Encoding","identity").build()
         val call=http.newCall(request)
         synchronized(calls) { if(closed) throw IOException("播放请求已取消"); calls+=call }
+        val started=System.nanoTime()
+        var failed=false
+        synchronized(lock) { rangeRequests++ }
         try {
             return RequestScope.execute(call) { response ->
                 if(response.code!=206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code}）")
@@ -60,14 +70,23 @@ class RemoteVideo(
                 if(bytes.size!=n) throw IOException("视频分段长度不完整：期望 ${n} 字节，实际 ${bytes.size} 字节")
                 Range(bytes,full)
             }
-        } finally { synchronized(calls) { calls-=call } }
+        } catch(error: Exception) {
+            failed=true
+            throw error
+        } finally {
+            synchronized(calls) { calls-=call }
+            synchronized(lock) {
+                if(failed) rangeFailures++
+                rangeElapsedMs+=(System.nanoTime()-started).coerceAtLeast(0L)/1_000_000L
+            }
+        }
     }
     private fun fetchChunk(start: Long): Range {
         val requestedEnd=if(start>Long.MAX_VALUE-chunkBytes.toLong()) Long.MAX_VALUE else start+chunkBytes.toLong()
         val end=if(total>0) minOf(total,requestedEnd)-1 else requestedEnd-1
         return range(start,end)
     }
-    private fun inFlightLocked(start: Long)=fetchingRead==start || fetchingAhead==start
+    private fun inFlightLocked(start: Long)=start in fetchingReads || fetchingAhead==start
     /** Fetch one chunk into the cache from the reader path; waits out an in-flight duplicate. */
     private fun readChunk(start: Long) {
         synchronized(lock) {
@@ -76,13 +95,20 @@ class RemoteVideo(
             catch(e: InterruptedException) { throw IOException("播放请求已取消") }
             if(closed) throw IOException("播放请求已取消")
             if(cache.containsKey(start)) return
-            fetchingRead=start
+            fetchingReads+=start
         }
         try {
             val chunk=fetchChunk(start)
-            synchronized(lock) { if(total==0L) total=chunk.total; if(!closed) cache[start]=chunk.bytes; fetchingRead=-1L; readerChunks++; fetchedBytes+=chunk.bytes.size; lock.notifyAll() }
+            synchronized(lock) {
+                if(total==0L) total=chunk.total
+                if(!closed) cache[start]=chunk.bytes
+                fetchingReads-=start
+                readerChunks++
+                fetchedBytes+=chunk.bytes.size
+                lock.notifyAll()
+            }
         } catch(e: Throwable) {
-            synchronized(lock) { fetchingRead=-1L; lock.notifyAll() }
+            synchronized(lock) { fetchingReads-=start; lock.notifyAll() }
             throw e
         }
     }
@@ -165,7 +191,8 @@ class RemoteVideo(
         return -1
     }
     private fun evictLocked() {
-        val floor=lastRead-lastRead%chunkBytes
+        val oldestActive=activeReadPositions.keys.minOrNull() ?: lastRead
+        val floor=minOf(lastRead,oldestActive)-minOf(lastRead,oldestActive)%chunkBytes
         cache.keys.filter { it!=0L && it<floor }.forEach { cache.remove(it) }
     }
     private fun aheadLoop() {
@@ -202,28 +229,37 @@ class RemoteVideo(
         synchronized(lock) {
             if(closed) throw IOException("播放请求已取消")
             lastRead=start
-            // Keep the current chunk and the first parsed header chunk; discard stale chunks after seeks.
+            activeReadPositions[start]=(activeReadPositions[start] ?: 0)+1
             evictLocked()
             ensureAheadLocked()
             lock.notifyAll()
         }
-        var at=start
-        while(at<end) {
-            val k=at-at%chunkBytes
-            if(cached(k)) synchronized(lock) { hitChunks++ } else { synchronized(lock) { missChunks++ }; readChunk(k) }
-            at=k+chunkBytes
+        try {
+            var at=start
+            while(at<end) {
+                val k=at-at%chunkBytes
+                if(cached(k)) synchronized(lock) { hitChunks++ } else { synchronized(lock) { missChunks++ }; readChunk(k) }
+                at=k+chunkBytes
+            }
+            val raw=ByteArray((end-start).toInt())
+            var pos=start; var written=0
+            while(pos<end) {
+                val k=pos-pos%chunkBytes
+                val chunk=chunkOrFetch(k)
+                val from=(pos-k).toInt()
+                val count=minOf(chunk.size-from,(end-pos).toInt())
+                if(count<=0) throw IOException("视频分段数据不完整")
+                System.arraycopy(chunk,from,raw,written,count); written+=count; pos+=count
+            }
+            return MediaCrypto.decrypt(raw,start,info.key,prepared)
+        } finally {
+            synchronized(lock) {
+                val active=activeReadPositions[start] ?: 0
+                if(active<=1) activeReadPositions.remove(start) else activeReadPositions[start]=active-1
+                evictLocked()
+                lock.notifyAll()
+            }
         }
-        val raw=ByteArray((end-start).toInt())
-        var pos=start; var written=0
-        while(pos<end) {
-            val k=pos-pos%chunkBytes
-            val chunk=chunkOrFetch(k)
-            val from=(pos-k).toInt()
-            val count=minOf(chunk.size-from,(end-pos).toInt())
-            if(count<=0) throw IOException("视频分段数据不完整")
-            System.arraycopy(chunk,from,raw,written,count); written+=count; pos+=count
-        }
-        return MediaCrypto.decrypt(raw,start,info.key,prepared)
     }
     override fun close() {
         synchronized(lock) { closed=true; lock.notifyAll() }
