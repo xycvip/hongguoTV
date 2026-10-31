@@ -12,6 +12,8 @@ import java.io.IOException
 
 class RemoteVideoRangeTest {
     private fun box(type: String, body: ByteArray) = be32(body.size + 8) + type.toByteArray() + body
+    private fun extendedBox(type: String, body: ByteArray) =
+        be32(1) + type.toByteArray() + java.nio.ByteBuffer.allocate(8).putLong(body.size.toLong()+16L).array() + body
 
     private fun fixture(): ByteArray {
         val ftyp = box("ftyp", "isom0000".toByteArray())
@@ -26,8 +28,8 @@ class RemoteVideoRangeTest {
         val ftyp=box("ftyp","isom0000".toByteArray())
         val payload=ByteArray(4080) { (it % 251).toByte() }
         val iv=byteArrayOf(1,2,3,4,5,6,7,8)
-        iv.copyInto(payload,1024-(ftyp.size+8))
-        val mdat=box("mdat",payload)
+        iv.copyInto(payload,1024-(ftyp.size+16))
+        val mdat=extendedBox("mdat",payload)
         val entry=box("encv",ByteArray(78)+box("sinf",box("frma","avc1".toByteArray())))
         val stsd=box("stsd",ByteArray(4)+be32(1)+entry)
         val stsz=box("stsz",ByteArray(4)+be32(16)+be32(1))
