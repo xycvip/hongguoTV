@@ -216,7 +216,19 @@ class AppUpdater(private val activity: Activity, private val idle: () -> Boolean
         }
         next.show()
         later.setOnClickListener { next.dismiss() }
-        action.setOnClickListener { when { ready -> install(); available != null -> download(); else -> check(true) } }
+        action.setOnClickListener {
+            when {
+                ready -> install()
+                available != null -> download()
+                aboutMode -> {
+                    // 关于页只展示软件信息；检查结果使用独立的更新弹窗，避免状态行挤压说明内容。
+                    next.dismiss()
+                    show(from, aboutMode = false)
+                    check(true)
+                }
+                else -> check(true)
+            }
+        }
         renderActions()
         action.post { if (dialog === next) action.requestFocus() }
     }
