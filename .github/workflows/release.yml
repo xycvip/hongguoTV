@@ -59,11 +59,69 @@ jobs:
           fi
           LATEST_MANIFEST="$RUNNER_TEMP/latest-update.json"
           LATEST_VERSION_CODE=0
-          if curl --fail --silent --show-error --location \
-              "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json?cachebust=$(date +%s)" \
-              --output "$LATEST_MANIFEST"; then
-            LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
-            VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
+          # Resolve the previous HongguoTV manifest through the same resilient
+          # order as the app: Releases API first, then Raw, then proxy mirrors.
+          python3 - "$LATEST_MANIFEST" <<'PY'
+          import json, sys, time, urllib.request, urllib.error
+          output = sys.argv[1]
+          headers = {
+              "User-Agent": "HongguoTV-Release-Workflow",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "Cache-Control": "no-cache",
+          }
+          def get(url, limit=2 * 1024 * 1024):
+              req = urllib.request.Request(url, headers=headers)
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  data = response.read(limit + 1)
+              if len(data) > limit:
+                  raise RuntimeError("response too large")
+              return data
+          manifest = None
+          errors = []
+          # 1) Find the newest non-draft HongguoTV release and its update.json.
+          try:
+              releases = json.loads(get(
+                  "https://api.github.com/repos/xycvip/AppDownload/releases?per_page=100"
+                  + "&cachebust=" + str(int(time.time()))
+              ).decode("utf-8"))
+              for release in releases:
+                  if release.get("draft") or not str(release.get("tag_name", "")).startswith("hongguotv-v"):
+                      continue
+                  for asset in release.get("assets", []):
+                      if asset.get("name") == "update.json" and asset.get("browser_download_url"):
+                          manifest_url = asset["browser_download_url"]
+                          manifest = json.loads(get(manifest_url, 65536).decode("utf-8"))
+                          break
+                  if manifest is not None:
+                      break
+              if manifest is None:
+                  raise RuntimeError("no HongguoTV update.json asset found")
+          except Exception as exc:
+              errors.append("Release API: " + str(exc))
+              manifest = None
+          # 2/3) Raw manifest, direct first, then supported proxy mirrors.
+          if manifest is None:
+              raw = "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json"
+              candidates = [raw, "https://gh-proxy.com/" + raw,
+                            "https://ghfast.top/" + raw, "https://gh-proxy.net/" + raw]
+              for url in candidates:
+                  try:
+                      manifest = json.loads(get(url + "?cachebust=" + str(int(time.time())), 65536).decode("utf-8"))
+                      break
+                  except Exception as exc:
+                      errors.append(url.split("/")[2] + ": " + str(exc))
+          if manifest is None:
+              print("无法读取上一版清单，将使用仓库配置版本作为基准：" + " | ".join(errors), file=sys.stderr)
+              open(output, "w", encoding="utf-8").write("{}")
+          else:
+              if manifest.get("packageName") != "com.x.hongguotv":
+                  raise SystemExit("上一版更新清单包名不匹配，拒绝计算版本号。")
+              open(output, "w", encoding="utf-8").write(json.dumps(manifest, ensure_ascii=False))
+              print("已读取上一版红果TV清单：" + str(manifest.get("versionName", "?")))
+          PY
+          LATEST_VERSION_CODE="$(python3 -c 'import json,sys; print(int(json.load(open(sys.argv[1])).get("versionCode", 0)))' "$LATEST_MANIFEST")"
+          VERSION_NAME="$(python3 - "$APP_VERSION" "$LATEST_MANIFEST" <<'PY'
           import json, re, sys
           configured = tuple(map(int, sys.argv[1].split(".")))
           try:
@@ -79,9 +137,6 @@ jobs:
           print(".".join(map(str, chosen)))
           PY
           )"
-          else
-            VERSION_NAME="$APP_VERSION"
-          fi
           DATE_CODE="$(TZ=Asia/Tokyo date +'%Y%m%d')"
           # Date + unique workflow run number makes versionCode monotonic across daily builds.
           VERSION_CODE="$((10#$DATE_CODE * 100 + GITHUB_RUN_NUMBER))"
