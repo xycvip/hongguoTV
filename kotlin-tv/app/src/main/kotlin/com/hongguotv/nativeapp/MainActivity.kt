@@ -3287,7 +3287,7 @@ class MainActivity: Activity() {
             episodePanel?.dismiss(); episodePanel=null; speedDialog?.dismiss(); speedDialog=null
             playerListener?.let { player?.removeListener(it) }; playerListener=null
             player?.stop(); player?.clearMediaItems()
-            video?.close(); video=null; closeTransport(playbackHttp); playbackHttp=null
+            closeActiveVideo(); closeTransport(playbackHttp); playbackHttp=null
             main.removeCallbacks(hideHud); main.removeCallbacks(seekRunnable); pendingSeek=null
         } else releasePlayer()
         artwork.cancelPage(clearMemory=true)
@@ -4407,6 +4407,15 @@ class MainActivity: Activity() {
             action = { cloudAccount.show() }
         ).show()
     }
+    private fun closeActiveVideo() {
+        val current=video ?: return
+        android.util.Log.i(
+            "HongguoTV",
+            "Playback range diagnostics quality=${current.info.quality} size=${current.total} bytes ${current.stats()}"
+        )
+        current.close()
+        video=null
+    }
     private fun releasePlayer() {
         commentGeneration++
         commentListScope?.cancel(); commentListScope=null
@@ -4423,7 +4432,7 @@ class MainActivity: Activity() {
         videoInfoView?.let { root.removeView(it) }; videoInfoView=null
         networkSpeedView?.let { root.removeView(it) }; networkSpeedView=null
         activeVideoFormat=null; activeDecoderName=""
-        video?.close(); video=null; playerView?.player=null; playerView=null; player?.release(); player=null; playbackReady=false; transportPlay=null; sleepButton=null
+        closeActiveVideo(); playerView?.player=null; playerView=null; player?.release(); player=null; playbackReady=false; transportPlay=null; sleepButton=null
         stopDanmaku(); danmakuView=null
         closeTransport(playbackHttp); playbackHttp=null
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
