@@ -310,6 +310,8 @@ class MainActivity: Activity() {
     private val tabState=mutableMapOf<Int,CatalogState>()
     private val tabFocus=mutableMapOf<Int,String>()
     private val nav=mutableListOf<View>()
+    // 导航焦点按业务 tab ID 索引，不依赖顶部按钮的显示顺序。
+    private val navByTab=mutableMapOf<Int,View>()
     /** 顶栏只读接口状态；结果保留在重建后的页面中。 */
     private val apiStatusViews=mutableMapOf<String,TextView>()
     private val apiStatusResults=mutableMapOf<String,Pair<Int,String>>()
@@ -1006,7 +1008,7 @@ class MainActivity: Activity() {
         homeScreen?.let { homePosition=it.capturePosition() }
         (catalogRecycler?.layoutManager as? GridLayoutManager)?.let { scrollPositions[catalogPageKey]=it.findFirstVisibleItemPosition() }
         homeScreen=null; selectionPreview=null; catalogRecycler=null; catalogAdapter=null; loadingMore=false
-        nav.clear(); theaterFilterHost=null; typeButtons.clear(); homeRefreshControl=null; aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
+        nav.clear(); navByTab.clear(); theaterFilterHost=null; typeButtons.clear(); homeRefreshControl=null; aggregateButton=null; searchInput=null; searchButton=null; searchActions.clear()
         azFirst=null; azLastRow.clear(); suggestRow=null; suggestFirst=null; suggestTicket++; main.removeCallbacks(pendingSuggest)
         suggestVertical=false; searchBody=null; keyboardKeys=emptyMap(); keyboardRows=emptyList(); historyFirst=null; historyItems=emptyList(); suggestScrollRef=null; resultFirstCard=null
         historyManage=null; rankSwitch=null; rankRefresh=null; rankSubtitle=null; genreButton=null; genreClear=null; collectionBack=null; favoriteBadges.clear()
@@ -1093,8 +1095,8 @@ class MainActivity: Activity() {
         collection=kind; page=1; catalogFocus=""; showCatalog()
     }
     private fun inlineHomeFilters()=tab==0 && resources.configuration.fontScale<=1.2f && widthDp()>=900
-    private fun navIndexForTab(value:Int)=when(value) { 7 -> 1; 1 -> 2; 2 -> 3; 3 -> 4; 4 -> 5; 5 -> 6; 6 -> 7; else -> value }
-    private fun navForTab():View=nav.getOrNull(navIndexForTab(tab)) ?: root
+    // 直接按 tab ID 获取导航项；调整顶部展示顺序时无需同步维护数字索引映射。
+    private fun navForTab():View=navByTab[tab] ?: root
     private fun renderTheaterFilters(host:LinearLayout) {
         host.removeAllViews()
         val types=row().apply { setPadding(0,dp(6),0,dp(8)) }
@@ -1191,7 +1193,7 @@ class MainActivity: Activity() {
                 item.background=rounded(if(focused) white else if(tabId==tab) TvStyle.selectedSurface else Color.TRANSPARENT)
                 item.setTypeface(null,if(focused || tabId==tab) Typeface.BOLD else Typeface.NORMAL)
             }
-            paint(false); item.setOnFocusChangeListener { _,focused -> paint(focused) }; nav+=item
+            paint(false); item.setOnFocusChangeListener { _,focused -> paint(focused) }; nav+=item; navByTab[tabId]=item
         }
         val statusHost=if(compactHeader) row().apply { gravity=Gravity.CENTER_VERTICAL; setPadding(0,0,0,dp(3)) } else top
         if(!compactHeader && widthDp()>=900) top.addView(Space(this),lp(0,1).apply { weight=1f })
@@ -1961,7 +1963,7 @@ class MainActivity: Activity() {
     private fun renderHome(body: LinearLayout,focusNav: Boolean,focusType: Boolean,loading: Boolean) {
         homeUpdateCount=library.updatedFavorites()
         val preview=SeriesPreview(this); selectionPreview=preview; body.addView(preview)
-        val top=homeRefreshControl ?: nav[0]
+        val top=homeRefreshControl ?: navByTab[0] ?: root
         val home=HomeScreen(this,top,::loadCover,{ item,label -> preview.show(item,if(label.startsWith("第 ")) selectionStatus(item) else listOf(label,selectionStatus(item)).filter { it.isNotBlank() }.joinToString(" · ")) },
             { item,resume -> openDetail(item,resume) },::quickActions,{ catalogFocus=it })
         homeScreen=home; body.addView(home,lp(-1,0).apply { weight=1f })
@@ -1972,7 +1974,7 @@ class MainActivity: Activity() {
         homeRefreshControl?.nextFocusDownId=home.firstId()
         // 首页导航按下方向直接进入第一个内容栏目，避免焦点落到已移除的顶部随机按钮区域。
         nav.forEach { it.nextFocusDownId=home.firstId() }
-        if(focusNav) nav[0].requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
+        if(focusNav) (navByTab[0] ?: nav[0]).requestFocus() else if(focusType) (genreButton ?: home.firstId().let { root.findViewById<View>(it) })?.requestFocus()
         loadHomeShelf(if(library.contentType==ContentType.SHORT) ContentType.COMIC else ContentType.SHORT,false)
         loadHomeShelf(ContentType.AI,false)
         if(hot.isNotEmpty() && !homeContentLogged) {
@@ -4845,11 +4847,11 @@ class MainActivity: Activity() {
             "account" -> { showCatalog(); if(tab==6) navForTab()?.requestFocus() }
             else -> if(tab==1) {
                 // 搜索页按返回时固定回到“搜索”导航项，避免系统焦点回退到相邻的“剧场”。
-                nav.getOrNull(navIndexForTab(1))?.requestFocus()
+                navByTab[1]?.requestFocus()
             } else if(tab==7) {
                 // 剧场页单独处理：无论焦点在筛选区、片单还是顶部导航，都回到“剧场”本身。
                 // 避免通用 nav.any 分支切回首页，或由系统按相邻顺序落到“搜索”。
-                val theaterNav=nav.getOrNull(navIndexForTab(7))
+                val theaterNav=navByTab[7]
                 theaterNav?.requestFocus()
                 theaterNav?.post { if(screen=="catalog" && tab==7 && theaterNav.isAttachedToWindow) theaterNav.requestFocus() }
             } else if(tab==6) navForTab()?.requestFocus() else if(tab==2 && aiCatalog) { aiCatalog=false; aiGenre=null; page=1; catalogFocus=""; tabState.remove(2); tabFocus.remove(2); showCatalog(true); aiEntry?.post { if(aiEntry?.isAttachedToWindow==true) aiEntry?.requestFocus() } } else if(tab==0 && genre!=null) { genre=null; page=1; catalogFocus=""; tabState.remove(0); tabFocus.remove(0); showCatalog(true,focusNav=true) } else if(collection!=null) { leaveCollection(); showCatalog() } else if(nav.any { it.hasFocus() }) { if(tab!=0) { switchTab(0); nav[0].requestFocus() } else showExitConfirm() } else navForTab().requestFocus()
