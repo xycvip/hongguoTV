@@ -262,8 +262,31 @@ class RemoteVideo(
         }
     }
     override fun close() {
-        synchronized(lock) { closed=true; lock.notifyAll() }
-        aheadThread?.interrupt()
-        synchronized(calls) { closed=true; calls.toList().forEach { it.cancel() }; calls.clear() }
+        val worker: Thread?
+        synchronized(lock) {
+            if(closed) return
+            closed=true
+            cache.clear()
+            activeReadPositions.clear()
+            worker=aheadThread
+            lock.notifyAll()
+        }
+        // Cancel network calls before waiting for the read-ahead worker. A blocked OkHttp
+        // read must be interrupted by Call.cancel(), not left alive behind a daemon thread.
+        synchronized(calls) {
+            calls.toList().forEach { it.cancel() }
+            calls.clear()
+        }
+        worker?.interrupt()
+        if(worker!=null && worker!==Thread.currentThread()) {
+            try { worker.join(2000) }
+            catch(_: InterruptedException) { Thread.currentThread().interrupt() }
+        }
+        synchronized(lock) {
+            aheadThread=null
+            fetchingAhead=-1L
+            fetchingReads.clear()
+            lock.notifyAll()
+        }
     }
 }
