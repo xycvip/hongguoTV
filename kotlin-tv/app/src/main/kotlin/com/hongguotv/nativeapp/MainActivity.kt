@@ -1356,7 +1356,8 @@ class MainActivity: Activity() {
                 val keyboardLeftInset=dp((if(history.isNotEmpty()) (if(roomy) 160 else 145) else 0)+14)
                 leftPane.addView(searchRow,lp(-1,-2).apply {
                     leftMargin=keyboardLeftInset
-                    rightMargin=dp(10)
+                    // 键盘每行最后一个按键保留 4dp 右边距，搜索栏同步内缩，按可见按键边缘对齐。
+                    rightMargin=dp(14)
                 })
                 val leftColumn=row().apply { gravity=Gravity.TOP; setPadding(0,dp(2),dp(10),0) }
                 if(history.isNotEmpty()) {
