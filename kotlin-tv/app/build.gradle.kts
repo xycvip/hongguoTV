@@ -34,10 +34,6 @@ android {
 }
 dependencies {
     implementation("androidx.core:core:1.8.0")
-    // Bundle emoji fonts locally so Android 9 TV devices can render modern emoji without Google Play services.
-    // emoji2-views supplies EmojiEditText and EmojiTextView used by the official comment panel.
-    implementation("androidx.emoji2:emoji2-bundled:1.4.0")
-    implementation("androidx.emoji2:emoji2-views:1.4.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.google.zxing:core:3.5.3")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
