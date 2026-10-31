@@ -187,7 +187,7 @@ def changelog():
     # as an independent release-note item. Commit subjects are only supporting
     # clues; changed source paths and added/removed code are also inspected.
     if not previous_ref:
-        return translate_notes("\\n".join(cleaned))
+        return translate_notes("\n".join(cleaned))
 
     changed_paths = run_text([
         "git", "diff", "--name-only", "--diff-filter=ACMR",
@@ -203,7 +203,7 @@ def changelog():
         f"{previous_ref}..{current_commit}", "--",
         "kotlin-tv/app/src/main", "kotlin-tv/core/src/main",
     ])
-    evidence = "\\n".join(cleaned + source_paths + [diff_text]).lower()
+    evidence = "\n".join(cleaned + source_paths + [diff_text]).lower()
 
     # One bullet per user-facing feature area. Multiple commits and files that
     # implement the same feature collapse into one release-note item.
@@ -251,7 +251,7 @@ def changelog():
         ]
         if meaningful:
             notes.append("- 完善项目配置与运行支持")
-    return "\\n".join(notes) or "- 本次版本更新（具体变更见提交记录）。"
+    return "\n".join(notes) or "- 本次版本更新（具体变更见提交记录）。"
 
 notes = translate_notes(os.environ.get("RELEASE_NOTES", "").strip()) if os.environ.get("RELEASE_NOTES", "").strip() else changelog()
 manifest = {
