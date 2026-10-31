@@ -3460,6 +3460,8 @@ class MainActivity: Activity() {
         addButton(transport,"上一集") { if(episodeIndex>0) playEpisode(episodeIndex-1) }.apply { isEnabled=episodeIndex>0; isFocusable=episodeIndex>0; alpha=if(episodeIndex>0) 1f else .4f }
         addButton(transport,"下一集") { if(episodeIndex<(detail?.episodes?.lastIndex ?: 0)) playEpisode(episodeIndex+1) }.apply { val enabled=episodeIndex<(detail?.episodes?.lastIndex ?: 0); isEnabled=enabled; isFocusable=enabled; alpha=if(enabled) 1f else .4f }
         addButton(transport,"评论") { openOfficialComments(transport.findViewWithTag<View>("player:comments")) }.apply { tag="player:comments" }
+        lateinit var timerButton: TextView
+        timerButton=addButton(transport,"定时") { showSleepPicker(timerButton) }
         lateinit var episodes: TextView
         episodes=addButton(transport,"选集") { showEpisodePanel(episodes) }
         lateinit var more: TextView
@@ -3469,7 +3471,7 @@ class MainActivity: Activity() {
             val danmakuOn=extras.danmakuEnabled(seriesId,library.danmaku)
             fun skipLabel(seconds: Int)=if(seconds>0) "$seconds 秒" else "关闭"
             tvTools.choose("播放设置",buildList {
-                add("倍速 ${PlaybackSpeed.label(library.playbackSpeed)}"); add("清晰度 ${library.maxQuality}P"); add("画面 ${library.frameMode.label}"); add("定时 ${sleepTimer.label()}")
+                add("倍速 ${PlaybackSpeed.label(library.playbackSpeed)}"); add("清晰度 ${library.maxQuality}P"); add("画面 ${library.frameMode.label}")
                 add("跳过片头 ${skipLabel(mark?.introSeconds ?: 0)}"); add("跳过片尾 ${skipLabel(mark?.outroSeconds ?: 0)}"); add("从头播放"); add("弹幕 ${if(danmakuOn) "开启" else "关闭"}（仅本剧）")
                 if(danmakuOn) add("弹幕设置")
             },more,{ choice ->
@@ -3478,12 +3480,11 @@ class MainActivity: Activity() {
                         0 -> showSpeedPicker(more)
                         1 -> showQualityPicker(more,true)
                         2 -> showFramePicker(more,true)
-                        3 -> showSleepPicker(more)
-                        4 -> showSkipPicker(more,true)
-                        5 -> showSkipPicker(more,false)
-                        6 -> { seekTo(0); hidePanel() }
-                        7 -> toggleSeriesDanmaku(seriesId)
-                        8 -> showDanmakuPrefsDialog(more)
+                        3 -> showSkipPicker(more,true)
+                        4 -> showSkipPicker(more,false)
+                        5 -> { seekTo(0); hidePanel() }
+                        6 -> toggleSeriesDanmaku(seriesId)
+                        7 -> showDanmakuPrefsDialog(more)
                     }
                 }
             })
