@@ -372,7 +372,6 @@ class MainActivity: Activity() {
         override fun run() {
             if(!foreground || isDestroyed) return
             if(screen=="player") {
-                updateNetworkSpeed()
                 if(sleepTimer.poll()) stopForSleep()
                 if(hud.visibility==View.VISIBLE) updatePlaybackText()
                 danmakuLoader?.let { loader -> if(player?.isPlaying==true) { val position=currentPosition(); io.execute { runCatching { loader.loadUpTo(position) } } } }
@@ -940,8 +939,6 @@ class MainActivity: Activity() {
             clockTick=tick
             tick.run()
         }
-        applyVideoInfoOverlay()
-        applyNetworkSpeedOverlay()
     }
 
     private fun selectedVideoFormat(): Format? {
@@ -966,78 +963,9 @@ class MainActivity: Activity() {
         return if(codec!=null && !codec.equals(label,true)) "$label ($codec)" else label
     }
 
-    private fun videoInfoText(): String {
-        val p=player
-        val format=selectedVideoFormat()
-        val size=p?.videoSize
-        val width=size?.width?.takeIf { it>0 } ?: format?.width?.takeIf { it>0 } ?: 0
-        val height=size?.height?.takeIf { it>0 } ?: format?.height?.takeIf { it>0 } ?: 0
-        val resolution=if(width>0 && height>0) "${width}×${height}" else "分辨率获取中"
-        val fps=format?.frameRate?.takeIf { it.isFinite() && it>0f }?.let { "${(it+0.5f).toInt()}FPS" } ?: "帧率—"
-        if(library.videoInfoMode==1) return "$resolution · $fps"
-        val codec=videoCodecLabel(format)
-        val decoder=activeDecoderName.ifBlank { "解码器获取中" }
-        return "$resolution · $fps · $codec · $decoder"
-    }
+    // 外观设置中的视频信息与网速浮层已移除，保留空方法兼容播放器监听回调。
+    private fun refreshVideoInfoOverlay() = Unit
 
-    private fun applyVideoInfoOverlay() {
-        videoInfoView?.let { root.removeView(it) }; videoInfoView=null
-        if(!library.isLoaded || screen!="player" || library.videoInfoMode==0) return
-        val mobile=widthDp()<600f
-        val view=text(videoInfoText(),if(mobile) 10f else 12f,Color.WHITE).apply {
-            background=rounded(Color.argb(150,0,0,0))
-            setPadding(dp(if(mobile) 7 else 10),dp(if(mobile) 4 else 6),dp(if(mobile) 7 else 10),dp(if(mobile) 4 else 6))
-            maxLines=2
-            maxWidth=(resources.displayMetrics.widthPixels*0.68f).toInt()
-            importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            isFocusable=false; isClickable=false
-        }
-        val margin=if(mobile) 10 else 20
-        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.START).apply {
-            topMargin=dp(if(mobile) 10 else 20); leftMargin=dp(margin)
-        })
-        videoInfoView=view
-    }
-
-    private fun refreshVideoInfoOverlay() {
-        activeVideoFormat=selectedVideoFormat()
-        videoInfoView?.text=videoInfoText()
-    }
-
-    private fun applyNetworkSpeedOverlay() {
-        networkSpeedView?.let { root.removeView(it) }; networkSpeedView=null
-        if(!library.isLoaded || screen!="player" || !library.showNetworkSpeed) return
-        lastSpeedAt=android.os.SystemClock.elapsedRealtime(); lastSpeedBytes=playbackBytes.get(); currentSpeedBytesPerSecond=0L
-        val mobile=widthDp()<600f
-        val view=text("↓ ${formatSpeed(currentSpeedBytesPerSecond)}",if(mobile) 11f else 13f,Color.WHITE).apply {
-            background=rounded(Color.argb(150,0,0,0))
-            setPadding(dp(if(mobile) 8 else 10),dp(if(mobile) 4 else 6),dp(if(mobile) 8 else 10),dp(if(mobile) 4 else 6))
-            importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            isFocusable=false; isClickable=false
-        }
-        val margin=if(mobile) 12 else 22
-        root.addView(view,FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.END).apply {
-            bottomMargin=dp(if(mobile) 88 else 112); rightMargin=dp(margin)
-        })
-        networkSpeedView=view
-    }
-
-    private fun formatSpeed(bytesPerSecond: Long): String = when {
-        bytesPerSecond>=1024L*1024L -> String.format(Locale.getDefault(),"%.1f MB/s",bytesPerSecond/(1024f*1024f))
-        bytesPerSecond>=1024L -> String.format(Locale.getDefault(),"%.1f KB/s",bytesPerSecond/1024f)
-        else -> "$bytesPerSecond B/s"
-    }
-
-    private fun updateNetworkSpeed() {
-        if(!library.isLoaded || !library.showNetworkSpeed) return
-        val now=android.os.SystemClock.elapsedRealtime()
-        val total=playbackBytes.get()
-        if(lastSpeedAt==0L) { lastSpeedAt=now; lastSpeedBytes=total; return }
-        val elapsed=(now-lastSpeedAt).coerceAtLeast(1L)
-        currentSpeedBytesPerSecond=((total-lastSpeedBytes).coerceAtLeast(0L)*1000L/elapsed)
-        lastSpeedAt=now; lastSpeedBytes=total
-        networkSpeedView?.text="↓ ${formatSpeed(currentSpeedBytesPerSecond)}"
-    }
     private fun loadCover(view: ImageView,url: String) {
         var ancestor: View?=view
         var focused=false
@@ -2421,24 +2349,6 @@ class MainActivity: Activity() {
             clockButton.text="显示系统时间  ·  ${if(library.showClock) "开启" else "关闭"}"
             applyClock()
         }
-        lateinit var videoInfoButton: TextView
-        fun videoInfoModeLabel()=listOf("关","简洁","完整")[library.videoInfoMode]
-        videoInfoButton=setting(appearance,1,"视频信息显示  ·  ${videoInfoModeLabel()}") {
-            TvDialog.choose(this,"视频信息显示",listOf("关","简洁","完整"),{ index ->
-                library.videoInfoMode=index
-                videoInfoButton.text="视频信息显示  ·  ${videoInfoModeLabel()}"
-                applyVideoInfoOverlay()
-                videoInfoButton.requestFocus()
-            }).show()
-        }
-        lateinit var networkSpeedButton: TextView
-        networkSpeedButton=setting(appearance,1,"显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}") {
-            library.showNetworkSpeed=!library.showNetworkSpeed
-            networkSpeedButton.text="显示网速  ·  ${if(library.showNetworkSpeed) "开启" else "关闭"}"
-            applyNetworkSpeedOverlay()
-            networkSpeedButton.requestFocus()
-        }
-
         fileBackup=setting(data,2,"本地备份与恢复") { showFileBackupDialog(fileBackup) }
         backup=setting(data,2,"手机备份与恢复") {
             runCatching { LibraryBackup.encode(library.snapshot().copy(accountState=cloudAccount.backupJson(),playbackExtras=extras.backupSnapshot(library.skipMarksSnapshot()))) }.onSuccess { encoded ->
