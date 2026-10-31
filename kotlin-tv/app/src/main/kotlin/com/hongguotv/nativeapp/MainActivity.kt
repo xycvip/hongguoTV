@@ -2118,12 +2118,16 @@ class MainActivity: Activity() {
         fun markFocusedCategory(category:Int) {
             if(category !in categoryIndicators.indices) return
             focusedCategory=category
-            categoryIndicators.forEach { indicator ->
+            categoryIndicators.forEachIndexed { index,indicator ->
                 val focused=indicator.hasFocus()
-                // 未聚焦时保留主题的橘红系底色，但不显示选中文字效果；
-                // 获得焦点时再显示完整的焦点背景与强调样式。
-                indicator.background=if(focused) TvStyle.card(this@MainActivity,true)
-                    else TvStyle.shape(this@MainActivity,TvStyle.selectedSurface)
+                val active=index==focusedCategory
+                // 只有右侧当前显示/操作的分类才保留橘红底色；
+                // 其他分类恢复透明常态，左侧自身获得焦点时仍显示焦点样式。
+                indicator.background=when {
+                    focused -> TvStyle.card(this@MainActivity,true)
+                    active -> TvStyle.shape(this@MainActivity,TvStyle.selectedSurface)
+                    else -> rounded(Color.TRANSPARENT)
+                }
                 indicator.setTextColor(if(focused) white else muted)
                 indicator.setTypeface(null,if(focused) Typeface.BOLD else Typeface.NORMAL)
             }
