@@ -15,9 +15,9 @@ DISTRIBUTION_REPOSITORY = "xycvip/AppDownload"
 LATEST_MANIFEST_URL = (
     "https://raw.githubusercontent.com/xycvip/AppDownload/main/hongguoTV/latest.json"
 )
-TOKEN = os.environ.get("GH_TOKEN", "").strip()
+TOKEN = os.environ.get("APPDOWNLOAD_TOKEN", "").strip() or os.environ.get("GH_TOKEN", "").strip()
 if not TOKEN:
-    raise SystemExit("缺少 GH_TOKEN：无法在源码仓库创建 kotlin-v 版本 Release。")
+    raise SystemExit("缺少 APPDOWNLOAD_TOKEN 或具备源码仓库 Release 写权限的 GH_TOKEN。")
 
 API_HEADERS = {
     "Authorization": f"Bearer {TOKEN}",

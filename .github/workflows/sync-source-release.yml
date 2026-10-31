@@ -16,4 +16,5 @@ jobs:
       - name: Verify AppDownload APK and sync source Release
         env:
           GH_TOKEN: ${{ github.token }}
+          APPDOWNLOAD_TOKEN: ${{ secrets.APPDOWNLOAD_TOKEN }}
         run: python3 scripts/sync-source-release.py
