@@ -29,6 +29,7 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
     private var lastPumpAt = 0L
     private var lastEmit = -1L
     private var running = false
+    private var playbackActive = false
     private var dirty = false
     private var pxPerMs = 0f
     private var tracks = 1
@@ -82,7 +83,7 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
      * [position] reports playback milliseconds; [needMore] is raised on the UI thread about once
      * a second while playback advances — the host should schedule [DanmakuLoader.loadUpTo] off-thread.
      */
-    fun bind(loader: DanmakuLoader, position: () -> Long, needMore: (Long) -> Unit = {}) {
+    fun bind(loader: DanmakuLoader, position: () -> Long, needMore: (Long) -> Unit = {}, playing: Boolean = true) {
         unbind()
         this.loader = loader
         positionProvider = position
@@ -90,8 +91,23 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
         lastEmit = position().coerceAtLeast(0)
         lastPumpAt = 0L
         running = true
+        playbackActive = playing
         visibility = VISIBLE
-        postOnAnimation(frame)
+        if(playbackActive) postOnAnimation(frame)
+        invalidate()
+    }
+
+    /** Stop the frame loop while video is paused; resume from the media clock without drifting. */
+    fun setPlaybackActive(active: Boolean) {
+        if(!running || playbackActive==active) return
+        playbackActive=active
+        if(active) {
+            lastPumpAt=0L
+            postOnAnimation(frame)
+        } else {
+            removeCallbacks(frame)
+            invalidate()
+        }
     }
 
     fun setBlockedFilter(filter: (String) -> Boolean) {
@@ -103,6 +119,8 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
 
     fun unbind() {
         running = false
+        playbackActive = false
+        removeCallbacks(frame)
         loader = null
         needMore = {}
         active.clear()
@@ -127,15 +145,16 @@ class DanmakuView(context: Context, textSizeSp: Float = 20f, crossMs: Long = 9_0
 
     private val frame = object : Runnable {
         override fun run() {
-            if (!running) return
+            if (!running || !playbackActive) return
             step()
-            postOnAnimation(this)
+            if(running && playbackActive) postOnAnimation(this)
         }
     }
 
     private fun x(item: Active, position: Long) = width - (position - item.danmaku.offsetMs) * pxPerMs
 
     private fun step() {
+        if(!running || !playbackActive) return
         val loader = loader ?: return
         if (width == 0) return
         val position = positionProvider().coerceAtLeast(0)
