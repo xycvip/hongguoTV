@@ -154,10 +154,15 @@ class RemoteVideo(
         require(length in 1..chunkBytes && start>=0)
         if(closed) throw IOException("播放请求已取消")
         if(start>=total) return byteArrayOf()
-        val end=minOf(total,start+length)
+        val requestedEnd=if(start>Long.MAX_VALUE-length.toLong()) Long.MAX_VALUE else start+length.toLong()
+        val end=minOf(total,requestedEnd)
         synchronized(lock) {
             if(closed) throw IOException("播放请求已取消")
-            lastRead=start; ensureAheadLocked(); lock.notifyAll()
+            lastRead=start
+            // Keep the current chunk and the first parsed header chunk; discard stale chunks after seeks.
+            evictLocked()
+            ensureAheadLocked()
+            lock.notifyAll()
         }
         var at=start
         while(at<end) {
