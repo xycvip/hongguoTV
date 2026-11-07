@@ -1,16 +1,16 @@
 {
   "schema": 1,
   "packageName": "com.x.hongguotv.bate",
-  "sourceCommit": "ae91a905e836b24700aa427bbfdc100db30fdc4f",
-  "versionCode": 39,
-  "versionName": "0.0.39",
+  "sourceCommit": "541c198262f446515f3105b7f733591984997027",
+  "versionCode": 40,
+  "versionName": "0.0.40",
   "minSdk": 26,
-  "tag": "hongguotv-bate-v0.0.39",
+  "tag": "hongguotv-bate-v0.0.40",
   "apk": {
-    "name": "HongguoTV-0.0.39.apk",
-    "size": 2001077,
-    "sha256": "3b2a8f00c35e075c2a9c53d696f03868058518a1dbb102e64b52fe494e9eacae",
-    "url": "https://github.com/xycvip/HongGuoTV/releases/download/hongguotv-bate-v0.0.39/HongguoTV-0.0.39.apk"
+    "name": "HongguoTV-0.0.40.apk",
+    "size": 2001481,
+    "sha256": "0c0dc3d52662fae85f9e6cea757d3a589972cefa25c5486e60748246e417db18",
+    "url": "https://github.com/xycvip/HongGuoTV/releases/download/hongguotv-bate-v0.0.40/HongguoTV-0.0.40.apk"
   },
-  "notes": "本次未检测到相对上一个测试版新增的应用源码功能或修复。"
+  "notes": "【网络与接口】\n- fix(hippo): 首页分类统一走剧场接口\n- fix(hippo): 首页改用剧场内容接口"
 }
