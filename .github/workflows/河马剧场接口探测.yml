@@ -137,8 +137,7 @@ jobs:
               columns = find_lists(data, "columnData")
               videos = find_lists(data, "videoData")
               group_summary = []
-              for group in groups[:1]:
-                  for item in group[:80]:
+              for item in groups[:80]:
                       group_summary.append({
                           "channelGroupId":str(item.get("channelGroupId", item.get("id","")))[:100],
                           "channelGroupName":str(item.get("channelGroupName", item.get("title","")))[:100],
@@ -146,8 +145,7 @@ jobs:
                           "channel_count":len(item.get("channelData",[])) if isinstance(item.get("channelData"),list) else 0
                       })
               column_summary = []
-              for column in columns[:1]:
-                  for item in column[:80]:
+              for item in columns[:80]:
                       rows = item.get("videoData",[])
                       column_summary.append({
                           "columnId":str(item.get("columnId",""))[:100],
@@ -159,11 +157,11 @@ jobs:
                       })
               return {
                   "root_keys":sorted(str(k) for k in data.keys())[:100],
-                  "channelGroupData_count":sum(len(x) for x in groups),
+                  "channelGroupData_count":len(groups),
                   "groups":group_summary,
-                  "columnData_count":sum(len(x) for x in columns),
+                  "columnData_count":len(columns),
                   "columns":column_summary,
-                  "videoData_count":sum(len(x) for x in videos)
+                  "videoData_count":len(videos)
               }
 
           print("开始探测河马剧场接口 1121、1122、1123、1124、1125。")
