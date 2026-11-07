@@ -1,0 +1,240 @@
+name: 河马剧场接口探测
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_registration:
+        description: "先调用 1103 初始化临时测试设备（推荐开启）"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hippo-theater-api-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: 1121–1125 五个接口逐项探测
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: 安装加密依赖
+        run: python -m pip install --disable-pip-version-check pycryptodome
+
+      - name: 探测河马接口
+        env:
+          INCLUDE_REGISTRATION: ${{ inputs.include_registration }}
+        run: |
+          python <<'PY'
+          import os, json, time, uuid
+          from datetime import datetime, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError
+          from Crypto.Cipher import AES
+          from Crypto.Util.Padding import pad, unpad
+
+          DOMAINS = ["freevideo.zqqds.cn", "freevideo.dzkjk.cn"]
+          APIS = ["1121", "1122", "1123", "1124", "1125"]
+          KEY, IV = b"dzkjgfyxgshylgzm", b"apiupdownedcrypt"
+          DEVICE, INSTALL = uuid.uuid4().hex, int(time.time() * 1000)
+          TEMP_ID = "A" + datetime.now().strftime("%Y%m%d%H%M%S%f")[:17] + uuid.uuid4().hex[:6]
+          USER_ID = ""
+          REPORT = {"started_at": datetime.now(timezone.utc).isoformat(), "registration": None, "apis": []}
+
+          def enc(value):
+              return AES.new(KEY, AES.MODE_CBC, IV).encrypt(pad(value.encode("utf-8"), 16)).hex()
+
+          def headers():
+              return {
+                  "version":"1.4.0", "pname":"com.dz.hmjc", "channelCode":"Google",
+                  "utdidTmp":TEMP_ID, "token":"", "utdid":DEVICE, "os":"android",
+                  "osv":"GitHub Actions", "brand":"Android", "model":"GitHubActions",
+                  "manu":"Android", "userId":USER_ID, "launch":"shortcut",
+                  "mchid":"Google", "nchid":"Google", "session1":DEVICE,
+                  "session2":str(int(time.time()*1000)), "oaid":"", "imei":"",
+                  "startScene":"shortcut", "installTime":INSTALL, "p":9
+              }
+
+          def decode(raw, encrypted):
+              obj = json.loads(raw or "{}")
+              if not isinstance(obj, dict):
+                  raise ValueError("响应不是 JSON 对象")
+              code = obj.get("code")
+              if code is not None and str(code) not in ("0", "200"):
+                  raise RuntimeError("业务 code=%s, msg=%s" % (code, str(obj.get("msg",""))[:160]))
+              data = obj.get("data", obj)
+              if isinstance(data, str) and data:
+                  data = json.loads(
+                      unpad(AES.new(KEY,AES.MODE_CBC,IV).decrypt(bytes.fromhex(data)),16).decode()
+                      if encrypted else data
+                  )
+              return data if isinstance(data, (dict,list)) else obj
+
+          def request_api(api, params):
+              failures = []
+              for domain in DOMAINS:
+                  for encrypted in (False, True):
+                      hjson = json.dumps(headers(), separators=(",",":"), ensure_ascii=False)
+                      pjson = json.dumps(params, separators=(",",":"), ensure_ascii=False)
+                      req_headers = {
+                          "Content-Type":"application/json", "Accept":"application/json",
+                          "datas":enc(hjson) if encrypted else hjson
+                      }
+                      if not encrypted:
+                          req_headers["wetruwtty"] = "mhdfiheowjfcslkjfwojo636"
+                      body = (enc(pjson) if encrypted else pjson).encode()
+                      req = Request(
+                          f"https://{domain}/free-video-portal/portal/{api}",
+                          data=body, headers=req_headers, method="POST"
+                      )
+                      started = time.time()
+                      try:
+                          with urlopen(req, timeout=18) as response:
+                              raw = response.read(5 * 1024 * 1024).decode("utf-8","replace")
+                              data = decode(raw, encrypted)
+                              return data, {
+                                  "api":api, "domain":domain,
+                                  "transport":"AES" if encrypted else "JSON",
+                                  "http":response.status,
+                                  "elapsed_ms":int((time.time()-started)*1000),
+                                  "response_bytes":len(raw.encode("utf-8")),
+                                  "data":data
+                              }
+                      except HTTPError as error:
+                          failures.append(f"{domain}/{('AES' if encrypted else 'JSON')}: HTTP {error.code}")
+                      except Exception as error:
+                          failures.append(f"{domain}/{('AES' if encrypted else 'JSON')}: {type(error).__name__}: {str(error)[:180]}")
+              return None, {"api":api, "status":"FAILED", "errors":failures}
+
+          def find_lists(obj, key, depth=0):
+              if depth > 9: return []
+              if isinstance(obj, dict):
+                  if isinstance(obj.get(key), list):
+                      return [x for x in obj[key] if isinstance(x, dict)]
+                  for value in obj.values():
+                      found = find_lists(value, key, depth+1)
+                      if found: return found
+              elif isinstance(obj, list):
+                  for value in obj:
+                      found = find_lists(value, key, depth+1)
+                      if found: return found
+              return []
+
+          def safe_shape(data):
+              if isinstance(data, list):
+                  return {"root_type":"array", "root_count":len(data)}
+              if not isinstance(data, dict):
+                  return {"root_type":type(data).__name__}
+              groups = find_lists(data, "channelGroupData")
+              columns = find_lists(data, "columnData")
+              videos = find_lists(data, "videoData")
+              group_summary = []
+              for group in groups[:1]:
+                  for item in group[:80]:
+                      group_summary.append({
+                          "channelGroupId":str(item.get("channelGroupId", item.get("id","")))[:100],
+                          "channelGroupName":str(item.get("channelGroupName", item.get("title","")))[:100],
+                          "channelGroupType":str(item.get("channelGroupType",""))[:40],
+                          "channel_count":len(item.get("channelData",[])) if isinstance(item.get("channelData"),list) else 0
+                      })
+              column_summary = []
+              for column in columns[:1]:
+                  for item in column[:80]:
+                      rows = item.get("videoData",[])
+                      column_summary.append({
+                          "columnId":str(item.get("columnId",""))[:100],
+                          "columnTitle":str(item.get("columnTitle",""))[:120],
+                          "styleType":item.get("styleType"),
+                          "video_count":len(rows) if isinstance(rows,list) else 0,
+                          "sample_titles":[str(v.get("bookName",v.get("title",v.get("name",""))))[:100]
+                                           for v in rows[:5] if isinstance(v,dict)]
+                      })
+              return {
+                  "root_keys":sorted(str(k) for k in data.keys())[:100],
+                  "channelGroupData_count":sum(len(x) for x in groups),
+                  "groups":group_summary,
+                  "columnData_count":sum(len(x) for x in columns),
+                  "columns":column_summary,
+                  "videoData_count":sum(len(x) for x in videos)
+              }
+
+          print("开始探测河马剧场接口 1121、1122、1123、1124、1125。")
+          print("每个接口独立测试；依次尝试两个域名及 JSON/AES 两种协议传输。")
+          try:
+              if os.getenv("INCLUDE_REGISTRATION","true").lower() == "true":
+                  init, meta = request_api("1103", {
+                      "oaid":"", "userAgent":"GitHubActions/Python",
+                      "requestType":1, "activeType":1, "isFirstLaunch":True,
+                      "todayLaunchNums":1, "launchTime":INSTALL
+                  })
+                  if init is not None:
+                      user = init.get("userInfoVo",{}) if isinstance(init,dict) else {}
+                      USER_ID = str(user.get("userId") or (init.get("userId","") if isinstance(init,dict) else ""))
+                      meta.pop("data",None)
+                      meta["user_id_returned"] = bool(USER_ID)
+                      REPORT["registration"] = meta
+                      print(f"[1103] 初始化成功，userId 返回={bool(USER_ID)}")
+                  else:
+                      REPORT["registration"] = meta
+                      print("[1103] 初始化失败；仍继续测试五个接口")
+
+              for api in APIS:
+                  data, meta = request_api(api, {})
+                  if data is None:
+                      REPORT["apis"].append(meta)
+                      print(f"[{api}] 失败：{'; '.join(meta.get('errors',[])[-2:])}")
+                      continue
+                  shape = safe_shape(data)
+                  meta["shape"] = shape
+                  meta.pop("data",None)
+                  REPORT["apis"].append(meta)
+                  print(f"[{api}] HTTP {meta['http']} / {meta['transport']} / {meta['domain']} / {meta['elapsed_ms']}ms")
+                  print("  根字段：" + ", ".join(shape.get("root_keys",[])))
+                  print(f"  分类数={shape.get('channelGroupData_count',0)}，栏目数={shape.get('columnData_count',0)}，视频列表数={shape.get('videoData_count',0)}")
+                  for group in shape.get("groups",[]):
+                      print("  分类：" + json.dumps(group,ensure_ascii=False))
+                  for column in shape.get("columns",[]):
+                      print("  栏目：" + json.dumps(column,ensure_ascii=False))
+
+              REPORT["result"] = "SUCCESS" if any(x.get("http") for x in REPORT["apis"]) else "FAILED"
+          except Exception as error:
+              REPORT["result"] = "FAILED"
+              REPORT["fatal_error"] = f"{type(error).__name__}: {str(error)[:240]}"
+              print("::error::" + REPORT["fatal_error"])
+              raise
+          finally:
+              REPORT["finished_at"] = datetime.now(timezone.utc).isoformat()
+              output = os.path.join(os.getenv("RUNNER_TEMP","."),"hippo-theater-api-probe.json")
+              with open(output,"w",encoding="utf-8") as file:
+                  json.dump(REPORT,file,ensure_ascii=False,indent=2)
+              summary = ["## 河马剧场接口探测", "",
+                  f"- 总体：**{REPORT.get('result','FAILED')}**",
+                  "- 测试接口：1121、1122、1123、1124、1125",
+                  "- 请求参数：每个接口首次均使用空 JSON 对象 {}",
+                  "- 安全：使用临时虚拟设备标识；不输出 token、设备标识或原始响应正文。", "",
+                  "| 接口 | 结果 | 域名 | 传输 | HTTP | 耗时 | 分类 | 栏目 |",
+                  "|---|---|---|---|---:|---:|---:|---:|"]
+              for item in REPORT["apis"]:
+                  shape=item.get("shape",{})
+                  summary.append(
+                      f"| {item['api']} | {'成功' if item.get('http') else '失败'} | {item.get('domain','-')} | "
+                      f"{item.get('transport','-')} | {item.get('http','-')} | {item.get('elapsed_ms','-')} ms | "
+                      f"{shape.get('channelGroupData_count','-')} | {shape.get('columnData_count','-')} |"
+                  )
+              with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as file:
+                  file.write("\n".join(summary)+"\n")
+              print("脱敏结构报告已生成。")
+          PY
+
+      - name: 上传脱敏接口报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 河马剧场接口探测报告
+          path: ${{ runner.temp }}/hippo-theater-api-probe.json
+          if-no-files-found: ignore
+          retention-days: 14
