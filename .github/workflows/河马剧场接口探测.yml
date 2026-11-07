@@ -31,7 +31,7 @@ jobs:
 
       - name: 探测河马接口
         env:
-          INCLUDE_REGISTRATION: ${{ inputs.include_registration }}
+          INCLUDE_REGISTRATION: ${{ inputs.include_registration || 'true' }}
         run: |
           python <<'PY'
           import os, json, time, uuid
