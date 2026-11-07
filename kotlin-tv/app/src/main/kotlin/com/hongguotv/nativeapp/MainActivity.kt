@@ -544,6 +544,7 @@ class MainActivity: Activity() {
         applyDeviceOrientationPolicy()
         applyImmersiveFullscreen()
         platformUiState.active = PlatformPreferenceStore(this).load()
+        if (platformUiState.active == ContentPlatform.HIPPO) theaterContentType = ContentType.SHORT
         redfruitLibrary=Library(this)
         hippoLibrary=Library(this,"hippo")
         // 第三方片源独立存储，但源配置、观看历史和收藏必须进入整机备份。

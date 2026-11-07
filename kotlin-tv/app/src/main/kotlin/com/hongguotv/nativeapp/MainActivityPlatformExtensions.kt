@@ -89,7 +89,7 @@ internal fun MainActivity.switchContentPlatform() {
     searchHotLoading = false
     if (saved == null) {
         theaterFocusTag = ""
-        theaterContentType = null
+        theaterContentType = if (next == ContentPlatform.HIPPO) ContentType.SHORT else null
     }
     theaterFiltersByType.clear()
     aiCatalog = false
