@@ -1,6 +1,10 @@
 name: 河马剧场接口探测
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/河马剧场接口探测.yml"
   workflow_dispatch:
     inputs:
       include_registration:
